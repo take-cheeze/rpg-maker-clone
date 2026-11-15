@@ -421,9 +421,18 @@ def rpg_maker_gems(conf, include_mvjs: true)
     conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
   end
 
-  if bc2cpp
+  # wio is VM-free under bc2cpp: its Ruby is compiled, so the bytecode interpreter (vm.c, about 28 KB of flash) and its
+  # native continuation dispatch have nothing to run. mrb_vm_exec raises instead, as in the closed build.
+  vm_free = bc2cpp && conf.name == 'wio'
+  if bc2cpp && !vm_free
     require File.join(BC2CPP_TREE, 'tools/bc2cpp/native_vm_build')
     NativeVM.configure(conf)
+  end
+  if vm_free
+    conf.cc.defines << 'MRB_VM_FREE'
+    conf.cxx.defines << 'MRB_VM_FREE'
+    # The VM-free image has no lv/debug_info (MRB_NO_IREP_DEBUG is already set for wio below), and the bc2cpp proc
+    # stand-ins write irep->lv only when it exists.
   end
 
   rpg_maker_gem_dispatch(conf, include_mvjs: include_mvjs, single_format_only: single_format_only)
@@ -635,6 +644,53 @@ android = ENV['MRUBY_TARGET'] == 'android'
 # Not a device: the sealed RPG2000/2003 closed world built natively for bc2cpp (its stanza below).
 closed = ENV['MRUBY_TARGET'] == 'closed'
 cross = emscripten || wio || maix || psp || android
+
+# CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (StaticDispatchLists#core_excluded) are
+# left out of a build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names
+# (3rd/mruby/include/mruby/class.h). Written only when it changes, so an unchanged list rebuilds nothing. Both
+# compilers get the define: enable_cxx_exception compiles mruby's C as C++.
+#
+# The lists come from BC2CPP_STATIC_DISPATCH_LISTS (scripts/bc2cpp/static_dispatch_lists.bash writes them); a build
+# started without them stops here, and so does one whose lists were computed from other sources. 'none' (the
+# presym phase of closed_build.bash, which compiles no core C) leaves nothing out.
+#
+# The list is proven for the closed world: the RPG2000/2003 engine's mrblib, every core and external gem's mrblib,
+# every native source under src/, app/, include/, the engine gems and 3rd/mruby, and the closed build's generated
+# code. A build may take it only when everything it can run is inside that world, so:
+#   - closed, and the interpreted psp and maix builds: single format (no game Ruby, no other maker gem), the same
+#     engine mrblib less some files (psp's debug tools), and native sources the proof already reads. An interpreted
+#     build (interpreted: true) takes core_excluded only: engine_rom and core_rows count an engine send the closed
+#     build compiles to a direct call as no lookup, but the interpreter looks it up by name (RGSS.window_title=);
+#   - not psp/maix with RPGMAKER_BC2CPP=1: their generated code is not the closed build's, and a by-name fallback it
+#     emits may name a core method the closed generation never did;
+#   - not wio (nor m5stack, which links the wio libmruby): its mrblib is rewritten (wio_strip_*) and swaps in a
+#     generated schema_blob.rb, neither of which the proof reads;
+#   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
+def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false)
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/core_native_candidates')
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/static_dispatch_lists')
+  lists = StaticDispatchLists.current(required: true)
+  # verify: false for the device builds, whose Ruby (the apt or Alpine one) may lack the Prism the digest needs. They
+  # take the file CI's `bc2cpp-lists` job computed from the same commit (docs/bc2cpp-unregistered-methods.md).
+  StaticDispatchLists.verify_current!(lists, __dir__) if verify
+  mruby = File.expand_path('3rd/mruby', __dir__)
+  sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
+  # ENGINE_ROM: the engine gems' ROM tables name their class the same way (MRB_MT_CLASS), so their entries the proof lists
+  # (StaticDispatchLists#engine_rom) are left out at compile time too.
+  engine = CoreNativeCandidates.engine_entries(Dir["#{__dir__}/mruby-{rgss,lcf}/src/**/*.{c,cc,cpp,cxx}"].sort)
+  # Operator names are keyed by the proof's verdict (INDEX_CLOSED admission):
+  # only listed ones are excluded, so naming them here maps keys to entries.
+  # CORE_ROWS: the core entries only proven-receiver calls look up stay as rows (StaticDispatchLists#core_rows).
+  text = CoreNativeCandidates.header(lists.core_excluded.to_a,
+                                     CoreNativeCandidates.entries(sources.sort, operator_names: true),
+                                     interpreted ? [] : lists.engine_rom.to_a, engine,
+                                     rows: interpreted ? [] : lists.core_rows.to_a,
+                                     engine_rows: interpreted ? [] : lists.engine_rows.to_a)
+  path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, text) unless File.exist?(path) && File.read(path) == text
+  [conf.cc, conf.cxx].each { |tool| tool.defines << %(MRB_MT_EXCLUDE_HEADER='"#{path}"') }
+end
 
 if wio
   # wio's own RAM/flash margin is tight enough
@@ -1048,7 +1104,8 @@ if wio
       # No lv/debug_info fields in mrb_irep: this build already compiles its
       # Ruby without -g and strips lv (above), and links no compiler/binding.
       # 8 bytes of flash per irep.
-      t.defines << 'MRB_NO_IREP_DEBUG'
+      # Not under bc2cpp: the bc2cpp proc stand-ins write irep->lv, which only exists with debug info.
+      t.defines << 'MRB_NO_IREP_DEBUG' unless ENV['RPGMAKER_BC2CPP']
       # Mirrors PSP_BUILD below: gates the wio.cxx HAL in the mruby-rgss gem
       # on and the desktop-only sixel/iTerm2 terminal.cxx backend off (that
       # file's own guard is `#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL)`).
@@ -1090,6 +1147,9 @@ if wio
     conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     rpg_maker_gems(conf)
+    # Core method-table omission for wio (the closed-world lists, computed for this tree; wio's rewritten mrblib only
+    # removes code, so every name the lists keep stays kept). Under bc2cpp only.
+    bc2cpp_core_mt_exclude(conf) if ENV['RPGMAKER_BC2CPP']
 
     # Tried and reverted: -fno-exceptions, matching PlatformIO's own Arduino
     # framework build (platformio.ini's own comment on this). This project's
@@ -1110,52 +1170,6 @@ if wio
   end
 end
 
-# CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (StaticDispatchLists#core_excluded) are
-# left out of a build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names
-# (3rd/mruby/include/mruby/class.h). Written only when it changes, so an unchanged list rebuilds nothing. Both
-# compilers get the define: enable_cxx_exception compiles mruby's C as C++.
-#
-# The lists come from BC2CPP_STATIC_DISPATCH_LISTS (scripts/bc2cpp/static_dispatch_lists.bash writes them); a build
-# started without them stops here, and so does one whose lists were computed from other sources. 'none' (the
-# presym phase of closed_build.bash, which compiles no core C) leaves nothing out.
-#
-# The list is proven for the closed world: the RPG2000/2003 engine's mrblib, every core and external gem's mrblib,
-# every native source under src/, app/, include/, the engine gems and 3rd/mruby, and the closed build's generated
-# code. A build may take it only when everything it can run is inside that world, so:
-#   - closed, and the interpreted psp and maix builds: single format (no game Ruby, no other maker gem), the same
-#     engine mrblib less some files (psp's debug tools), and native sources the proof already reads. An interpreted
-#     build (interpreted: true) takes core_excluded only: engine_rom and core_rows count an engine send the closed
-#     build compiles to a direct call as no lookup, but the interpreter looks it up by name (RGSS.window_title=);
-#   - not psp/maix with RPGMAKER_BC2CPP=1: their generated code is not the closed build's, and a by-name fallback it
-#     emits may name a core method the closed generation never did;
-#   - not wio (nor m5stack, which links the wio libmruby): its mrblib is rewritten (wio_strip_*) and swaps in a
-#     generated schema_blob.rb, neither of which the proof reads;
-#   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
-def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false)
-  require File.join(BC2CPP_TREE, 'tools/bc2cpp/core_native_candidates')
-  require File.join(BC2CPP_TREE, 'tools/bc2cpp/static_dispatch_lists')
-  lists = StaticDispatchLists.current(required: true)
-  # verify: false for the device builds, whose Ruby (the apt or Alpine one) may lack the Prism the digest needs. They
-  # take the file CI's `bc2cpp-lists` job computed from the same commit (docs/bc2cpp-unregistered-methods.md).
-  StaticDispatchLists.verify_current!(lists, __dir__) if verify
-  mruby = File.expand_path('3rd/mruby', __dir__)
-  sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
-  # ENGINE_ROM: the engine gems' ROM tables name their class the same way (MRB_MT_CLASS), so their entries the proof lists
-  # (StaticDispatchLists#engine_rom) are left out at compile time too.
-  engine = CoreNativeCandidates.engine_entries(Dir["#{__dir__}/mruby-{rgss,lcf}/src/**/*.{c,cc,cpp,cxx}"].sort)
-  # Operator names are keyed by the proof's verdict (INDEX_CLOSED admission):
-  # only listed ones are excluded, so naming them here maps keys to entries.
-  # CORE_ROWS: the core entries only proven-receiver calls look up stay as rows (StaticDispatchLists#core_rows).
-  text = CoreNativeCandidates.header(lists.core_excluded.to_a,
-                                     CoreNativeCandidates.entries(sources.sort, operator_names: true),
-                                     interpreted ? [] : lists.engine_rom.to_a, engine,
-                                     rows: interpreted ? [] : lists.core_rows.to_a,
-                                     engine_rows: interpreted ? [] : lists.engine_rows.to_a)
-  path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
-  FileUtils.mkdir_p(File.dirname(path))
-  File.write(path, text) unless File.exist?(path) && File.read(path) == text
-  [conf.cc, conf.cxx].each { |tool| tool.defines << %(MRB_MT_EXCLUDE_HEADER='"#{path}"') }
-end
 
 if maix
   # Cross build for the Sipeed Maix Amigo (Kendryte K210, RV64IMACFD).
