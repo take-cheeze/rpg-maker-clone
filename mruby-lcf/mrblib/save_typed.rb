@@ -27,7 +27,7 @@ module LCF
       case type
       when :int, :uint8 then v.is_a?(Integer)
       when :bool then v == true || v == false
-      when :double then v.is_a?(Float)
+      when :double then LCF.double_value?(v)
       when :string then v.is_a?(String)
       when :Array1D then v.is_a?(LCF::Array1D)
       when :Array2D then v.is_a?(LCF::Array2D)
