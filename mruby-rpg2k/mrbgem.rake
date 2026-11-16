@@ -1491,4 +1491,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
   bc2cpp_blank_units(spec)
+  # VM-free wio: mruby-rpg2k-compiled provides every method, so this gem's bytecode is not linked
+  # (the compiled gems' rbfiles are cleared the same way in build_config.rb).
+  spec.rbfiles = [] if spec.build.name == 'wio' && ENV['RPGMAKER_BC2CPP'] == '1'
 end
