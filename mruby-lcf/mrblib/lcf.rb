@@ -329,7 +329,7 @@ module LCF
     when :uint8 ; return d.bytes[0]
     when :bool_array ; return d.bytes.map { |b| b != 0 }
     when :int32_array ; return unpack_int32(d)
-    when :double ; return unpack_double(d)
+    when :double ; return double_decode(d)
     when :event ; return parse_event_commands(d)
     when :move_commands ; return parse_move_commands(d)
     when :string ; return LCF.cp932_to_utf8 d
@@ -360,28 +360,6 @@ module LCF
       out.push v
     end
     out
-  end
-
-  # Decode a little-endian IEEE-754 64bit double (used by the save file's
-  # timestamp field). Assembled from raw bytes -- like unpack_int32 -- so it does
-  # not depend on the optional 'E' pack directive. Returns nil for a short blob.
-  def self.unpack_double d
-    return nil if d.nil? || d.bytesize < 8
-    b = d.bytes
-    bits = 0
-    7.downto(0) { |i| bits = (bits << 8) | b[i] }
-    sign = (bits >> 63) & 1
-    exp  = (bits >> 52) & 0x7ff
-    frac = bits & 0x000f_ffff_ffff_ffff
-    if exp == 0x7ff
-      return 0.0 / 0.0 unless frac == 0 # NaN
-      return sign == 1 ? (-1.0 / 0.0) : (1.0 / 0.0) # +/- infinity
-    elsif exp == 0
-      val = frac * (2.0 ** -1074)
-    else
-      val = (1.0 + frac * (2.0 ** -52)) * (2.0 ** (exp - 1023))
-    end
-    sign == 1 ? -val : val
   end
 
   # Coerce a value to a raw byte string safe to concatenate with other byte
@@ -425,73 +403,6 @@ module LCF
       out.push(v & 0xff, (v >> 8) & 0xff)
     end
     out.pack('C*')
-  end
-
-  # Encode a Ruby Float as a little-endian IEEE-754 64bit double -- the inverse
-  # of unpack_double (the save file's timestamp field). Assembled byte-wise from
-  # the sign / biased exponent / 52bit mantissa so it needs neither the 'E' pack
-  # directive nor a full 64bit integer (mruby's Integer is 63bit): the sign and
-  # exponent land in the top two bytes and the mantissa fills the low seven, so
-  # no intermediate value ever exceeds 2**52. Finite values (including 0.0) and
-  # NaN are handled; a timestamp is always finite and non-negative, which is also
-  # the domain unpack_double reproduces exactly (its 63bit assembly cannot hold a
-  # bit pattern with the sign or a very large exponent set).
-  def self.pack_double v
-    v = v.to_f
-    sign = 0
-    if v != v                       # NaN
-      exp = 0x7ff
-      # A bare literal, not `1 << 51`: mrbc constant-folds a shift whose
-      # operands are both literals at compile time, and the resulting IREP
-      # bignum-pool entry does not survive being cross-compiled by this
-      # project's own 64-bit-mrb_int host `mrbc` and loaded by a
-      # 32-bit-mrb_int target VM (see INT32_MASK's own comment near the top
-      # of this file for the full mechanism) -- `mrb_load_irep_file` on the
-      # 32-bit side fails to load this whole gem with "irep load error"
-      # before any of its code, called or not, ever runs.
-      frac = 0x0008_0000_0000_0000 # 2**51
-    elsif v == 0.0
-      exp = 0
-      frac = 0
-    else
-      if v < 0.0
-        sign = 1
-        v = -v
-      end
-      e = 0
-      while v >= 2.0 && e < 1024
-        v = v / 2.0
-        e = e + 1
-      end
-      while v < 1.0 && e > -1074
-        v = v * 2.0
-        e = e - 1
-      end
-      exp = e + 1023
-      # 52bit mantissa of the normalised significand (1.xxxx -> xxxx), rounded.
-      frac = ((v - 1.0) * 4503599627370496.0 + 0.5).to_i
-      if frac >= 4503599627370496   # rounding carried into the next binade
-        frac = 0
-        exp = exp + 1
-      end
-      if exp >= 0x7ff               # overflow -> infinity
-        exp = 0x7ff
-        frac = 0
-      elsif exp <= 0                # underflow -> flush to zero
-        exp = 0
-        frac = 0
-      end
-    end
-    b = []
-    b[0] = frac & 0xff
-    b[1] = (frac >> 8) & 0xff
-    b[2] = (frac >> 16) & 0xff
-    b[3] = (frac >> 24) & 0xff
-    b[4] = (frac >> 32) & 0xff
-    b[5] = (frac >> 40) & 0xff
-    b[6] = ((exp & 0xf) << 4) | ((frac >> 48) & 0xf)
-    b[7] = (sign << 7) | ((exp >> 4) & 0x7f)
-    b.pack('C*')
   end
 
   # The IEEE-754 double of the fixed-point value n / 2**shift, built with integer
@@ -570,6 +481,103 @@ module LCF
     sign == 1 ? -n : n
   end
 
+  # FLOAT-CODEC-BEGIN: the Float codec of the :double save fields. mruby-lcf/gen_lcf_nofloat.rb replaces the
+  # whole block on a no-Float build (MRB_NO_FLOAT), where the same four names use the fixed-point codec.
+  # Decode a little-endian IEEE-754 64bit double (used by the save file's
+  # timestamp field). Assembled from raw bytes -- like unpack_int32 -- so it does
+  # not depend on the optional 'E' pack directive. Returns nil for a short blob.
+  def self.unpack_double d
+    return nil if d.nil? || d.bytesize < 8
+    b = d.bytes
+    bits = 0
+    7.downto(0) { |i| bits = (bits << 8) | b[i] }
+    sign = (bits >> 63) & 1
+    exp  = (bits >> 52) & 0x7ff
+    frac = bits & 0x000f_ffff_ffff_ffff
+    if exp == 0x7ff
+      return 0.0 / 0.0 unless frac == 0 # NaN
+      return sign == 1 ? (-1.0 / 0.0) : (1.0 / 0.0) # +/- infinity
+    elsif exp == 0
+      val = frac * (2.0 ** -1074)
+    else
+      val = (1.0 + frac * (2.0 ** -52)) * (2.0 ** (exp - 1023))
+    end
+    sign == 1 ? -val : val
+  end
+
+  # Encode a Ruby Float as a little-endian IEEE-754 64bit double -- the inverse
+  # of unpack_double (the save file's timestamp field). Assembled byte-wise from
+  # the sign / biased exponent / 52bit mantissa so it needs neither the 'E' pack
+  # directive nor a full 64bit integer (mruby's Integer is 63bit): the sign and
+  # exponent land in the top two bytes and the mantissa fills the low seven, so
+  # no intermediate value ever exceeds 2**52. Finite values (including 0.0) and
+  # NaN are handled; a timestamp is always finite and non-negative, which is also
+  # the domain unpack_double reproduces exactly (its 63bit assembly cannot hold a
+  # bit pattern with the sign or a very large exponent set).
+  def self.pack_double v
+    v = v.to_f
+    sign = 0
+    if v != v                       # NaN
+      exp = 0x7ff
+      # A bare literal, not `1 << 51`: mrbc constant-folds a shift whose
+      # operands are both literals at compile time, and the resulting IREP
+      # bignum-pool entry does not survive being cross-compiled by this
+      # project's own 64-bit-mrb_int host `mrbc` and loaded by a
+      # 32-bit-mrb_int target VM (see INT32_MASK's own comment near the top
+      # of this file for the full mechanism) -- `mrb_load_irep_file` on the
+      # 32-bit side fails to load this whole gem with "irep load error"
+      # before any of its code, called or not, ever runs.
+      frac = 0x0008_0000_0000_0000 # 2**51
+    elsif v == 0.0
+      exp = 0
+      frac = 0
+    else
+      if v < 0.0
+        sign = 1
+        v = -v
+      end
+      e = 0
+      while v >= 2.0 && e < 1024
+        v = v / 2.0
+        e = e + 1
+      end
+      while v < 1.0 && e > -1074
+        v = v * 2.0
+        e = e - 1
+      end
+      exp = e + 1023
+      # 52bit mantissa of the normalised significand (1.xxxx -> xxxx), rounded.
+      frac = ((v - 1.0) * 4503599627370496.0 + 0.5).to_i
+      if frac >= 4503599627370496   # rounding carried into the next binade
+        frac = 0
+        exp = exp + 1
+      end
+      if exp >= 0x7ff               # overflow -> infinity
+        exp = 0x7ff
+        frac = 0
+      elsif exp <= 0                # underflow -> flush to zero
+        exp = 0
+        frac = 0
+      end
+    end
+    b = []
+    b[0] = frac & 0xff
+    b[1] = (frac >> 8) & 0xff
+    b[2] = (frac >> 16) & 0xff
+    b[3] = (frac >> 24) & 0xff
+    b[4] = (frac >> 32) & 0xff
+    b[5] = (frac >> 40) & 0xff
+    b[6] = ((exp & 0xf) << 4) | ((frac >> 48) & 0xf)
+    b[7] = (sign << 7) | ((exp >> 4) & 0x7f)
+    b.pack('C*')
+  end
+
+  def self.double_decode d; unpack_double(d) end
+  def self.double_encode v; pack_double(v) end
+  def self.double_value? v; v.is_a?(Float) end
+  def self.double_default whole; whole.to_f end
+  # FLOAT-CODEC-END
+
   # Encode a Ruby value back to the raw chunk bytes for a schema field -- the
   # inverse of to_rb. A nested :Array1D / :Array2D value is serialised through
   # its own #to_lcf. Strings go back out as cp932 via LCF.utf8_to_cp932 (the
@@ -582,7 +590,7 @@ module LCF
     when :int ; write_ber value
     when :bool ; [value ? 1 : 0].pack('C')
     when :uint8 ; [value & 0xff].pack('C')
-    when :double ; pack_double value
+    when :double ; double_encode value
     when :int8_array ; value.pack('C*')
     when :bool_array ; value.map { |b| b ? 1 : 0 }.pack('C*')
     when :int16_array ; pack_int16 value

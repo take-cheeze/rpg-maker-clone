@@ -16,7 +16,7 @@ module LCF
     # Hash a read of an ordered :int16_array returns.
     def self.save_writable? type, v
       case type
-      when :double then v.is_a?(Float) || v.is_a?(Integer)
+      when :double then LCF.double_value?(v) || v.is_a?(Integer)
       when :Array1D then v.is_a?(LCF::Array1D) || v.is_a?(Record)
       else fits?(type, v)
       end
