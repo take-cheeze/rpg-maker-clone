@@ -1989,8 +1989,6 @@ class Game::Picture
   def name: () -> untyped
   def fixed_to_map: () -> untyped
   def use_transparent_color: () -> untyped
-  def show_x: () -> untyped
-  def show_y: () -> untyped
   def blue: () -> untyped
   def erase!: () -> untyped
   def finish_blue: () -> untyped
@@ -2011,6 +2009,8 @@ class Game::Picture
   def red: () -> untyped
   def restore_legacy_lsd: (untyped, untyped, untyped) -> untyped
   def saturation: () -> untyped
+  def show_x: () -> untyped
+  def show_y: () -> untyped
   def shown?: () -> untyped
   def step: (untyped, untyped) -> untyped
   def to_h: () -> untyped
@@ -2018,6 +2018,10 @@ class Game::Picture
   def x: () -> untyped
   def y: () -> untyped
   def zoom: () -> untyped
+  def self.div_round: (untyped, untyped) -> untyped
+  def self.fix: (untyped) -> untyped
+  def self.unfix: (untyped) -> untyped
+  def self.unfloat: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 class Game::Rng
@@ -11110,14 +11114,14 @@ class Game::Picture
   def use_transparent_color: () -> bool?
   def blue: () -> Integer
   def erase!: () -> bool
-  def finish_blue: () -> Integer?
-  def finish_green: () -> Integer?
-  def finish_move: () -> Integer?
-  def finish_red: () -> Integer?
-  def finish_saturation: () -> Integer?
-  def finish_x: () -> Integer?
-  def finish_y: () -> Integer?
-  def finish_zoom: () -> Integer?
+  def finish_blue: () -> untyped
+  def finish_green: () -> untyped
+  def finish_move: () -> untyped
+  def finish_red: () -> untyped
+  def finish_saturation: () -> untyped
+  def finish_x: () -> untyped
+  def finish_y: () -> untyped
+  def finish_zoom: () -> untyped
   def frames_left: () -> Integer
   def green: () -> Integer
   def initialize: (untyped, ?untyped) -> Integer
