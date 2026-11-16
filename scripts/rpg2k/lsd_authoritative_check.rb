@@ -455,7 +455,8 @@ check 'a fractional picture opacity survives the LSD save exactly, not rounded t
   st = rich_state(db)
   st.show_picture(9, { name: 'frac', x: 0, y: 0, zoom: 100, opacity: 199.7 })
   l = via_lsd(db, st)
-  ok((199.7 - l.pictures[9].to_h[:opacity]).abs < 1e-9, 'fractional current opacity is preserved')
+  # Picture values are fixed-point in 1/1024 units, so a fraction is kept to that precision.
+  ok((199.7 - l.pictures[9].to_h[:opacity]).abs < 1.0 / 1024, 'fractional current opacity is preserved')
   eq 'frac', l.pictures[9].to_h[:name]
 end
 

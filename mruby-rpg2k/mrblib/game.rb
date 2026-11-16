@@ -8815,36 +8815,59 @@ module Game
     # (see SAVE_PICTURE's own comment for the experiment): unlike `#x`/`#y`
     # below, a Move Picture (`#move_to`) never touches these, only a fresh
     # `Picture.new` (i.e. another Show Picture on this same id) does.
-    attr_reader :show_x, :show_y
+    def show_x; Picture.unfloat(@show_x); end
+    def show_y; Picture.unfloat(@show_y); end
+
+    # Interpolated values are fixed-point integers in 1/1024 units (FIX_SHIFT),
+    # so the no-Float build can run them. The save keeps its :double fields:
+    # #to_lsd and #to_h read #unfloat values, #from_lsd passes Floats, which
+    # #fix rounds to the nearest 1/1024.
+    FIX_SHIFT = 10
+    def self.fix(v)
+      v.is_a?(Integer) ? (v << FIX_SHIFT) : (v * (1 << FIX_SHIFT)).round
+    end
+    # Truncated toward zero, as the drawn position always was.
+    def self.unfix(n)
+      n < 0 ? -((-n) >> FIX_SHIFT) : (n >> FIX_SHIFT)
+    end
+    # Whole values come back as Integer, as the un-fixed game values always were;
+    # only a fractional value (from a save) is a Float.
+    def self.unfloat(n)
+      return nil if n.nil?
+      (n & ((1 << FIX_SHIFT) - 1)) == 0 ? (n >> FIX_SHIFT) : n.to_f / (1 << FIX_SHIFT)
+    end
+    def self.div_round(a, b)
+      a < 0 ? -(((-a) + (b >> 1)) / b) : (a + (b >> 1)) / b
+    end
 
     # Every interpolated field is truncated to a whole number here (ported
     # from a reference implementation's own display-time truncation,
     # NOT independently confirmed against genuine RPG_RT under wine) but held
     # at full float precision internally between frames -- see #step's own
     # comment for why the two must not be the same value.
-    def x; @x.to_i; end
-    def y; @y.to_i; end
-    def zoom; @zoom.to_i; end
-    def opacity; @opacity.to_i; end
-    def red; @red.to_i; end
-    def green; @green.to_i; end
-    def blue; @blue.to_i; end
+    def x; Picture.unfix(@x); end
+    def y; Picture.unfix(@y); end
+    def zoom; Picture.unfix(@zoom); end
+    def opacity; Picture.unfix(@opacity); end
+    def red; Picture.unfix(@red); end
+    def green; Picture.unfix(@green); end
+    def blue; Picture.unfix(@blue); end
 
     # The in-flight move's own target values and remaining frame count (nil/0
     # when never moved or already arrived) -- for `.lsd` chunk 103's own
     # finish_*/time_left fields, which #to_lsd writes from these while
     # #moving?, see SAVE_PICTURE's own comment on why fields 31/32/etc are
     # named finish_*, not current_*.
-    def finish_x; @tx; end
-    def finish_y; @ty; end
-    def finish_zoom; @tzoom; end
-    def finish_opacity; @topacity; end
-    def finish_red; @tred; end
-    def finish_green; @tgreen; end
-    def finish_blue; @tblue; end
-    def finish_saturation; @tsat; end
+    def finish_x; Picture.unfloat(@tx); end
+    def finish_y; Picture.unfloat(@ty); end
+    def finish_zoom; Picture.unfloat(@tzoom); end
+    def finish_opacity; Picture.unfloat(@topacity); end
+    def finish_red; Picture.unfloat(@tred); end
+    def finish_green; Picture.unfloat(@tgreen); end
+    def finish_blue; Picture.unfloat(@tblue); end
+    def finish_saturation; Picture.unfloat(@tsat); end
     def frames_left; @frames; end
-    def saturation; @saturation.to_i; end
+    def saturation; Picture.unfix(@saturation); end
 
     # Whether this id is currently on screen -- false once #erase! has run.
     # A distinct flag rather than "name non-empty": a fresh `Picture.new`
@@ -8863,8 +8886,8 @@ module Game
       @id = id
       @name = opts[:name] || ''
       @shown = true
-      @x = opts[:x] || 0
-      @y = opts[:y] || 0
+      @x = Picture.fix(opts[:x] || 0)
+      @y = Picture.fix(opts[:y] || 0)
       # Defaults to the shown position itself: the live Show Picture command
       # (#do_show_picture) never passes these explicitly, so an ordinary
       # fresh show records its own x/y as-shown, exactly matching genuine
@@ -8872,14 +8895,14 @@ module Game
       # a save whose picture was already mid-Move-Picture when written (so
       # `x`/`y` above hold the live *current* position, not the original
       # show position, which is what these must restore to instead).
-      @show_x = opts[:show_x] || @x
-      @show_y = opts[:show_y] || @y
-      @zoom = opts[:zoom] || 100
-      @opacity = opts[:opacity] || 255
-      @red = opts[:red] || 100
-      @green = opts[:green] || 100
-      @blue = opts[:blue] || 100
-      @saturation = opts[:saturation] || 100
+      @show_x = opts[:show_x] ? Picture.fix(opts[:show_x]) : @x
+      @show_y = opts[:show_y] ? Picture.fix(opts[:show_y]) : @y
+      @zoom = Picture.fix(opts[:zoom] || 100)
+      @opacity = Picture.fix(opts[:opacity] || 255)
+      @red = Picture.fix(opts[:red] || 100)
+      @green = Picture.fix(opts[:green] || 100)
+      @blue = Picture.fix(opts[:blue] || 100)
+      @saturation = Picture.fix(opts[:saturation] || 100)
       @fixed_to_map = opts[:fixed_to_map] ? true : false
       @use_transparent_color = opts[:use_transparent_color] ? true : false
       @frames = 0
@@ -8888,8 +8911,8 @@ module Game
     # Begin a move toward new visual parameters over `frames` frames; with
     # frames <= 0 the change applies immediately.
     def move_to(x, y, zoom, opacity, red, green, blue, saturation, frames)
-      @tx = x; @ty = y; @tzoom = zoom; @topacity = opacity
-      @tred = red; @tgreen = green; @tblue = blue; @tsat = saturation
+      @tx = Picture.fix(x); @ty = Picture.fix(y); @tzoom = Picture.fix(zoom); @topacity = Picture.fix(opacity)
+      @tred = Picture.fix(red); @tgreen = Picture.fix(green); @tblue = Picture.fix(blue); @tsat = Picture.fix(saturation)
       @frames = frames > 0 ? frames : 0
       finish_move if @frames == 0
     end
@@ -8980,18 +9003,18 @@ module Game
     # Every field this class holds, as a plain hash, for the .lsd's chunk 200 picture
     # record to read (see lsd_io.rb's picture extension).
     def to_h
-      { name: @name, x: @x, y: @y, show_x: @show_x, show_y: @show_y,
-        zoom: @zoom, opacity: @opacity, red: @red, green: @green,
-        blue: @blue, saturation: @saturation, fixed_to_map: @fixed_to_map,
-        use_transparent_color: @use_transparent_color,
-        tx: @tx, ty: @ty, tzoom: @tzoom, topacity: @topacity,
-        tred: @tred, tgreen: @tgreen, tblue: @tblue, tsat: @tsat,
+      { name: @name, x: Picture.unfloat(@x), y: Picture.unfloat(@y), show_x: show_x, show_y: show_y,
+        zoom: Picture.unfloat(@zoom), opacity: Picture.unfloat(@opacity), red: Picture.unfloat(@red),
+        green: Picture.unfloat(@green), blue: Picture.unfloat(@blue), saturation: Picture.unfloat(@saturation),
+        fixed_to_map: @fixed_to_map, use_transparent_color: @use_transparent_color,
+        tx: finish_x, ty: finish_y, tzoom: finish_zoom, topacity: finish_opacity,
+        tred: finish_red, tgreen: finish_green, tblue: finish_blue, tsat: finish_saturation,
         frames: @frames }
     end
 
     private
 
-    def step(cur, target); cur + (target - cur) / @frames.to_f; end
+    def step(cur, target); cur + Picture.div_round(target - cur, @frames); end
 
     def finish_move
       @x = @tx; @y = @ty; @zoom = @tzoom; @opacity = @topacity

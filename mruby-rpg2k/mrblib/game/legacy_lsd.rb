@@ -118,8 +118,8 @@ module Game
     # pictures keep their name here (chunk 103 drops it on erase, as RPG_RT does).
     def restore_legacy_lsd(name, opacity, target)
       @name = name
-      @opacity = opacity
-      @topacity = target
+      @opacity = Picture.fix(opacity)
+      @topacity = target.nil? ? nil : Picture.fix(target)
       self
     end
   end
