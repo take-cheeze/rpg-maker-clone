@@ -413,11 +413,15 @@ module RGSS
   def asset_archive=: (untyped) -> untyped
   def self._comparison_sign: (untyped) -> untyped
   def self.audio_probe: () -> untyped
+  def self.brightness: (untyped) -> untyped
   def self.effect_probe: () -> untyped
+  def self.fraction: (untyped, untyped) -> untyped
   def self.frame_mean: (?untyped, ?untyped, ?untyped, ?untyped) -> untyped
+  def self.half: () -> untyped
   def self.probe_wav: (?untyped) -> untyped
   def self.tilemap_above_layer_probe: () -> untyped
   def self.transition_shape_probe: (untyped, untyped) -> untyped
+  def self.unit: () -> untyped
   def self.wait_for_bgm_pos: (?untyped) -> untyped
   def self.warn_once: (untyped) -> untyped
   def self.warn_stub: (untyped) -> untyped
@@ -684,7 +688,7 @@ class RGSS::Bitmap
   def _init_file: (String, ?untyped) -> self?
   def _init_memory: (String, ?untyped) -> self?
   def _init_size: (Numeric, Numeric) -> self
-  def _transition_alpha: (untyped, Numeric, Numeric) -> bool
+  def _transition_alpha: (untyped, untyped, untyped) -> bool
   def blend_text: (Numeric, Numeric, Numeric, Numeric, String, untyped, Numeric, Numeric, Numeric, Numeric, ?Numeric) -> self
   def blt: (Numeric, Numeric, untyped, untyped, ?Numeric) -> self
   def blt_quads: (Numeric, Numeric, untyped, Array) -> self
@@ -707,7 +711,7 @@ class RGSS::Bitmap
   def stretch_blt: (untyped, untyped, untyped, ?Numeric) -> self
   def text_size: (String) -> untyped
   def tone_blt: (untyped, untyped) -> self
-  def wave_blt: (untyped, Numeric, Numeric) -> self
+  def wave_blt: (untyped, Numeric, untyped) -> self
   def width: () -> Integer
   def self._begin_load: () -> nil
   def self._decoder_ran?: () -> bool
@@ -724,7 +728,7 @@ class RGSS::Color
   def blue=: (*untyped) -> untyped
   def green: (*untyped) -> untyped
   def green=: (*untyped) -> untyped
-  def initialize: (?Numeric, ?Numeric, ?Numeric, ?Numeric) -> self
+  def initialize: (?untyped, ?untyped, ?untyped, ?untyped) -> self
   def initialize_copy: (*untyped) -> untyped
   def red: (*untyped) -> untyped
   def red=: (*untyped) -> untyped
@@ -766,13 +770,13 @@ class RGSS::Plane
   def visible: () -> untyped
   def visible=: (untyped) -> self
   def z=: (Numeric) -> self
-  def zoom_x=: (Numeric) -> self
-  def zoom_y=: (Numeric) -> self
+  def zoom_x=: (untyped) -> self
+  def zoom_y=: (untyped) -> self
 end
 
 # bc2cpp-native: base_rgss
 class RGSS::Sprite
-  def angle=: (Numeric) -> self
+  def angle=: (untyped) -> self
   def bitmap=: (untyped) -> untyped
   def blend_type=: (Numeric) -> self
   def bush_depth=: (Numeric) -> self
@@ -791,8 +795,8 @@ class RGSS::Sprite
   def x=: (Numeric) -> self
   def y=: (Numeric) -> self
   def z=: (Numeric) -> self
-  def zoom_x=: (Numeric) -> self
-  def zoom_y=: (Numeric) -> self
+  def zoom_x=: (untyped) -> self
+  def zoom_y=: (untyped) -> self
 end
 
 # bc2cpp-native: base_rgss
@@ -837,7 +841,7 @@ class RGSS::Tone
   def gray=: (*untyped) -> untyped
   def green: (*untyped) -> untyped
   def green=: (*untyped) -> untyped
-  def initialize: (?Numeric, ?Numeric, ?Numeric, ?Numeric) -> self
+  def initialize: (?untyped, ?untyped, ?untyped, ?untyped) -> self
   def initialize_copy: (*untyped) -> untyped
   def red: (*untyped) -> untyped
   def red=: (*untyped) -> untyped
