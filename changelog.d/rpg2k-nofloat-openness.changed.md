@@ -1,0 +1,1 @@
+- The message and window open/close animation keeps its openness in integer 1/1024 units, so the no-Float build has no Float in that path. Behaviour is unchanged.
