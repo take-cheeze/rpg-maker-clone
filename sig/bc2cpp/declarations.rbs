@@ -1077,6 +1077,7 @@ class Game::Battle
   def begin_round: () -> untyped
   def can_leave_front_row?: (untyped) -> untyped
   def choose_auto_battle_command: (untyped) -> untyped
+  def rank_div: (untyped, untyped) -> untyped
   def choose_enemy_action: (untyped) -> untyped
   def combatant_permanent_states: (untyped) -> untyped
   def combo_hits: (untyped, untyped) -> untyped

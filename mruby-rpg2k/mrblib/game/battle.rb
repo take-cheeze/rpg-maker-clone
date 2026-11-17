@@ -2887,7 +2887,7 @@ module Game
     def choose_auto_battle_command(b)
       best_skill = nil
       best_sid = nil
-      best_skill_rank = 0.0
+      best_skill_rank = 0
       skills = b.actor && b.actor.respond_to?(:skills) ? b.actor.skills : []
       skills.each do |sid|
         sk = @ai && @ai.skill(sid)
@@ -2912,6 +2912,15 @@ module Game
     # is over in Scene::Map itself.
     public :choose_auto_battle_command
 
+# Fixed-point unit of an auto-battle rank (1000 == 1.0, per mille): a rank is a fraction of a target's HP or
+# SP, and the products below stay inside 32 bits. A bare literal on purpose; see #rank_div for the rounding.
+RANK_ONE = 1000
+
+# num / den truncated toward zero, as Float#to_i was on the fraction this replaces (Ruby's `/` floors).
+def rank_div(num, den)
+  num < 0 ? -((-num) / den) : num / den
+end
+
     # Ported from a reference implementation, not independently confirmed
     # against genuine RPG_RT under wine: `sk` (known by `b`, database id
     # `sid`) is out of the running entirely (0.0) unless it is an ordinary
@@ -2925,18 +2934,18 @@ module Game
     # so two skills
     # that would otherwise tie do not always resolve the same way twice.
     def auto_battle_skill_rank(b, sk, sid)
-      return 0.0 unless Game::Party.normal_skill?(sk)
-      return 0.0 unless @ai && b.actor && @ai.skill_ready?(b.actor, sid)
+      return 0 unless Game::Party.normal_skill?(sk)
+      return 0 unless @ai && b.actor && @ai.skill_ready?(b.actor, sid)
       rank =
         case sk[:scope]
-        when 3 then @allies.reduce(0.0) { |m, t| [m, auto_battle_heal_rank(b, sk, t)].max }
-        when 4 then @allies.reduce(0.0) { |s, t| s + auto_battle_heal_rank(b, sk, t) }
-        when 0 then @enemies.reduce(0.0) { |m, t| [m, auto_battle_damage_rank(b, sk, t)].max }
-        when 1 then @enemies.reduce(0.0) { |s, t| s + auto_battle_damage_rank(b, sk, t) }
+        when 3 then @allies.reduce(0) { |m, t| [m, auto_battle_heal_rank(b, sk, t)].max }
+        when 4 then @allies.reduce(0) { |s, t| s + auto_battle_heal_rank(b, sk, t) }
+        when 0 then @enemies.reduce(0) { |m, t| [m, auto_battle_damage_rank(b, sk, t)].max }
+        when 1 then @enemies.reduce(0) { |s, t| s + auto_battle_damage_rank(b, sk, t) }
         when 2 then auto_battle_heal_rank(b, sk, b)
-        else 0.0
+        else 0
         end
-      rank += @rng.random(100) / 100.0 if rank > 0.0
+      rank += @rng.random(100) * 10 if rank > 0
       rank
     end
 
@@ -2961,23 +2970,23 @@ module Game
     # exactly — this is what nudges a Forced-AI actor toward finishing off
     # the front-most target rather than spreading damage around).
     def auto_battle_damage_rank(b, sk, target)
-      return 0.0 unless target && !target.out_of_play?
+      return 0 unless target && !target.out_of_play?
       cmd = @ai && @ai.skill_command(sk, b, target)
-      return 0.0 unless cmd
+      return 0 unless cmd
       dmg = -(cmd[:hp] || 0)
       dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
       dmg = varied(dmg, LCF.field?(sk, :variance) ? (sk[:variance] || 0) : 0)
       tgt_hp = target.hp
-      return 0.0 if tgt_hp <= 0
-      rank = [dmg, tgt_hp].min.to_f / tgt_hp
-      rank = 1.5 if rank == 1.0
+      return 0 if tgt_hp <= 0
+      rank = rank_div([dmg, tgt_hp].min * RANK_ONE, tgt_hp)
+      rank = RANK_ONE * 3 / 2 if rank == RANK_ONE
       src_max_sp = b.max_mp || 0
       if src_max_sp > 0
-        rank -= auto_battle_raw_cost(sk, b).to_f / src_max_sp / 4.0
-        rank = 0.0 if rank < 0
+        rank -= rank_div(auto_battle_raw_cost(sk, b) * RANK_ONE, src_max_sp * 4)
+        rank = 0 if rank < 0
       end
       first = @enemies.find { |e| !e.out_of_play? }
-      rank = rank * 1.5 + 0.5 if first && first.equal?(target)
+      rank = rank_div(rank * 3, 2) + RANK_ONE / 2 if first && first.equal?(target)
       rank
     end
 
@@ -3003,27 +3012,27 @@ module Game
     # here, exactly like real RPG_RT).
     def auto_battle_heal_rank(b, sk, target)
       if target.hp > 0
-        return 0.0 unless LCF.field?(sk, :affect_hp) && sk[:affect_hp]
+        return 0 unless LCF.field?(sk, :affect_hp) && sk[:affect_hp]
         cmd = @ai && @ai.skill_command(sk, b, target)
-        return 0.0 unless cmd
+        return 0 unless cmd
         base = cmd[:hp] || 0
-        return 0.0 if base <= 0
+        return 0 if base <= 0
         base = apply_attr_multiplier(base, cmd[:attributes], target)
         base = varied(base, LCF.field?(sk, :variance) ? (sk[:variance] || 0) : 0)
         tgt_max_hp = target.max_hp || 0
-        return 0.0 if tgt_max_hp <= 0
+        return 0 if tgt_max_hp <= 0
         max_effect = [base, tgt_max_hp - target.hp].min
-        rank = max_effect.to_f / tgt_max_hp
+        rank = rank_div(max_effect * RANK_ONE, tgt_max_hp)
         src_max_sp = b.max_mp || 0
         if src_max_sp > 0
-          rank -= auto_battle_raw_cost(sk, b).to_f / src_max_sp / 8.0
-          rank = 0.0 if rank < 0
+          rank -= rank_div(auto_battle_raw_cost(sk, b) * RANK_ONE, src_max_sp * 8)
+          rank = 0 if rank < 0
         end
         rank
       else
         ids = LCF.field?(sk, :state_effects) ? sk[:state_effects] : nil
-        return 0.0 unless ids && ids[0] && ids[0] != 0
-        (LCF.field?(sk, :power) ? (sk[:power] || 0) : 0) / 1000.0 + 1.0
+        return 0 unless ids && ids[0] && ids[0] != 0
+        (LCF.field?(sk, :power) ? (sk[:power] || 0) : 0) + RANK_ONE
       end
     end
 
@@ -3093,18 +3102,18 @@ module Game
     # the source's own two independent `rank = rank*1.5+...` lines rather
     # than folding them into one.
     def auto_battle_attack_target_rank(b, target)
-      return 0.0 unless target && !target.out_of_play?
+      return 0 unless target && !target.out_of_play?
       dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
       dmg = 125 * dmg / 100 if row_adjusted?(b, true)
       dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
       dmg = 75 * dmg / 100 if row_adjusted?(target, false)
       tgt_hp = target.hp
-      return 0.0 if tgt_hp <= 0
-      rank = [dmg, tgt_hp].min.to_f / tgt_hp
-      rank = 1.5 if rank == 1.0
+      return 0 if tgt_hp <= 0
+      rank = rank_div([dmg, tgt_hp].min * RANK_ONE, tgt_hp)
+      rank = RANK_ONE * 3 / 2 if rank == RANK_ONE
       first = @enemies.find { |e| !e.out_of_play? }
-      rank = rank * 1.5 + 0.5 if first && first.equal?(target)
-      rank > 0.0 ? @rng.random(100) / 100.0 + rank * 1.5 : rank
+      rank = rank_div(rank * 3, 2) + RANK_ONE / 2 if first && first.equal?(target)
+      rank > 0 ? @rng.random(100) * 10 + rank_div(rank * 3, 2) : rank
     end
 
     # Ported from a reference implementation's normal-attack auto-battle
@@ -3117,7 +3126,7 @@ module Game
     # an actual wine capture that the flag does not spread a basic Attack at
     # all, see Actor#attack_all?'s own citation).
     def auto_battle_attack_rank(b)
-      @enemies.reduce(0.0) { |m, t| [m, auto_battle_attack_target_rank(b, t)].max }
+      @enemies.reduce(0) { |m, t| [m, auto_battle_attack_target_rank(b, t)].max }
     end
 
     # Queues `sk` (database id `sid`) on `b`, re-deriving its actual target(s)
@@ -3161,7 +3170,7 @@ module Game
     # wins by matching it.
     def auto_battle_best_target(targets)
       best = nil
-      best_rank = 0.0
+      best_rank = 0
       targets.each do |t|
         r = yield t
         if r > best_rank
