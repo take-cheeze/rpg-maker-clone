@@ -10443,9 +10443,11 @@ class RPG2k
       # ratio only grows (nothing decays it) until a fight actually starts, so
       # a long walk with no encounter becomes steadily more likely to end in
       # one -- RPG2000's answer to "I haven't been ambushed in ages".
+      # Multipliers in 1/16 units (1 == 0.0625, 256 == 16.0). The last threshold is a bare literal past any
+      # reachable ratio, standing in for Float::INFINITY.
       ENCOUNTER_TABLE = [
-        [0, 0.0625], [20, 0.125], [40, 0.25], [60, 0.5], [100, 2.0],
-        [140, 4.0], [160, 8.0], [180, 16.0], [Float::INFINITY, 16.0]
+        [0, 1], [20, 2], [40, 4], [60, 8], [100, 32],
+        [140, 64], [160, 128], [180, 256], [1073741824, 256]
       ].freeze
 
       # p scaled to basis points over this and rolled through Rng#scaled rather
@@ -10599,11 +10601,10 @@ class RPG2k
         return unless terrain
         rate = LCF.field?(terrain, :encounter_rate) ? terrain[:encounter_rate] : 100
         @state.encounter_total += rate
-        ratio = @state.encounter_total / steps
-        @encounter_idx += 1 while ratio >= ENCOUNTER_TABLE[@encounter_idx + 1][0]
+        # total / steps >= threshold, kept as total >= threshold * steps (steps > 0 here).
+        @encounter_idx += 1 while @state.encounter_total >= ENCOUNTER_TABLE[@encounter_idx + 1][0] * steps
         pmod = ENCOUNTER_TABLE[@encounter_idx][1]
-        chance = pmod * rate / (100.0 * steps)
-        return unless roll_encounter_chance(chance)
+        return unless roll_encounter_chance(pmod, rate, steps)
         @state.encounter_total = 0
         @encounter_idx = 0
         troops = candidate_troops
@@ -10625,8 +10626,10 @@ class RPG2k
         @interpreter.start_random_battle(troop_id, first_strike: first_strike)
       end
 
-      def roll_encounter_chance(p)
-        chance = (p * ENCOUNTER_CHANCE_SCALE).round
+      # pmod16 / 16 * rate / (100 * steps) as a count out of ENCOUNTER_CHANCE_SCALE, rounded half up.
+      # 1e6 / (16 * 100) == 625 keeps the product inside 32 bits.
+      def roll_encounter_chance(pmod16, rate, steps)
+        chance = (2 * pmod16 * rate * 625 + steps) / (2 * steps)
         chance = ENCOUNTER_CHANCE_SCALE if chance > ENCOUNTER_CHANCE_SCALE
         chance = 0 if chance < 0
         @rng.scaled(ENCOUNTER_CHANCE_SCALE) < chance
