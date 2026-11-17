@@ -479,28 +479,28 @@ class RPG2k
           FLYING_PERIOD = 256
           # round(FLYING_AMPLITUDE * sin(2 * pi * i / FLYING_PERIOD)), computed once with the same formula (Float#round),
           # so the bob is unchanged and the table needs no Float on device.
-          FLYING_OFFSETS = [
-               0,  0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-               2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  3,  3,  3,  3,
-               3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,
-               4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
-               4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
-               4,  4,  4,  4,  4,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,
-               3,  3,  3,  3,  3,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
-               2,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0,  0,
-               0,  0,  0,  0,  0,  0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-              -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -3, -3, -3, -3,
-              -3, -3, -3, -3, -3, -3, -3, -3, -3, -3, -3, -3, -4, -4, -4, -4,
-              -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4,
-              -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4,
-              -4, -4, -4, -4, -4, -3, -3, -3, -3, -3, -3, -3, -3, -3, -3, -3,
-              -3, -3, -3, -3, -3, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2,
-              -2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  0,  0,  0,  0
-          ].freeze
+          # One digit per frame: the offset + 4 (so a class-body constant with no array literal or negative literal).
+          FLYING_OFFSETS = \
+        "4444445555555555" \
+        "6666666666667777" \
+        "7777777777778888" \
+        "8888888888888888" \
+        "8888888888888888" \
+        "8888877777777777" \
+        "7777766666666666" \
+        "6555555555544444" \
+        "4444443333333333" \
+        "2222222222221111" \
+        "1111111111110000" \
+        "0000000000000000" \
+        "0000000000000000" \
+        "0000011111111111" \
+        "1111122222222222" \
+        "2333333333344444"
           def flying_offset(member)
             return 0 unless member.levitate && @state.party.rpg2003?
             frame = (@ui[:frame] || 0) + (member.flying_phase || 0)
-            FLYING_OFFSETS[frame % FLYING_PERIOD]
+            FLYING_OFFSETS[frame % FLYING_PERIOD].to_i - 4
           end
 
       # A troop member's on-screen y, centred on its database position and
