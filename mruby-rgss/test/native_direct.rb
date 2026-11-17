@@ -17,7 +17,7 @@ assert 'the probe table lists the split entry points' do
   assert_true names.size >= 60, "expected the generated entry points, got #{names.size}"
   assert_equal names.size, names.uniq.size
   %w[color_eq_direct rect_eq_direct tone_eq_direct table_load_direct
-     spr_set_zoom_x_direct window_set_ox_direct].each { |n| assert_include names, n }
+     spr_set_opacity_direct window_set_ox_direct].each { |n| assert_include names, n }
   assert_raise(ArgumentError) { probe.call('nope_direct', nil) }
 end
 
