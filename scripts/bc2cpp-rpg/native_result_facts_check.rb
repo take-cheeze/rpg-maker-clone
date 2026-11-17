@@ -105,7 +105,9 @@ returns_of = ->(body) { body.scan(/\breturn\b\s*([^;]*);/m).flatten.map { |expr|
 shape = lambda do |kind|
   case kind
   when :fixnum then /\Amrb_fixnum_value\s*\(/
-  when :float then /\Amrb_float_value\s*\(/
+  # rgss::num_value is a Float on the float build, the only build bc2cpp generates code for; the no-Float
+  # build returns a Fixnum there (include/rgss_number.hxx), which this fact does not cover.
+  when :float then /\A(?:mrb_float_value|rgss::num_value)\s*\(/
   when String
     mod, klass = kind.split('::')
     /\Amrb_obj_new\(\s*M,\s*mrb_class_get_under\(\s*M,\s*mrb_module_get\(\s*M,\s*"#{mod}"\s*\),\s*"#{klass}"\s*\),/
@@ -187,7 +189,7 @@ mutants = {
   'Rect#x delegating elsewhere' => ['return rgss::rect_x_direct(M, self);', 'return rgss::rect_y_direct(M, self);'],
   'Color#red bound to another function' => [/color_red_get =\s*component_get<Color, &Color::red>/,
                                              'color_red_get = color_red_other'],
-  'component_get returning nil' => ['return mrb_float_value(M, DataType<T>::get(M, self).*Field);', 'return mrb_nil_value();'],
+  'component_get returning nil' => ['return rgss::num_value(M, DataType<T>::get(M, self).*Field);', 'return mrb_nil_value();'],
   'Bitmap#rect building another class' => ['mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);',
                                            'mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);'],
   'a second Bitmap#width registration' => ['MRB_MT_ENTRY(bmp_width, MRB_SYM(width), MRB_ARGS_NONE())',
