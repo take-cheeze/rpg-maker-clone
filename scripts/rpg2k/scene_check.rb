@@ -29125,10 +29125,10 @@ check 'the message window unrolls over MSG_ANIM_FRAMES = 8 frames, not 7' do
   win = msg.window
   eq 8, win.instance_variable_get(:@anim_frames_left), 'eight frames still to run'
   7.times { RGSS::Input.reset; scene.update }
-  ok win.instance_variable_get(:@openness) < 1.0, 'still unrolling after seven frames'
+  ok win.instance_variable_get(:@openness) < 1024, 'still unrolling after seven frames'
   RGSS::Input.reset
   scene.update
-  eq 1.0, win.instance_variable_get(:@openness), 'fully open on the eighth'
+  eq 1024, win.instance_variable_get(:@openness), "fully open on the eighth"
 end
 
 check 'a Show Choices directly after a Show Text merges with no keypress at all' do
