@@ -1,0 +1,1 @@
+- The wio firmware's no-Float build (`WIO_NO_FLOAT=1`) passes RGSS numbers as Integers: zoom and angle are whole numbers, and transition fractions are in 1/1024 units. Float builds are unchanged.

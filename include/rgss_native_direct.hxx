@@ -28,11 +28,6 @@ mrb_value bmp_text_size_direct(mrb_state* M,
                                mrb_value self,
                                const char* s,
                                mrb_int len);
-mrb_value bmp_transition_alpha_direct(mrb_state* M,
-                                      mrb_value self,
-                                      mrb_value map_v,
-                                      mrb_float prog,
-                                      mrb_float vague);
 mrb_value can_play_mem_direct(mrb_state* M, mrb_value self);
 mrb_value color_dump_direct(mrb_state* M, mrb_value self);
 mrb_value color_eq_direct(mrb_state* M, mrb_value self, mrb_value o);
@@ -57,8 +52,6 @@ mrb_value plane_set_bmp_direct(mrb_state* M, mrb_value self, mrb_value bmp);
 mrb_value plane_set_ox_direct(mrb_state* M, mrb_value self, mrb_int ox);
 mrb_value plane_set_oy_direct(mrb_state* M, mrb_value self, mrb_int oy);
 mrb_value plane_set_tone_direct(mrb_state* M, mrb_value self, mrb_value v);
-mrb_value plane_set_zoom_x_direct(mrb_state* M, mrb_value self, mrb_float z);
-mrb_value plane_set_zoom_y_direct(mrb_state* M, mrb_value self, mrb_float z);
 mrb_value rect_dump_direct(mrb_state* M, mrb_value self);
 mrb_value rect_empty_direct(mrb_state* M, mrb_value self);
 mrb_value rect_eq_direct(mrb_state* M, mrb_value self, mrb_value o);
@@ -68,15 +61,12 @@ mrb_value rect_s_load_direct(mrb_state* M,
                              mrb_int len);
 mrb_value rect_to_s_direct(mrb_state* M, mrb_value self);
 mrb_value se_stop_direct(mrb_state* M, mrb_value self);
-mrb_value spr_set_angle_direct(mrb_state* M, mrb_value self, mrb_float deg);
 mrb_value spr_set_blend_type_direct(mrb_state* M, mrb_value self, mrb_int t);
 mrb_value spr_set_bush_depth_direct(mrb_state* M, mrb_value self, mrb_int d);
 mrb_value spr_set_mirror_direct(mrb_state* M, mrb_value self, mrb_bool m);
 mrb_value spr_set_opacity_direct(mrb_state* M, mrb_value self, mrb_int opa);
 mrb_value spr_set_src_rect_direct(mrb_state* M, mrb_value self, mrb_value v);
 mrb_value spr_set_tone_direct(mrb_state* M, mrb_value self, mrb_value v);
-mrb_value spr_set_zoom_x_direct(mrb_state* M, mrb_value self, mrb_float z);
-mrb_value spr_set_zoom_y_direct(mrb_state* M, mrb_value self, mrb_float z);
 mrb_value table_dim_direct(mrb_state* M, mrb_value self);
 mrb_value table_dump_direct(mrb_state* M, mrb_value self);
 mrb_value table_load_direct(mrb_state* M,

@@ -35,16 +35,16 @@ mrb_value rect_new_direct(mrb_state* M,
                           mrb_int h);
 mrb_value color_new_direct(mrb_state* M,
                            RClass* klass,
-                           mrb_float r,
-                           mrb_float g,
-                           mrb_float b,
-                           mrb_float a);
+                           double r,
+                           double g,
+                           double b,
+                           double a);
 mrb_value tone_new_direct(mrb_state* M,
                           RClass* klass,
-                          mrb_float r,
-                          mrb_float g,
-                          mrb_float b,
-                          mrb_float gray);
+                          double r,
+                          double g,
+                          double b,
+                          double gray);
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport);
 mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int w, mrb_int h);
 mrb_value sprite_bitmap_set_direct(mrb_state* M,

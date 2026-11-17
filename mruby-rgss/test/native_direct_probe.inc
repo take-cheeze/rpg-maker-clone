@@ -80,11 +80,6 @@
    (void)a;
    return rgss::bmp_text_size_direct(M, self, probe_str_ptr(M, a[0]), probe_str_len(M, a[0]));
  }},
-{"bmp_transition_alpha_direct", 3,
- [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
-   (void)a;
-   return rgss::bmp_transition_alpha_direct(M, self, a[0], mrb_as_float(M, a[1]), mrb_as_float(M, a[2]));
- }},
 {"can_play_mem_direct", 0,
  [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
    (void)a;
@@ -175,16 +170,6 @@
    (void)a;
    return rgss::plane_set_tone_direct(M, self, a[0]);
  }},
-{"plane_set_zoom_x_direct", 1,
- [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
-   (void)a;
-   return rgss::plane_set_zoom_x_direct(M, self, mrb_as_float(M, a[0]));
- }},
-{"plane_set_zoom_y_direct", 1,
- [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
-   (void)a;
-   return rgss::plane_set_zoom_y_direct(M, self, mrb_as_float(M, a[0]));
- }},
 {"rect_dump_direct", 0,
  [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
    (void)a;
@@ -215,11 +200,6 @@
    (void)a;
    return rgss::se_stop_direct(M, self);
  }},
-{"spr_set_angle_direct", 1,
- [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
-   (void)a;
-   return rgss::spr_set_angle_direct(M, self, mrb_as_float(M, a[0]));
- }},
 {"spr_set_blend_type_direct", 1,
  [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
    (void)a;
@@ -249,16 +229,6 @@
  [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
    (void)a;
    return rgss::spr_set_tone_direct(M, self, a[0]);
- }},
-{"spr_set_zoom_x_direct", 1,
- [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
-   (void)a;
-   return rgss::spr_set_zoom_x_direct(M, self, mrb_as_float(M, a[0]));
- }},
-{"spr_set_zoom_y_direct", 1,
- [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
-   (void)a;
-   return rgss::spr_set_zoom_y_direct(M, self, mrb_as_float(M, a[0]));
  }},
 {"table_dim_direct", 0,
  [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
