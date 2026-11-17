@@ -2447,6 +2447,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def battle_encounter_lines: (untyped, untyped) -> untyped
   def battle_grid_params: () -> untyped
   def battle_grid_position: (untyped, untyped) -> untyped
+  def grid_trunc_div: (untyped, untyped) -> untyped
   def battle_item_body: (untyped) -> untyped
   def battle_level_up_lines: (untyped, untyped, untyped) -> untyped
   def battle_level_up_message: (untyped, untyped) -> untyped
@@ -2898,7 +2899,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def restore_pre_inn_bgm: () -> untyped
   def restore_pre_vehicle_bgm: () -> untyped
   def resume_saved_bgm: () -> untyped
-  def roll_encounter_chance: (untyped) -> untyped
+  def roll_encounter_chance: (untyped, untyped, untyped) -> untyped
   def roster_actor: (untyped) -> untyped
   def set_char_location: (untyped, untyped, untyped, untyped, ?untyped) -> untyped
   def set_inn_cursor: () -> untyped
