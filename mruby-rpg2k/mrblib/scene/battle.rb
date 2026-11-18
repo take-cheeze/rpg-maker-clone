@@ -816,15 +816,12 @@ class RPG2k
         return nil unless row && row[i]
         t = row[i]
         grid = battle_grid_params
-        x = grid_trunc_div((1000 - t) * grid[:inclination], 1_000_000)
-        y = grid[:top_y] + grid_trunc_div(grid[:elongation] * 120 * t, 1_000_000)
+        # Truncated toward zero, as Float#to_i was. Ruby's `/` floors, which differs below zero.
+        v = (1000 - t) * grid[:inclination]
+        w = grid[:elongation] * 120 * t
+        x = v < 0 ? -((-v) / 1_000_000) : v / 1_000_000
+        y = grid[:top_y] + (w < 0 ? -((-w) / 1_000_000) : w / 1_000_000)
         [x, y]
-      end
-
-      # Integer division truncated toward zero, as the Float#to_i it replaces was. Ruby's own `/` floors, which
-      # differs below zero.
-      def grid_trunc_div(a, b)
-        a < 0 ? -((-a) / b) : a / b
       end
 
       # The encounter terrain's grid fields (database terrain chunks 46-48), or

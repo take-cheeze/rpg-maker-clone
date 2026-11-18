@@ -10604,7 +10604,9 @@ class RPG2k
         # total / steps >= threshold, kept as total >= threshold * steps (steps > 0 here).
         @encounter_idx += 1 while @state.encounter_total >= ENCOUNTER_TABLE[@encounter_idx + 1][0] * steps
         pmod = ENCOUNTER_TABLE[@encounter_idx][1]
-        return unless roll_encounter_chance(pmod, rate, steps)
+        # pmod / 16 * rate / (100 * steps) as a count out of ENCOUNTER_CHANCE_SCALE, rounded half up.
+        # 1e6 / (16 * 100) == 625 keeps the product inside 32 bits.
+        return unless roll_encounter_chance((2 * pmod * rate * 625 + steps) / (2 * steps))
         @state.encounter_total = 0
         @encounter_idx = 0
         troops = candidate_troops
@@ -10626,10 +10628,8 @@ class RPG2k
         @interpreter.start_random_battle(troop_id, first_strike: first_strike)
       end
 
-      # pmod16 / 16 * rate / (100 * steps) as a count out of ENCOUNTER_CHANCE_SCALE, rounded half up.
-      # 1e6 / (16 * 100) == 625 keeps the product inside 32 bits.
-      def roll_encounter_chance(pmod16, rate, steps)
-        chance = (2 * pmod16 * rate * 625 + steps) / (2 * steps)
+      # `chance` is a count out of ENCOUNTER_CHANCE_SCALE (see the caller).
+      def roll_encounter_chance(chance)
         chance = ENCOUNTER_CHANCE_SCALE if chance > ENCOUNTER_CHANCE_SCALE
         chance = 0 if chance < 0
         @rng.scaled(ENCOUNTER_CHANCE_SCALE) < chance
