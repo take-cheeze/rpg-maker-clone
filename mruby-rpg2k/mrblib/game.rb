@@ -3175,7 +3175,7 @@ module Game
       pct = bonus
       if LCF.field?(@db_row, :has_critical_rate) && @db_row[:has_critical_rate]
         n = LCF.field?(@db_row, :critical_rate) ? @db_row[:critical_rate] : 0
-        pct += (100.0 / n).to_i if n && n > 0
+        pct += 100 / n if n && n > 0
       end
       pct
     end

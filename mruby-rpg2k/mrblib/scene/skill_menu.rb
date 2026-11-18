@@ -1044,7 +1044,7 @@ class RPG2k
         @teleport_window.dispose if @teleport_window
         rows = teleport_targets
         inner_w = SCREEN_W - Window::BORDER * 2
-        grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
+        grid_rows = [(rows.size + COLUMN_MAX - 1) / COLUMN_MAX, 1].max
         h = grid_rows * LINE_H
         @teleport_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
                                       SCREEN_W, h + Window::BORDER * 2)

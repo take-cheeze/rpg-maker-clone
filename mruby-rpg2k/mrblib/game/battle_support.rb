@@ -1114,7 +1114,7 @@ module Game
       # enemy has no equipment, so unlike an actor's this is the whole of it.
       @crit_chance = if row && LCF.field?(row, :critical_hit) && row[:critical_hit]
                        n = LCF.field?(row, :critical_hit_chance) ? row[:critical_hit_chance] : 0
-                       n && n > 0 ? (100.0 / n).to_i : 0
+                       n && n > 0 ? 100 / n : 0
                      else
                        0
                      end

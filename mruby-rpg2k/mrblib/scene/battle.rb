@@ -475,13 +475,18 @@ class RPG2k
       # (rolled once by `Game::Troop#initialize`) is added to this scene's
       # own shared per-frame tick, which still advances every member in
       # lockstep the way that reference implementation's battler update does.
-      FLYING_AMPLITUDE = 4
-      FLYING_PERIOD = 256
-      def flying_offset(member)
-        return 0 unless member.levitate && @state.party.rpg2003?
-        frame = (@ui[:frame] || 0) + (member.flying_phase || 0)
-        (Math.sin(2 * Math::PI * frame / FLYING_PERIOD.to_f) * FLYING_AMPLITUDE).round
-      end
+          FLYING_AMPLITUDE = 4
+          FLYING_PERIOD = 256
+          # round(FLYING_AMPLITUDE * sin(2 * pi * i / FLYING_PERIOD)), computed once with the same formula (Float#round),
+          # so the bob is unchanged and the table needs no Float on device.
+          # One digit per frame: the offset + 4 (so a class-body constant with no array literal or negative literal).
+          # One digit per frame: the offset + 4, so the table is a string rather than an array literal.
+          FLYING_OFFSETS = "4444445555555555666666666666777777777777777788888888888888888888888888888888888888888777777777777777766666666666655555555554444444444433333333332222222222221111111111111111000000000000000000000000000000000000000001111111111111111222222222222333333333344444"
+          def flying_offset(member)
+            return 0 unless member.levitate && @state.party.rpg2003?
+            frame = (@ui[:frame] || 0) + (member.flying_phase || 0)
+            FLYING_OFFSETS[frame % FLYING_PERIOD].to_i - 4
+          end
 
       # A troop member's on-screen y, centred on its database position and
       # nudged by #flying_offset -- shared by every site that (re)builds an
@@ -775,14 +780,14 @@ class RPG2k
       # -- the only table the ordinary actor path indexes (table_x 0, table_y
       # 0), one row per party size, one fraction per member index.
       GRID_TABLE_0 = [
-        [0.5],
-        [0.0, 1.0],
-        [0.0, 0.5, 1.0],
-        [0.0, 0.33, 0.66, 1.0],
-        [0.0, 0.25, 0.5, 0.75, 1.0],
-        [0.0, 0.0, 0.5, 0.5, 1.0, 1.0],
-        [0.0, 0.25, 0.33, 0.5, 0.66, 0.75, 1.0],
-        [0.0, 0.0, 0.33, 0.33, 0.66, 0.66, 1.0, 1.0]
+        [500],
+        [0, 1000],
+        [0, 500, 1000],
+        [0, 330, 660, 1000],
+        [0, 250, 500, 750, 1000],
+        [0, 0, 500, 500, 1000, 1000],
+        [0, 250, 330, 500, 660, 750, 1000],
+        [0, 0, 330, 330, 660, 660, 1000, 1000]
       ].freeze
       # The reference implementation's no-terrain defaults (the editor's
       # database-terrain fields default to 0 / 375 / 16400, but the reference falls back to these when
@@ -811,8 +816,11 @@ class RPG2k
         return nil unless row && row[i]
         t = row[i]
         grid = battle_grid_params
-        x = ((1.0 - t) * (grid[:inclination] / 1000.0)).to_i
-        y = grid[:top_y] + (grid[:elongation] / 1000.0 * 120.0 * t).to_i
+        # Truncated toward zero, as Float#to_i was. Ruby's `/` floors, which differs below zero.
+        v = (1000 - t) * grid[:inclination]
+        w = grid[:elongation] * 120 * t
+        x = v < 0 ? -((-v) / 1_000_000) : v / 1_000_000
+        y = grid[:top_y] + (w < 0 ? -((-w) / 1_000_000) : w / 1_000_000)
         [x, y]
       end
 
@@ -4135,7 +4143,7 @@ class RPG2k
         inner_w = w - Window::BORDER * 2
         col_pitch = column_max > 1 ? SCREEN_W / column_max : inner_w
         col_w = column_max > 1 ? col_pitch - gutter_w : inner_w
-        row_count = column_max > 1 ? [(labels.length / column_max.to_f).ceil, 1].max : labels.length
+        row_count = column_max > 1 ? [(labels.length + column_max - 1) / column_max, 1].max : labels.length
         sel_row = sel / column_max
         # Sticky, not derived from the cursor row: a list that has scrolled
         # keeps its top row until the cursor would leave the box (measured
