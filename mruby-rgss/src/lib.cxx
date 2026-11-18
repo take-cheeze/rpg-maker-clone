@@ -9404,5 +9404,19 @@ OWNER_ROW(rgss_row_input_poll, input_poll)
 OWNER_ROW(rgss_row_plane_opacity_set, spr_set_opacity)
 OWNER_ROW(rgss_row_window_opacity_set, window_set_opacity)
 OWNER_ROW(rgss_row_bitmap_hue_change, bmp_hue_change)
+#else
+// The rows above are registered on every target (owner_call_direct.rb), but
+// their bodies are compiled out on wio, so the wio link needs a symbol for
+// each. A call raises rather than doing nothing, so a game that reaches one
+// sees why.
+#define WIO_UNAVAILABLE_ROW(wrapper)                             \
+  mrb_value wrapper(mrb_state* mrb, mrb_value) {                 \
+    mrb_raise(mrb, E_RUNTIME_ERROR,                              \
+              #wrapper " is not available on the Wio Terminal"); \
+  }
+WIO_UNAVAILABLE_ROW(rgss_row_plane_opacity_set)
+WIO_UNAVAILABLE_ROW(rgss_row_window_opacity_set)
+WIO_UNAVAILABLE_ROW(rgss_row_bitmap_hue_change)
+#undef WIO_UNAVAILABLE_ROW
 #endif
 #undef OWNER_ROW

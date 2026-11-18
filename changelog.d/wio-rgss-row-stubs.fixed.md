@@ -1,0 +1,1 @@
+- The Wio Terminal firmware links again: the `Plane#opacity=`, `Window#opacity=` and `Bitmap#hue_change` entries have stub bodies on wio, which raise `RuntimeError` if a game calls them (their native code is compiled out there).
