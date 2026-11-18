@@ -19,6 +19,8 @@ FIXED_BLOCK = <<~RUBY
   def self.double_encode v; pack_fixed_double(v, 10) end
   def self.double_value? v; v.is_a?(Integer) end
   def self.double_default whole; whole << 10 end
+  def self.double_from_fixed n; n end
+  def self.double_to_fixed v; v end
   # FLOAT-CODEC-END
 RUBY
 

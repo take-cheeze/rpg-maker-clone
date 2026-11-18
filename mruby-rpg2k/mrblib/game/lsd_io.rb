@@ -701,42 +701,42 @@ module Game
           e[1] = p.name if p.shown?
           e[6] = true if p.fixed_to_map
           e[9] = true if p.use_transparent_color
-          e[2] = p.show_x
-          e[3] = p.show_y
-          e[4] = p.x
-          e[5] = p.y
-          e[7] = p.zoom if p.zoom != 100
-          cur_trans = 100.0 - Game.clamp(p.to_h[:opacity], 0, 255) * 100.0 / 255.0
-          e[8] = cur_trans if cur_trans != 0
-          # Field 18 (current_bot_trans, RPG2003-only) has no independent
-          # value of its own here -- see SAVE_PICTURE's own schema.rb comment
-          # -- so it mirrors field 8 (top == bottom).
-          e[18] = cur_trans if cur_trans != 0
-          e[11] = p.red if p.red != 100
-          e[12] = p.green if p.green != 100
-          e[13] = p.blue if p.blue != 100
-          e[14] = p.saturation if p.saturation != 100
+          raw = p.save_fixed
+          e[2] = LCF.double_from_fixed(raw[:show_x])
+          e[3] = LCF.double_from_fixed(raw[:show_y])
+          e[4] = LCF.double_from_fixed(raw[:x])
+          e[5] = LCF.double_from_fixed(raw[:y])
+          e[7] = LCF.double_from_fixed(raw[:zoom]) if p.zoom != 100
+          # Transparency is a percentage of the 0..255 opacity, in 1/1024 units.
+          cur_trans = 102_400 - Game.clamp(raw[:opacity], 0, 261_120) * 100 / 255
+          e[8] = LCF.double_from_fixed(cur_trans) if cur_trans != 0
+          # Field 18 (current_bot_trans, RPG2003-only) mirrors field 8 (top == bottom).
+          e[18] = LCF.double_from_fixed(cur_trans) if cur_trans != 0
+          e[11] = LCF.double_from_fixed(raw[:red]) if p.red != 100
+          e[12] = LCF.double_from_fixed(raw[:green]) if p.green != 100
+          e[13] = LCF.double_from_fixed(raw[:blue]) if p.blue != 100
+          e[14] = LCF.double_from_fixed(raw[:saturation]) if p.saturation != 100
           moving = p.moving?
-          fx = moving ? p.finish_x : p.x
-          fy = moving ? p.finish_y : p.y
-          fzoom = moving ? p.finish_zoom : p.zoom
-          fopacity = moving ? p.finish_opacity : p.opacity
-          fred = moving ? p.finish_red : p.red
-          fgreen = moving ? p.finish_green : p.green
-          fblue = moving ? p.finish_blue : p.blue
-          fsat = moving ? p.finish_saturation : p.saturation
-          e[31] = fx
-          e[32] = fy
-          e[33] = fzoom if fzoom != 100
-          fin_trans = (100.0 - Game.clamp(fopacity, 0, 255) * 100.0 / 255.0).round
+          fx = moving ? raw[:tx] : raw[:x]
+          fy = moving ? raw[:ty] : raw[:y]
+          fzoom = moving ? raw[:tzoom] : raw[:zoom]
+          fopacity = moving ? raw[:topacity] : raw[:opacity]
+          fred = moving ? raw[:tred] : raw[:red]
+          fgreen = moving ? raw[:tgreen] : raw[:green]
+          fblue = moving ? raw[:tblue] : raw[:blue]
+          fsat = moving ? raw[:tsat] : raw[:saturation]
+          e[31] = LCF.double_from_fixed(fx)
+          e[32] = LCF.double_from_fixed(fy)
+          e[33] = Picture.unfix(fzoom) if fzoom != 102_400
+          # Rounded to a whole percent, as the finish transparency always was.
+          fin_trans = (102_400 - Game.clamp(fopacity, 0, 261_120) * 100 / 255 + 512) / 1024
           e[34] = fin_trans if fin_trans != 0
-          # Field 35 (finish_bot_trans, RPG2003-only) mirrors field 34 for
-          # the same reason field 18 mirrors field 8 above.
+          # Field 35 (finish_bot_trans, RPG2003-only) mirrors field 34.
           e[35] = fin_trans if fin_trans != 0
-          e[41] = fred if fred != 100
-          e[42] = fgreen if fgreen != 100
-          e[43] = fblue if fblue != 100
-          e[44] = fsat if fsat != 100
+          e[41] = Picture.unfix(fred) if fred != 102_400
+          e[42] = Picture.unfix(fgreen) if fgreen != 102_400
+          e[43] = Picture.unfix(fblue) if fblue != 102_400
+          e[44] = Picture.unfix(fsat) if fsat != 102_400
           e[51] = p.frames_left if moving
         end
         pics[id] = e
@@ -1714,27 +1714,30 @@ module Game
         time_left = pic[:time_left] || 0
         moving = time_left > 0
         transparency = moving || pic.key?(8) ? pic[:current_transparency] : pic[:transparency]
-        state.show_picture(id, name: name,
-                               x: ((moving ? pic[:current_x] : pic[:finish_x]) || 0).to_i,
-                               y: ((moving ? pic[:current_y] : pic[:finish_y]) || 0).to_i,
-                               show_x: pic.key?(2) ? pic[:show_x] : nil,
-                               show_y: pic.key?(3) ? pic[:show_y] : nil,
-                               zoom: moving ? pic[:current_zoom] : pic[:zoom],
-                               opacity: transparency ? Game.trans_to_opacity(transparency) : nil,
-                               red: moving ? pic[:current_tone_red] : pic[:tone_red],
-                               green: moving ? pic[:current_tone_green] : pic[:tone_green],
-                               blue: moving ? pic[:current_tone_blue] : pic[:tone_blue],
-                               saturation: moving ? pic[:current_tone_saturation] : pic[:tone_saturation],
+        state.show_picture(id, name: name, raw: true,
+                               x: Picture.fixed_of(moving ? pic[:current_x] : pic[:finish_x]),
+                               y: Picture.fixed_of(moving ? pic[:current_y] : pic[:finish_y]),
+                               show_x: Picture.fixed_of(pic.key?(2) ? pic[:show_x] : nil),
+                               show_y: Picture.fixed_of(pic.key?(3) ? pic[:show_y] : nil),
+                               zoom: Picture.fixed_of(moving ? pic[:current_zoom] : pic[:zoom]),
+                               opacity: Picture.fixed_opacity(transparency),
+                               red: Picture.fixed_of(moving ? pic[:current_tone_red] : pic[:tone_red]),
+                               green: Picture.fixed_of(moving ? pic[:current_tone_green] : pic[:tone_green]),
+                               blue: Picture.fixed_of(moving ? pic[:current_tone_blue] : pic[:tone_blue]),
+                               saturation: Picture.fixed_of(moving ? pic[:current_tone_saturation] : pic[:tone_saturation]),
                                fixed_to_map: pic[:fixed_to_map],
                                use_transparent_color: pic[:use_transparent_color])
         state.erase_picture(id) if pic[:name].nil? || pic[:name].empty?
         next unless moving
         finish_trans = pic[:transparency]
-        state.move_picture(id, (pic[:finish_x] || 0).to_i, (pic[:finish_y] || 0).to_i,
-                           pic[:zoom],
-                           finish_trans ? Game.trans_to_opacity(finish_trans) : 255,
-                           pic[:tone_red], pic[:tone_green], pic[:tone_blue],
-                           pic[:tone_saturation], time_left)
+        state.move_picture_fixed(id, Picture.arg(Picture.fixed_of(pic[:finish_x]), true, 0),
+                                 Picture.arg(Picture.fixed_of(pic[:finish_y]), true, 0),
+                                 Picture.arg(Picture.fixed_of(pic[:zoom]), true, 100),
+                                 Picture.arg(finish_trans ? Game.trans_to_opacity(finish_trans) << 10 : nil, true, 255),
+                                 Picture.arg(Picture.fixed_of(pic[:tone_red]), true, 100),
+                                 Picture.arg(Picture.fixed_of(pic[:tone_green]), true, 100),
+                                 Picture.arg(Picture.fixed_of(pic[:tone_blue]), true, 100),
+                                 Picture.arg(Picture.fixed_of(pic[:tone_saturation]), true, 100), time_left)
       end
     end
 

@@ -196,6 +196,9 @@ def deep_diff(a, b, path = '')
     a.each_index { |i| out.concat(deep_diff(a[i], b[i], "#{path}[#{i}]")) }
   elsif a.is_a?(Numeric) && b.is_a?(Numeric) && (a - b).abs < 1e-9
     # Wire double conversions may introduce one rounding bit.
+  elsif a.is_a?(Numeric) && b.is_a?(Numeric) && path.end_with?('opacity') && (a - b).abs < 0.005
+    # A picture opacity is saved as a whole-percent transparency in 1/1024 units (Picture#fixed_opacity), so
+    # it round-trips to within one such unit (about 0.0025 px), not exactly.
   elsif a != b
     out << "#{path}: expected=#{a.inspect[0, 90]} lsd=#{b.inspect[0, 90]}"
   end

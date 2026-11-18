@@ -88,9 +88,10 @@ module Game
             id = LCF.read_ber(io)
             name_len = LCF.read_ber(io)
             name = name_len > 0 ? io.read(name_len) : ''
-            opacity = ext_double_at(io)
+            opacity = LCF.unpack_fixed_double(io.read(8), 10)
             has_target = LCF.read_ber(io) != 0
-            topacity = has_target ? ext_double_at(io) : nil
+            topacity = has_target ? LCF.unpack_fixed_double(io.read(8), 10) : nil
+            raise 'truncated extension double' if opacity.nil? || (has_target && topacity.nil?)
             pic = state.pictures[id]
             pic.restore_legacy_lsd(name, opacity, topacity) if pic
           end
@@ -120,8 +121,8 @@ module Game
     # pictures keep their name here (chunk 103 drops it on erase, as RPG_RT does).
     def restore_legacy_lsd(name, opacity, target)
       @name = name
-      @opacity = Picture.fix(opacity)
-      @topacity = target.nil? ? nil : Picture.fix(target)
+      @opacity = opacity
+      @topacity = target
       self
     end
   end

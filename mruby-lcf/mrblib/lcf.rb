@@ -576,6 +576,10 @@ module LCF
   def self.double_encode v; pack_double(v) end
   def self.double_value? v; v.is_a?(Float) end
   def self.double_default whole; whole.to_f end
+  # The :double value of a fixed-point n in 1/1024 units, and the fixed value of a :double (Float, or a whole
+  # Integer taken as pixels). The no-Float build holds the :double as the fixed value already.
+  def self.double_from_fixed n; n.to_f / 1024 end
+  def self.double_to_fixed v; v.is_a?(Float) ? (v * 1024).round : v * 1024 end
   # FLOAT-CODEC-END
 
   # Encode a Ruby value back to the raw chunk bytes for a schema field -- the
