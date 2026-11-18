@@ -27,7 +27,9 @@ module Game
     def self.ext_double_at(io)
       raw = io.read(8)
       raise 'truncated extension double' if raw.nil? || raw.bytesize != 8
+# FLOAT-BEGIN ext_double
       raw.unpack('E')[0]
+# FLOAT-END ext_double
     end
 
     # [[tag, body], ...] parsed from a chunk-200 payload string.

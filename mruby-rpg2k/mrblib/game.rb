@@ -3769,6 +3769,7 @@ module Game
         cap = exp_max
         return result > cap ? cap : result
       end
+      # FLOAT-BEGIN exp
       base = db_exp_param(:exp_basic).to_f
       inflation = 1.5 + db_exp_param(:exp_increase) * 0.01
       correction = db_exp_param(:exp_correction).to_f
@@ -3778,6 +3779,7 @@ module Game
         base *= inflation
         inflation = ((n + 1) * 0.002 + 0.8) * (inflation - 1) + 1
       end
+      # FLOAT-END exp
       cap = exp_max
       result > cap ? cap : result
     end
@@ -7825,7 +7827,9 @@ module Game
     end
 
     def wave?
+# FLOAT-BEGIN wave
       @style == WAVE_IN || @style == WAVE_OUT
+# FLOAT-END wave
     end
 
     # The pixel block size `Bitmap#mosaic_blt` resamples the captured screen
@@ -7852,7 +7856,9 @@ module Game
     def wave_params
       p = mosaic_wave_progress
       d = span
+# FLOAT-BEGIN wave_phase
       phase = (d <= 0 ? 0 : p * 5 * Math::PI / d) + Math::PI
+# FLOAT-END wave_phase
       [p, phase]
     end
 
@@ -8678,10 +8684,12 @@ module Game
     # resetting each frame), just never applied here.
     def update_tint
       return if @frames <= 0
+# FLOAT-BEGIN tint
       @r += (@tr - @r) / @frames.to_f
       @g += (@tg - @g) / @frames.to_f
       @b += (@tb - @b) / @frames.to_f
       @sat += (@tsat - @sat) / @frames.to_f
+# FLOAT-END tint
       @frames -= 1
       return unless @frames.zero?
       @r = @tr; @g = @tg; @b = @tb; @sat = @tsat # land exactly on the target
@@ -8711,7 +8719,9 @@ module Game
       end
       amplitude = 1 + 2 * @shake_power
       phase = (@shake_frames * 4 * (@shake_speed + 2)) % 256
+      # FLOAT-BEGIN shake
       newpos = (amplitude * Math.sin(phase * Math::PI / 128) * -1).to_i
+      # FLOAT-END shake
       # The step off the *previous* frame's own offset is separately capped,
       # a smoothing rule distinct from the amplitude bound above -- without
       # it a low-speed, high-power shake could otherwise jump between two far

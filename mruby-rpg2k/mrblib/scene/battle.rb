@@ -4999,7 +4999,9 @@ class RPG2k
           else
             amplitude = 1 + 2 * st[:power]
             phase = (st[:frames] * 4 * (st[:speed] + 2)) % 256
+            # FLOAT-BEGIN shake
             newpos = (amplitude * Math.sin(phase * Math::PI / 128) * -1).to_i
+            # FLOAT-END shake
             cutoff = (st[:speed] * amplitude) / 8 + 1
             st[:offset] = Game.clamp(newpos, st[:offset] - cutoff, st[:offset] + cutoff)
           end

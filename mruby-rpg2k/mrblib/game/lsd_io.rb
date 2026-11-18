@@ -91,7 +91,9 @@ module Game
       # only the leader-specific name/level/hp fields, which have nothing to
       # read from an empty party, stay conditional.
       title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+# FLOAT-BEGIN timestamp
       title[1] = timestamp.to_f
+# FLOAT-END timestamp
       if leader
         title[11] = leader.name
         title[12] = leader.level
@@ -152,7 +154,9 @@ module Game
       hero[83] = pf ? pf[:blue] : 0
       if pf && pf[:frames] && pf[:frames] > 0
         total = pf[:total] && pf[:total] > 0 ? pf[:total] : pf[:frames]
+# FLOAT-BEGIN flash_power
         hero[84] = pf[:power].to_f * pf[:frames] / total
+# FLOAT-END flash_power
         hero[85] = pf[:frames]
       end
       # Fields 32/41/43/51 (move_frequency/move_route/move_route_index/
@@ -1305,7 +1309,9 @@ module Game
       # an actual in-progress flash to compare against.
       if hero[:flash_time_left] && hero[:flash_time_left] > 0
         frames = hero[:flash_time_left]
+# FLOAT-BEGIN flash_level
         level = hero[:flash_current_level] || 0.0
+# FLOAT-END flash_level
         state.player_flash = { red: hero[:flash_red] || 0, green: hero[:flash_green] || 0,
                                blue: hero[:flash_blue] || 0, power: level, frames: frames,
                                total: frames }
@@ -1753,10 +1759,14 @@ module Game
     #
     # 2000-01-01, the sentinel: recognisable in a file screen as "not a real
     # play session" without being a value RPG_RT rejects.
+# FLOAT-BEGIN clock_sentinel
     NO_CLOCK_TIMESTAMP = 36526.0
+# FLOAT-END clock_sentinel
 
     def self.ole_now
+# FLOAT-BEGIN ole_now
       Time.now.to_i / 86400.0 + OLE_EPOCH_OFFSET
+# FLOAT-END ole_now
     rescue StandardError => e
       $stderr.puts "[RPG2k] no usable clock (#{e.class}: #{e.message}), stamping the save 2000-01-01"
       NO_CLOCK_TIMESTAMP
