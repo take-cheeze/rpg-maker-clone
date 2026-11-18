@@ -979,3 +979,15 @@ assert 'LCF.unpack_fixed_double inverts pack_fixed_double' do
   end
   assert_nil LCF.unpack_fixed_double("\x00\x00\x00\x00\x00\x00\xf0\x7f", 0)
 end
+
+assert 'LCF.double_from_fixed / double_to_fixed convert a 1/1024 fixed value to and from a :double' do
+  assert_equal 1.5, LCF.double_from_fixed(1536)
+  assert_equal(-0.25, LCF.double_from_fixed(-256))
+  assert_equal 1536, LCF.double_to_fixed(1.5)
+  assert_equal(-256, LCF.double_to_fixed(-0.25))
+  [0, 1, -1, 1536, -99999, 123_456_789].each do |n|
+    assert_equal n, LCF.double_to_fixed(LCF.double_from_fixed(n)), "n #{n}"
+    # The save bytes of the fixed value are exactly those of its Float form.
+    assert_equal LCF.pack_fixed_double(n, 10), LCF.encode(LCF.double_from_fixed(n), :double), "bytes #{n}"
+  end
+end

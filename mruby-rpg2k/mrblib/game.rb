@@ -8793,7 +8793,21 @@ module Game
     # only a fractional value (from a save) is a Float.
     def self.unfloat(n)
       return nil if n.nil?
-      (n & ((1 << FIX_SHIFT) - 1)) == 0 ? (n >> FIX_SHIFT) : n.to_f / (1 << FIX_SHIFT)
+      LCF.double_from_fixed(n)
+    end
+    # A save :double read as a fixed value, or nil for an absent field.
+    def self.fixed_of(v)
+      v.nil? ? nil : LCF.double_to_fixed(v)
+    end
+    # A fixed value from opts: already fixed when `raw`, else pixels; nil takes the pixel default.
+    def self.arg(v, raw, default)
+      return fix(default) if v.nil?
+      raw ? v : fix(v)
+    end
+    # Opacity (fixed) of a native :double transparency percentage.
+    def self.fixed_opacity(trans)
+      return nil if trans.nil?
+      (102_400 - Game.clamp(fixed_of(trans), 0, 102_400)) * 255 / 100
     end
     def self.div_round(a, b)
       a < 0 ? -(((-a) + (b >> 1)) / b) : (a + (b >> 1)) / b
@@ -8807,7 +8821,8 @@ module Game
     def x; Picture.unfix(@x); end
     def y; Picture.unfix(@y); end
     def zoom; Picture.unfix(@zoom); end
-    def opacity; Picture.unfix(@opacity); end
+    # Rounded, not truncated: the percent round trip (see #fixed_opacity) can sit one 1/1024 below a whole pixel.
+    def opacity; Picture.unfix(@opacity + 512); end
     def red; Picture.unfix(@red); end
     def green; Picture.unfix(@green); end
     def blue; Picture.unfix(@blue); end
@@ -8845,23 +8860,24 @@ module Game
       @id = id
       @name = opts[:name] || ''
       @shown = true
-      @x = Picture.fix(opts[:x] || 0)
-      @y = Picture.fix(opts[:y] || 0)
+      raw = opts[:raw] ? true : false
+      @x = Picture.arg(opts[:x], raw, 0)
+      @y = Picture.arg(opts[:y], raw, 0)
       # Defaults to the shown position itself: the live Show Picture command
       # (#do_show_picture) never passes these explicitly, so an ordinary
       # fresh show records its own x/y as-shown, exactly matching genuine
-      # RPG_RT. #restore_pictures passes the saved field 2/3 explicitly, for
+      # RPG_RT. The save reader passes the saved field 2/3 explicitly, for
       # a save whose picture was already mid-Move-Picture when written (so
       # `x`/`y` above hold the live *current* position, not the original
       # show position, which is what these must restore to instead).
-      @show_x = opts[:show_x] ? Picture.fix(opts[:show_x]) : @x
-      @show_y = opts[:show_y] ? Picture.fix(opts[:show_y]) : @y
-      @zoom = Picture.fix(opts[:zoom] || 100)
-      @opacity = Picture.fix(opts[:opacity] || 255)
-      @red = Picture.fix(opts[:red] || 100)
-      @green = Picture.fix(opts[:green] || 100)
-      @blue = Picture.fix(opts[:blue] || 100)
-      @saturation = Picture.fix(opts[:saturation] || 100)
+      @show_x = opts[:show_x].nil? ? @x : Picture.arg(opts[:show_x], raw, 0)
+      @show_y = opts[:show_y].nil? ? @y : Picture.arg(opts[:show_y], raw, 0)
+      @zoom = Picture.arg(opts[:zoom], raw, 100)
+      @opacity = Picture.arg(opts[:opacity], raw, 255)
+      @red = Picture.arg(opts[:red], raw, 100)
+      @green = Picture.arg(opts[:green], raw, 100)
+      @blue = Picture.arg(opts[:blue], raw, 100)
+      @saturation = Picture.arg(opts[:saturation], raw, 100)
       @fixed_to_map = opts[:fixed_to_map] ? true : false
       @use_transparent_color = opts[:use_transparent_color] ? true : false
       @frames = 0
@@ -8870,10 +8886,23 @@ module Game
     # Begin a move toward new visual parameters over `frames` frames; with
     # frames <= 0 the change applies immediately.
     def move_to(x, y, zoom, opacity, red, green, blue, saturation, frames)
-      @tx = Picture.fix(x); @ty = Picture.fix(y); @tzoom = Picture.fix(zoom); @topacity = Picture.fix(opacity)
-      @tred = Picture.fix(red); @tgreen = Picture.fix(green); @tblue = Picture.fix(blue); @tsat = Picture.fix(saturation)
+      move_to_fixed(Picture.fix(x), Picture.fix(y), Picture.fix(zoom), Picture.fix(opacity),
+                    Picture.fix(red), Picture.fix(green), Picture.fix(blue), Picture.fix(saturation), frames)
+    end
+
+    def move_to_fixed(x, y, zoom, opacity, red, green, blue, saturation, frames)
+      @tx = x; @ty = y; @tzoom = zoom; @topacity = opacity
+      @tred = red; @tgreen = green; @tblue = blue; @tsat = saturation
       @frames = frames > 0 ? frames : 0
       finish_move if @frames == 0
+    end
+
+    # The fixed-point state a save writes from, read directly (no pixel truncation).
+    def save_fixed
+      { x: @x, y: @y, show_x: @show_x, show_y: @show_y, zoom: @zoom, opacity: @opacity,
+        red: @red, green: @green, blue: @blue, saturation: @saturation,
+        tx: @tx, ty: @ty, tzoom: @tzoom, topacity: @topacity,
+        tred: @tred, tgreen: @tgreen, tblue: @tblue, tsat: @tsat }
     end
 
     def moving?; @frames > 0; end
@@ -10299,6 +10328,12 @@ module Game
     def move_picture(id, *args)
       pic = @pictures[id]
       pic.move_to(*args) if pic&.shown?
+    end
+
+    # #move_picture with the fixed-point values the save reader holds.
+    def move_picture_fixed(id, *args)
+      pic = @pictures[id]
+      pic.move_to_fixed(*args) if pic&.shown?
     end
 
     # Erase Picture (11130): the `Picture` object itself is kept, not deleted

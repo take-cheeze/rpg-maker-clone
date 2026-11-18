@@ -1,3 +1,23 @@
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # ---- base stubs (scripts/bc2cpp/base_rbs*.rb, untyped shapes)
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -1988,46 +2008,6 @@ class Game::Party
   def use_switch_item: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
-class Game::Picture
-  def id: () -> untyped
-  def name: () -> untyped
-  def fixed_to_map: () -> untyped
-  def use_transparent_color: () -> untyped
-  def blue: () -> untyped
-  def erase!: () -> untyped
-  def finish_blue: () -> untyped
-  def finish_green: () -> untyped
-  def finish_move: () -> untyped
-  def finish_opacity: () -> untyped
-  def finish_red: () -> untyped
-  def finish_saturation: () -> untyped
-  def finish_x: () -> untyped
-  def finish_y: () -> untyped
-  def finish_zoom: () -> untyped
-  def frames_left: () -> untyped
-  def green: () -> untyped
-  def initialize: (untyped, ?untyped) -> untyped
-  def move_to: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
-  def moving?: () -> untyped
-  def opacity: () -> untyped
-  def red: () -> untyped
-  def restore_legacy_lsd: (untyped, untyped, untyped) -> untyped
-  def saturation: () -> untyped
-  def show_x: () -> untyped
-  def show_y: () -> untyped
-  def shown?: () -> untyped
-  def step: (untyped, untyped) -> untyped
-  def to_h: () -> untyped
-  def update: () -> untyped
-  def x: () -> untyped
-  def y: () -> untyped
-  def zoom: () -> untyped
-  def self.div_round: (untyped, untyped) -> untyped
-  def self.fix: (untyped) -> untyped
-  def self.unfix: (untyped) -> untyped
-  def self.unfloat: (untyped) -> untyped
-end
-# bc2cpp-native: base_rpg2k
 class Game::Rng
   def initialize: (?untyped) -> untyped
   def scaled: (untyped) -> untyped
@@ -2071,139 +2051,6 @@ class Game::Shop
   def sell_price: (untyped) -> untyped
   def sellable?: (untyped) -> untyped
   def sellable_items: () -> untyped
-end
-# bc2cpp-native: base_rpg2k
-class Game::State
-  def party: () -> untyped
-  def switches: () -> untyped
-  def variables: () -> untyped
-  def message_config: () -> untyped
-  def screen: () -> untyped
-  def weather: () -> untyped
-  def map: () -> untyped
-  def map=: (untyped) -> untyped
-  def x: () -> untyped
-  def x=: (untyped) -> untyped
-  def y: () -> untyped
-  def y=: (untyped) -> untyped
-  def direction: () -> untyped
-  def direction=: (untyped) -> untyped
-  def map_id: () -> untyped
-  def battle_background: () -> untyped
-  def battle_background=: (untyped) -> untyped
-  def menu_access: () -> untyped
-  def menu_access=: (untyped) -> untyped
-  def save_access: () -> untyped
-  def save_access=: (untyped) -> untyped
-  def teleport_access: () -> untyped
-  def teleport_access=: (untyped) -> untyped
-  def escape_access: () -> untyped
-  def escape_access=: (untyped) -> untyped
-  def pending_teleport: () -> untyped
-  def pending_teleport=: (untyped) -> untyped
-  def current_bgm: () -> untyped
-  def current_bgm=: (untyped) -> untyped
-  def memorized_bgm: () -> untyped
-  def memorized_bgm=: (untyped) -> untyped
-  def pre_vehicle_bgm: () -> untyped
-  def pre_vehicle_bgm=: (untyped) -> untyped
-  def pre_battle_bgm: () -> untyped
-  def pre_battle_bgm=: (untyped) -> untyped
-  def player_flash: () -> untyped
-  def player_flash=: (untyped) -> untyped
-  def player_route: () -> untyped
-  def player_route=: (untyped) -> untyped
-  def player_through: () -> untyped
-  def player_through=: (untyped) -> untyped
-  def bgm_looped: () -> untyped
-  def bgm_looped=: (untyped) -> untyped
-  def bgm_stopping: () -> untyped
-  def bgm_stopping=: (untyped) -> untyped
-  def player_transparent: () -> untyped
-  def player_transparent=: (untyped) -> untyped
-  def encounter_rate: () -> untyped
-  def encounter_rate=: (untyped) -> untyped
-  def encounter_total: () -> untyped
-  def encounter_total=: (untyped) -> untyped
-  def steps: () -> untyped
-  def steps=: (untyped) -> untyped
-  def last_battle_turns: () -> untyped
-  def last_battle_turns=: (untyped) -> untyped
-  def save_count: () -> untyped
-  def save_count=: (untyped) -> untyped
-  def battle_count: () -> untyped
-  def battle_count=: (untyped) -> untyped
-  def win_count: () -> untyped
-  def win_count=: (untyped) -> untyped
-  def defeat_count: () -> untyped
-  def defeat_count=: (untyped) -> untyped
-  def escape_count: () -> untyped
-  def escape_count=: (untyped) -> untyped
-  def preview_faces: () -> untyped
-  def preview_faces=: (untyped) -> untyped
-  def preview_level: () -> untyped
-  def preview_level=: (untyped) -> untyped
-  def preview_hp: () -> untyped
-  def preview_hp=: (untyped) -> untyped
-  def teleport_targets: () -> untyped
-  def teleport_targets=: (untyped) -> untyped
-  def escape_target: () -> untyped
-  def escape_target=: (untyped) -> untyped
-  def system_bgm: () -> untyped
-  def system_bgm=: (untyped) -> untyped
-  def system_sfx: () -> untyped
-  def system_sfx=: (untyped) -> untyped
-  def screen_transitions: () -> untyped
-  def screen_transitions=: (untyped) -> untyped
-  def system_graphic: () -> untyped
-  def system_graphic=: (untyped) -> untyped
-  def font_id: () -> untyped
-  def font_id=: (untyped) -> untyped
-  def atb_mode: () -> untyped
-  def atb_mode=: (untyped) -> untyped
-  def common_event_progress: () -> untyped
-  def common_event_progress=: (untyped) -> untyped
-  def foreground_event_exec: () -> untyped
-  def foreground_event_exec=: (untyped) -> untyped
-  def common_event_exec: () -> untyped
-  def common_event_exec=: (untyped) -> untyped
-  def map_event_exec: () -> untyped
-  def map_event_exec=: (untyped) -> untyped
-  def map_event_positions: () -> untyped
-  def map_event_positions=: (untyped) -> untyped
-  def map_event_route_index: () -> untyped
-  def map_event_route_index=: (untyped) -> untyped
-  def tile_substitutions: () -> untyped
-  def tile_substitutions=: (untyped) -> untyped
-  def parallax: () -> untyped
-  def pictures: () -> untyped
-  def boarded: () -> untyped
-  def boarded=: (untyped) -> untyped
-  def erase_picture: (untyped) -> untyped
-  def map_id=: (untyped) -> untyped
-  def move_picture: (untyped, *untyped) -> untyped
-  def pictures_moving?: () -> untyped
-  def set_screen_transition: (untyped, untyped) -> untyped
-  def show_picture: (untyped, untyped) -> untyped
-  def timer_display_text: () -> untyped
-  def timer_frames: () -> untyped
-  def timer_frames=: (untyped) -> untyped
-  def timer_running: () -> untyped
-  def timer_running=: (untyped) -> untyped
-  def timer_visible: () -> untyped
-  def timer_visible=: (untyped) -> untyped
-  def to_lsd: (?untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
-  def walk_step: () -> untyped
-  def self.bgm_from_chunk: (untyped) -> untyped
-  def self.build_event_exec_state: (untyped) -> untyped
-  def self.from_lsd: (untyped, untyped) -> untyped
-  def self.ole_now: () -> untyped
-  def self.read_event_exec_frames: (untyped) -> untyped
-  def self.read_foreground_frames: (untyped) -> untyped
-  def self.restore_pictures: (untyped, untyped) -> untyped
-  def self.se_from_chunk: (untyped) -> untyped
-  def self.tile_replacement_bytes: (untyped) -> untyped
-  def self.tile_replacement_hash: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 module Game::States
@@ -6202,33 +6049,6 @@ class RGSS::HashArchive
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_lcf
-module LCF
-  def self.double_decode: (untyped) -> untyped
-  def self.double_default: (untyped) -> untyped
-  def self.double_encode: (untyped) -> untyped
-  def self.double_value?: (untyped) -> untyped
-  def self.edition_default: (untyped) -> untyped
-  def self.encode: (untyped, untyped) -> untyped
-  def self.encode_move_commands: (untyped) -> untyped
-  def self.exp_default: () -> untyped
-  def self.field?: (untyped, untyped) -> untyped
-  def self.int16_format: (untyped) -> untyped
-  def self.level_max: () -> untyped
-  def self.npc_hp_max: () -> untyped
-  def self.pack_double: (untyped) -> untyped
-  def self.pack_fixed_double: (untyped, untyped) -> untyped
-  def self.parse_event_commands: (untyped) -> untyped
-  def self.parse_move_commands: (untyped) -> untyped
-  def self.pc_hp_max: () -> untyped
-  def self.read_ber: (untyped) -> untyped
-  def self.read_section: (untyped, untyped) -> untyped
-  def self.to_rb: (untyped, untyped) -> untyped
-  def self.var_max: () -> untyped
-  def self.var_min: () -> untyped
-end
-
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rgss
 class NameError < StandardError
   def initialize: (?untyped, ?untyped) -> untyped
@@ -6299,6 +6119,214 @@ class OnigRegexp
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_lcf
+module LCF
+  def self.double_decode: (untyped) -> untyped
+  def self.double_default: (untyped) -> untyped
+  def self.double_encode: (untyped) -> untyped
+  def self.double_from_fixed: (untyped) -> untyped
+  def self.double_to_fixed: (untyped) -> untyped
+  def self.double_value?: (untyped) -> untyped
+  def self.edition_default: (untyped) -> untyped
+  def self.encode: (untyped, untyped) -> untyped
+  def self.encode_move_commands: (untyped) -> untyped
+  def self.exp_default: () -> untyped
+  def self.field?: (untyped, untyped) -> untyped
+  def self.int16_format: (untyped) -> untyped
+  def self.level_max: () -> untyped
+  def self.npc_hp_max: () -> untyped
+  def self.pack_double: (untyped) -> untyped
+  def self.pack_fixed_double: (untyped, untyped) -> untyped
+  def self.parse_event_commands: (untyped) -> untyped
+  def self.parse_move_commands: (untyped) -> untyped
+  def self.pc_hp_max: () -> untyped
+  def self.read_ber: (untyped) -> untyped
+  def self.read_section: (untyped, untyped) -> untyped
+  def self.to_rb: (untyped, untyped) -> untyped
+  def self.var_max: () -> untyped
+  def self.var_min: () -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::Picture
+  def id: () -> untyped
+  def name: () -> untyped
+  def fixed_to_map: () -> untyped
+  def use_transparent_color: () -> untyped
+  def blue: () -> untyped
+  def erase!: () -> untyped
+  def finish_blue: () -> untyped
+  def finish_green: () -> untyped
+  def finish_move: () -> untyped
+  def finish_opacity: () -> untyped
+  def finish_red: () -> untyped
+  def finish_saturation: () -> untyped
+  def finish_x: () -> untyped
+  def finish_y: () -> untyped
+  def finish_zoom: () -> untyped
+  def frames_left: () -> untyped
+  def green: () -> untyped
+  def initialize: (untyped, ?untyped) -> untyped
+  def move_to: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  def move_to_fixed: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  def moving?: () -> untyped
+  def opacity: () -> untyped
+  def red: () -> untyped
+  def restore_legacy_lsd: (untyped, untyped, untyped) -> untyped
+  def saturation: () -> untyped
+  def save_fixed: () -> untyped
+  def show_x: () -> untyped
+  def show_y: () -> untyped
+  def shown?: () -> untyped
+  def step: (untyped, untyped) -> untyped
+  def to_h: () -> untyped
+  def update: () -> untyped
+  def x: () -> untyped
+  def y: () -> untyped
+  def zoom: () -> untyped
+  def self.arg: (untyped, untyped, untyped) -> untyped
+  def self.div_round: (untyped, untyped) -> untyped
+  def self.fix: (untyped) -> untyped
+  def self.fixed_of: (untyped) -> untyped
+  def self.fixed_opacity: (untyped) -> untyped
+  def self.unfix: (untyped) -> untyped
+  def self.unfloat: (untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::State
+  def party: () -> untyped
+  def switches: () -> untyped
+  def variables: () -> untyped
+  def message_config: () -> untyped
+  def screen: () -> untyped
+  def weather: () -> untyped
+  def map: () -> untyped
+  def map=: (untyped) -> untyped
+  def x: () -> untyped
+  def x=: (untyped) -> untyped
+  def y: () -> untyped
+  def y=: (untyped) -> untyped
+  def direction: () -> untyped
+  def direction=: (untyped) -> untyped
+  def map_id: () -> untyped
+  def battle_background: () -> untyped
+  def battle_background=: (untyped) -> untyped
+  def menu_access: () -> untyped
+  def menu_access=: (untyped) -> untyped
+  def save_access: () -> untyped
+  def save_access=: (untyped) -> untyped
+  def teleport_access: () -> untyped
+  def teleport_access=: (untyped) -> untyped
+  def escape_access: () -> untyped
+  def escape_access=: (untyped) -> untyped
+  def pending_teleport: () -> untyped
+  def pending_teleport=: (untyped) -> untyped
+  def current_bgm: () -> untyped
+  def current_bgm=: (untyped) -> untyped
+  def memorized_bgm: () -> untyped
+  def memorized_bgm=: (untyped) -> untyped
+  def pre_vehicle_bgm: () -> untyped
+  def pre_vehicle_bgm=: (untyped) -> untyped
+  def pre_battle_bgm: () -> untyped
+  def pre_battle_bgm=: (untyped) -> untyped
+  def player_flash: () -> untyped
+  def player_flash=: (untyped) -> untyped
+  def player_route: () -> untyped
+  def player_route=: (untyped) -> untyped
+  def player_through: () -> untyped
+  def player_through=: (untyped) -> untyped
+  def bgm_looped: () -> untyped
+  def bgm_looped=: (untyped) -> untyped
+  def bgm_stopping: () -> untyped
+  def bgm_stopping=: (untyped) -> untyped
+  def player_transparent: () -> untyped
+  def player_transparent=: (untyped) -> untyped
+  def encounter_rate: () -> untyped
+  def encounter_rate=: (untyped) -> untyped
+  def encounter_total: () -> untyped
+  def encounter_total=: (untyped) -> untyped
+  def steps: () -> untyped
+  def steps=: (untyped) -> untyped
+  def last_battle_turns: () -> untyped
+  def last_battle_turns=: (untyped) -> untyped
+  def save_count: () -> untyped
+  def save_count=: (untyped) -> untyped
+  def battle_count: () -> untyped
+  def battle_count=: (untyped) -> untyped
+  def win_count: () -> untyped
+  def win_count=: (untyped) -> untyped
+  def defeat_count: () -> untyped
+  def defeat_count=: (untyped) -> untyped
+  def escape_count: () -> untyped
+  def escape_count=: (untyped) -> untyped
+  def preview_faces: () -> untyped
+  def preview_faces=: (untyped) -> untyped
+  def preview_level: () -> untyped
+  def preview_level=: (untyped) -> untyped
+  def preview_hp: () -> untyped
+  def preview_hp=: (untyped) -> untyped
+  def teleport_targets: () -> untyped
+  def teleport_targets=: (untyped) -> untyped
+  def escape_target: () -> untyped
+  def escape_target=: (untyped) -> untyped
+  def system_bgm: () -> untyped
+  def system_bgm=: (untyped) -> untyped
+  def system_sfx: () -> untyped
+  def system_sfx=: (untyped) -> untyped
+  def screen_transitions: () -> untyped
+  def screen_transitions=: (untyped) -> untyped
+  def system_graphic: () -> untyped
+  def system_graphic=: (untyped) -> untyped
+  def font_id: () -> untyped
+  def font_id=: (untyped) -> untyped
+  def atb_mode: () -> untyped
+  def atb_mode=: (untyped) -> untyped
+  def common_event_progress: () -> untyped
+  def common_event_progress=: (untyped) -> untyped
+  def foreground_event_exec: () -> untyped
+  def foreground_event_exec=: (untyped) -> untyped
+  def common_event_exec: () -> untyped
+  def common_event_exec=: (untyped) -> untyped
+  def map_event_exec: () -> untyped
+  def map_event_exec=: (untyped) -> untyped
+  def map_event_positions: () -> untyped
+  def map_event_positions=: (untyped) -> untyped
+  def map_event_route_index: () -> untyped
+  def map_event_route_index=: (untyped) -> untyped
+  def tile_substitutions: () -> untyped
+  def tile_substitutions=: (untyped) -> untyped
+  def parallax: () -> untyped
+  def pictures: () -> untyped
+  def boarded: () -> untyped
+  def boarded=: (untyped) -> untyped
+  def erase_picture: (untyped) -> untyped
+  def map_id=: (untyped) -> untyped
+  def move_picture: (untyped, *untyped) -> untyped
+  def move_picture_fixed: (untyped, *untyped) -> untyped
+  def pictures_moving?: () -> untyped
+  def set_screen_transition: (untyped, untyped) -> untyped
+  def show_picture: (untyped, untyped) -> untyped
+  def timer_display_text: () -> untyped
+  def timer_frames: () -> untyped
+  def timer_frames=: (untyped) -> untyped
+  def timer_running: () -> untyped
+  def timer_running=: (untyped) -> untyped
+  def timer_visible: () -> untyped
+  def timer_visible=: (untyped) -> untyped
+  def to_lsd: (?untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
+  def walk_step: () -> untyped
+  def self.bgm_from_chunk: (untyped) -> untyped
+  def self.build_event_exec_state: (untyped) -> untyped
+  def self.from_lsd: (untyped, untyped) -> untyped
+  def self.ole_now: () -> untyped
+  def self.read_event_exec_frames: (untyped) -> untyped
+  def self.read_foreground_frames: (untyped) -> untyped
+  def self.restore_pictures: (untyped, untyped) -> untyped
+  def self.se_from_chunk: (untyped) -> untyped
+  def self.tile_replacement_bytes: (untyped) -> untyped
+  def self.tile_replacement_hash: (untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
