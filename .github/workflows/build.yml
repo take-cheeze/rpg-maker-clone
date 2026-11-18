@@ -1172,6 +1172,8 @@ jobs:
               # become logged empty slots, and corruption never crashes.
               ruby scripts/lcf_save_typed_check.rb
               ruby scripts/rpg2k/lsd_adversarial_check.rb
+              # Every mrblib file with a Float use has a no-Float form (mruby-rpg2k/gen_rpg2k_nofloat.rb).
+              ruby scripts/rpg2k/nofloat_wiring_check.rb
 
       # Runs the host-side checks (the CHECKS list in scripts/coverage/report.rb)
       # under CRuby's Coverage stdlib. Report-only: no floor is enforced.
