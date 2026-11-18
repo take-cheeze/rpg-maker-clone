@@ -1,3 +1,4 @@
+# rpg2k-lint:allow Dynamic/CoreReopen -- mixes RGSS helpers into every Object (to be replaced by explicit calls)
 class Object
   include RGSS
 end

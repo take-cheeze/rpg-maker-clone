@@ -36,6 +36,7 @@
 # of mruby's #sort would keep a bytecode body that the compiled closed build
 # enters through the VM on every sort, and that body's `sort!` would dispatch
 # back into the override below and wrap the block a second time.
+# rpg2k-lint:allow Dynamic/CoreReopen -- mruby Array#sort/sort! override; see the header above
 class Array
   def sort(&block)
     return dup._rgss_native_sort! if block.nil?

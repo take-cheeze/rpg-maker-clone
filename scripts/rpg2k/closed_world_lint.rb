@@ -35,7 +35,8 @@ COPS = {
   'Dynamic/GlobalVariableReassignment' => 'a global variable may be written more than once in the closed world',
   'Dynamic/Eval' => 'eval family, instance_exec/class_exec, binding, method objects',
   'Dynamic/Extend' => 'extend on an object other than self',
-  'Dynamic/RescueModifier' => '`expr rescue value` turns any StandardError into control flow'
+  'Dynamic/RescueModifier' => '`expr rescue value` turns any StandardError into control flow',
+  'Dynamic/CoreReopen' => 'a class/module body reopens a core class, adding methods to every receiver of it'
 }.freeze
 
 SEND = %i[send public_send __send__].to_set
@@ -103,6 +104,20 @@ class Linter < Prism::Visitor
     super
   end
 
+  # The core classes whose method set the closed world fixes at build time; a body that reopens one adds to that set.
+  CORE_CLASSES = %w[Array BasicObject Class Comparable Enumerable Exception FalseClass Float Hash Integer Kernel Module
+                    NilClass Numeric Object Proc Range String Struct Symbol TrueClass].freeze
+
+  def visit_class_node(node)
+    add('Dynamic/CoreReopen', node) if core_path?(node.constant_path)
+    super
+  end
+
+  def visit_module_node(node)
+    add('Dynamic/CoreReopen', node) if core_path?(node.constant_path)
+    super
+  end
+
   def visit_alias_method_node(node)
     add('Dynamic/MethodDefinition', node)
     super
@@ -119,6 +134,11 @@ class Linter < Prism::Visitor
   end
 
   private
+
+  # Top-level only: `class RPG2k::Array` names the engine's own class.
+  def core_path?(path)
+    path.is_a?(Prism::ConstantReadNode) && CORE_CLASSES.include?(path.name.to_s)
+  end
 
   # `method`/`binding` are also common local or attribute names; only a bare or
   # self call with the reflective shape counts.

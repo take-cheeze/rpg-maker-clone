@@ -1,0 +1,1 @@
+The closed-world lint (`scripts/rpg2k/closed_world_lint.rb`) now rejects a new reopening of a core class in the closed-world Ruby, so every method on a core class is fixed at build time. The three existing reopenings are allowed in place with a reason.
