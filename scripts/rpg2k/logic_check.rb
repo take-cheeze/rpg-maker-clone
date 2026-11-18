@@ -13760,7 +13760,7 @@ end
 check 'to_lsd/from_lsd preserves native hero pan offsets, targets and lock' do
   db = FakeActorDB.new({1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10)}, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  st.screen.load_h(pan_y: 96, pan_ty: 128, pan_step: 0.5, pan_locked: true)
+  st.screen.load_h(pan_y: 1536, pan_ty: 2048, pan_step: 8, pan_locked: true) # 96 px, 128 px, 0.5 px/frame
   save = st.to_lsd
   hero = save[:hero]
   eq 256, hero[:pan_current_y]

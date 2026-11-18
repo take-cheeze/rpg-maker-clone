@@ -208,15 +208,15 @@ module Game
         hero[73] = leader.charset_name
         hero[74] = leader.charset_index || 0
       end
-      # Native camera coordinates are hero-relative sixteenths of pixels.
-      # Right/down camera motion decreases them.
+      # Native camera coordinates are hero-relative sixteenths of pixels, the
+      # same unit Screen keeps its pan in. Right/down camera motion decreases them.
       px, py, tx, ty, step, locked = @screen.pan_save_data
       hero[111] = locked ? 0 : 1
-      hero[112] = 2304 - (px * 16).round if px != 0
-      hero[113] = 1792 - (py * 16).round if py != 0
-      hero[114] = 2304 - (tx * 16).round if tx != 0
-      hero[115] = 1792 - (ty * 16).round if ty != 0
-      hero[121] = (step * 16).round if step != 1
+      hero[112] = 2304 - px if px != 0
+      hero[113] = 1792 - py if py != 0
+      hero[114] = 2304 - tx if tx != 0
+      hero[115] = 1792 - ty if ty != 0
+      hero[121] = step if step != 16
       hero[124] = @encounter_total if @encounter_total != 0
       if @boarded
         hero[102] = true
@@ -1499,14 +1499,15 @@ module Game
       end
       # Older unmarked exports used only SaveScreen's pixel offsets.
       if hero.key?(111) || hero.key?(112) || hero.key?(113) || hero.key?(114) || hero.key?(115) || hero.key?(121)
-        state.screen.load_h(pan_x: (2304 - hero[:pan_current_x]) / 16.0,
-                            pan_y: (1792 - hero[:pan_current_y]) / 16.0,
-                            pan_tx: (2304 - hero[:pan_finish_x]) / 16.0,
-                            pan_ty: (1792 - hero[:pan_finish_y]) / 16.0,
-                            pan_step: hero[:pan_speed] / 16.0, pan_locked: hero[:pan_state] == 0)
+        state.screen.load_h(pan_x: 2304 - hero[:pan_current_x],
+                            pan_y: 1792 - hero[:pan_current_y],
+                            pan_tx: 2304 - hero[:pan_finish_x],
+                            pan_ty: 1792 - hero[:pan_finish_y],
+                            pan_step: hero[:pan_speed], pan_locked: hero[:pan_state] == 0)
       elsif scr
-        px = scr[:pan_x] || 0
-        py = scr[:pan_y] || 0
+        # SaveScreen's pan fields are whole pixels; Screen keeps 1/16 pixels.
+        px = (scr[:pan_x] || 0) * 16
+        py = (scr[:pan_y] || 0) * 16
         state.screen.load_h(pan_x: px, pan_y: py, pan_tx: px, pan_ty: py)
       end
       state.encounter_total = hero[:total_encounter_rate]
