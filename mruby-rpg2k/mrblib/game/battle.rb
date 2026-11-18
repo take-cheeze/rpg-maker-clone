@@ -2912,14 +2912,8 @@ module Game
     # is over in Scene::Map itself.
     public :choose_auto_battle_command
 
-# Fixed-point unit of an auto-battle rank (1000 == 1.0, per mille): a rank is a fraction of a target's HP or
-# SP, and the products below stay inside 32 bits. A bare literal on purpose; see #rank_div for the rounding.
-RANK_ONE = 1000
-
-# num / den truncated toward zero, as Float#to_i was on the fraction this replaces (Ruby's `/` floors).
-def rank_div(num, den)
-  num < 0 ? -((-num) / den) : num / den
-end
+# Auto-battle ranks are per mille (1000 == 1.0) and integer-divided with `/`. Negative ranks are never chosen,
+# so floor versus truncation there does not matter.
 
     # Ported from a reference implementation, not independently confirmed
     # against genuine RPG_RT under wine: `sk` (known by `b`, database id
@@ -2978,15 +2972,15 @@ end
       dmg = varied(dmg, LCF.field?(sk, :variance) ? (sk[:variance] || 0) : 0)
       tgt_hp = target.hp
       return 0 if tgt_hp <= 0
-      rank = rank_div([dmg, tgt_hp].min * RANK_ONE, tgt_hp)
-      rank = RANK_ONE * 3 / 2 if rank == RANK_ONE
+      rank = ([dmg, tgt_hp].min * 1000) / tgt_hp
+      rank = 1500 if rank == 1000
       src_max_sp = b.max_mp || 0
       if src_max_sp > 0
-        rank -= rank_div(auto_battle_raw_cost(sk, b) * RANK_ONE, src_max_sp * 4)
+        rank -= (auto_battle_raw_cost(sk, b) * 1000) / (src_max_sp * 4)
         rank = 0 if rank < 0
       end
       first = @enemies.find { |e| !e.out_of_play? }
-      rank = rank_div(rank * 3, 2) + RANK_ONE / 2 if first && first.equal?(target)
+      rank = (rank * 3) / 2 + 500 if first && first.equal?(target)
       rank
     end
 
@@ -3022,17 +3016,17 @@ end
         tgt_max_hp = target.max_hp || 0
         return 0 if tgt_max_hp <= 0
         max_effect = [base, tgt_max_hp - target.hp].min
-        rank = rank_div(max_effect * RANK_ONE, tgt_max_hp)
+        rank = (max_effect * 1000) / tgt_max_hp
         src_max_sp = b.max_mp || 0
         if src_max_sp > 0
-          rank -= rank_div(auto_battle_raw_cost(sk, b) * RANK_ONE, src_max_sp * 8)
+          rank -= (auto_battle_raw_cost(sk, b) * 1000) / (src_max_sp * 8)
           rank = 0 if rank < 0
         end
         rank
       else
         ids = LCF.field?(sk, :state_effects) ? sk[:state_effects] : nil
         return 0 unless ids && ids[0] && ids[0] != 0
-        (LCF.field?(sk, :power) ? (sk[:power] || 0) : 0) + RANK_ONE
+        (LCF.field?(sk, :power) ? (sk[:power] || 0) : 0) + 1000
       end
     end
 
@@ -3109,11 +3103,11 @@ end
       dmg = 75 * dmg / 100 if row_adjusted?(target, false)
       tgt_hp = target.hp
       return 0 if tgt_hp <= 0
-      rank = rank_div([dmg, tgt_hp].min * RANK_ONE, tgt_hp)
-      rank = RANK_ONE * 3 / 2 if rank == RANK_ONE
+      rank = ([dmg, tgt_hp].min * 1000) / tgt_hp
+      rank = 1500 if rank == 1000
       first = @enemies.find { |e| !e.out_of_play? }
-      rank = rank_div(rank * 3, 2) + RANK_ONE / 2 if first && first.equal?(target)
-      rank > 0 ? @rng.random(100) * 10 + rank_div(rank * 3, 2) : rank
+      rank = (rank * 3) / 2 + 500 if first && first.equal?(target)
+      rank > 0 ? @rng.random(100) * 10 + (rank * 3) / 2 : rank
     end
 
     # Ported from a reference implementation's normal-attack auto-battle
