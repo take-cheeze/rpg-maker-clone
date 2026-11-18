@@ -848,6 +848,9 @@ MRuby::Build.new do |conf|
 end
 
 if wio
+  # The wio build takes LCF::Schema from its blob (mruby-lcf/mrbgem.rake), so bc2cpp's compiled copy of schema.rb is
+  # left out (see 3rd/nfcxx's compiled_gems.rb). ||= keeps an explicit BC2CPP_SKIP_LCF_SCHEMA_RB=0.
+  ENV['BC2CPP_SKIP_LCF_SCHEMA_RB'] ||= '1'
   # Cross build for the Wio Terminal (Seeed, ATSAMD51 / Cortex-M4F). Produces a
   # libmruby.a that the PlatformIO firmware (app/wio, platformio.ini) links. The
   # host build above supplies mrbc.
