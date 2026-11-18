@@ -8338,11 +8338,11 @@ module Game
       @flash_frames = 0 # frames left in the current flash (0 = faded out)
       @flash_total = 0
       @flash_continuous = false # RPG2003 Begin/End strobe: re-arms at 0 instead of settling
-      @pan_x = 0        # current pan offset in pixels (added to the camera)
+      @pan_x = 0        # current pan offset in 1/16 px (added to the camera, see #pan_offset)
       @pan_y = 0
       @pan_tx = 0       # target pan offset the current pan/reset scrolls toward
       @pan_ty = 0
-      @pan_step = 1     # pixels moved toward the target per frame
+      @pan_step = 16    # 1/16 px moved toward the target per frame
       @pan_locked = false # when true the scene stops the camera following the hero
       @fade = 0            # screen erasure: 0 fully visible .. 255 fully black
       @fade_target = 0     # the level the current transition eases toward
@@ -8379,11 +8379,13 @@ module Game
     def flashing?; @flash_frames > 0; end
 
     # The current pan offset [x, y] in whole pixels, added to the camera by the
-    # scene. @pan_x/@pan_y themselves may sit at a sub-pixel value mid-pan (see
-    # #pan_step_for) -- rounded only here, at the point of consumption, the
-    # same way real RPG_RT's own 1/16-pixel subpixel pan position is only ever
-    # rounded to a whole pixel for display.
-    def pan_offset; [@pan_x.round, @pan_y.round]; end
+    # scene. @pan_x/@pan_y are 1/16-pixel units and are rounded (half away from
+    # zero) only here, where they are consumed.
+    def pan_offset
+      x = @pan_x
+      y = @pan_y
+      [x < 0 ? -((-x + 8) / 16) : (x + 8) / 16, y < 0 ? -((-y + 8) / 16) : (y + 8) / 16]
+    end
 
     # Native hero pan fields need raw offsets, targets and step so saving
     # retains sub-pixel motion rather than the rounded display position.
@@ -8407,7 +8409,7 @@ module Game
       @pan_y = h[:pan_y] || 0
       @pan_tx = h[:pan_tx] || 0
       @pan_ty = h[:pan_ty] || 0
-      @pan_step = h[:pan_step] || 1
+      @pan_step = h[:pan_step] || 16
       @pan_locked = h[:pan_locked] ? true : false
     end
 
@@ -8575,18 +8577,12 @@ module Game
 
     # Pan (scroll) the view `distance` tiles in `direction` at `speed`, adding
     # onto the current pan target — RPG2000's Pan Screen "pan" operation.
-    # All three arrive straight off one event command, from the single
-    # `screen.pan(cmd.param(1), cmd.param(2), cmd.param(3))` call site in
-    # Interpreter's own Pan Screen handler -- `LCF::EventCommand#param` is
-    # `@parameters[i] || 0` over a decoded integer list, so all three are
-    # Fixnum. (`Game::Screen#approach`, three methods below, deliberately
-    # carries NO fixnum hint for `cur`/`step`: `@pan_step` comes from
-    # `pan_step_for`, whose `(2 << ...) / 16.0` makes it a Float, and
-    # `@pan_x`/`@pan_y` inherit that -- hence #pan_offset's own `.round`.)
+    # All positions and steps are 1/16-pixel Integers (16 per pixel), so pan
+    # never needs a Float. Each argument is a whole Integer off the event command.
 
     def pan(direction, distance, speed)
       dx, dy = PAN_DELTA[direction] || [0, 0]
-      d = distance * Game::TILE
+      d = distance * Game::TILE * 16
       @pan_tx += dx * d
       @pan_ty += dy * d
       @pan_step = pan_step_for(speed)
@@ -8751,47 +8747,10 @@ module Game
       cur < target ? cur + step : cur - step
     end
 
-    # Pixels moved per frame for a pan speed (1..6): `(2 << speed) / 16.0`,
-    # i.e. a raw `2 << speed` step through a 1/16-pixel subpixel space
-    # (sixteen per this codebase's own real TILE = 16 px) -- 0.25, 0.5, 1, 2,
-    # 4, 8 px/frame for speed 1..6, not a plain doubling starting at a whole
-    # pixel (1, 2, 4, 8, 16, 32), which was 4x too fast at every setting.
-    # @pan_x/@pan_y (see #approach/#pan_offset) accumulate this sub-pixel-
-    # per-frame rate exactly at speeds 1/2 (0.25 and 0.5 are both exact
-    # powers of two in binary floating point, so this never drifts), landing
-    # on the same whole-pixel target #pan_offset's own rounding always
-    # resolves to once a pan finishes.
-    #
-    # **Confirmed against genuine RPG_RT.exe under wine (cycle #178,
-    # 2026-08-26)**, at speeds 1 and 3: Nepheshel's own `Map0521.lmu` event 1
-    # page 1 (trigger=3 autostart, condition flags=0) is a genuine, already-
-    # authored Pan Screen (op=2, direction=left, distance=9 tiles, **wait
-    # ON**) immediately followed by Erase Screen then a Teleport -- the one
-    # `wait==1` Pan Screen call found anywhere across every Nepheshel map
-    # (checked by dumping every map's own event-command list), so its own
-    # Erase Screen (a plain fade to black, ~35 frames/0.58s once the pan's
-    # own interpreter wait releases it) is a directly observable, real-engine
-    # marker of exactly when the pan finished. Timed with fixed-offset
-    # screenshots (0.25s resolution) from the moment Continue loaded a save
-    # standing on map 521 (no code, only Save01.lsd's own hero-position
-    # chunk edited via `gen-rpg2k-save.rb --map 521 --clear-scene`):
-    # at the genuine, unmodified speed 1 the screen was still visibly
-    # scrolling at t=11.5s and fully black by t=12.0s; at speed 3 (the map's
-    # own Pan Screen command's speed parameter edited in place from 1 to 3,
-    # nothing else touched, then restored byte-identical afterward) the same
-    # transition landed at t=4.5-5.0s instead. `(2<<3)/16.0 - (2<<1)/16.0 =
-    # 0.75` px/frame more at speed 3 than speed 1 predicts a 144px/0.25 -
-    # 144px/1.0 = 576 - 144 = 432-frame (7.2s) gap between the two runs'
-    # pan durations; the observed gap between the two runs' own black-screen
-    # landings was ~7.0s (12.0s - ~5.0s) -- matching to within the
-    # measurement's own 0.25s screenshot resolution and ruling out the
-    # rejected "plain doubling from a whole pixel" alternative by a wide
-    # margin (that table predicts only a 2.4s - 0.6s = 1.8s gap between the
-    # same two speeds, a 4x smaller difference than what genuine RPG_RT
-    # actually shows). See docs/TODO.md's cycle #178 entry for the full
-    # screenshot-by-screenshot timing table and the probe scripts.
+    # 1/16-pixel step per frame for a pan speed (1..6): `2 << speed`, i.e. 4..128
+    # (0.25..8 px/frame). A whole-pixel step would be 4x too fast.
     def pan_step_for(speed)
-      (2 << Game.clamp(speed, 1, 6)) / 16.0
+      2 << Game.clamp(speed, 1, 6)
     end
   end
 

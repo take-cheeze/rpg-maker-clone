@@ -30,6 +30,13 @@ module Game
       raw.unpack('E')[0]
     end
 
+    # A pan field (1/16-pixel units) as an Integer, read without a Float.
+    def self.ext_pan_at(io)
+      raw = io.read(8)
+      raise 'truncated extension double' if raw.nil? || raw.bytesize != 8
+      LCF.unpack_fixed_double(raw, 4)
+    end
+
     # [[tag, body], ...] parsed from a chunk-200 payload string.
     def self.ext_records(payload)
       io = StringIO.new(payload)
@@ -97,11 +104,11 @@ module Game
         when EXT_TAG_PAN
           # Old records retain pixel doubles rather than native sixteenths.
           io = StringIO.new(body)
-          px = ext_double_at(io)
-          py = ext_double_at(io)
-          tx = ext_double_at(io)
-          ty = ext_double_at(io)
-          step = ext_double_at(io)
+          px = ext_pan_at(io)
+          py = ext_pan_at(io)
+          tx = ext_pan_at(io)
+          ty = ext_pan_at(io)
+          step = ext_pan_at(io)
           locked = LCF.read_ber(io) != 0
           state.screen.load_h(pan_x: px, pan_y: py, pan_tx: tx, pan_ty: ty,
                               pan_step: step, pan_locked: locked)
