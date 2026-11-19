@@ -406,6 +406,30 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/keyword_dynamic_send_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/keyword_rest_only_entry_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/installed_name_devirt_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/block_rest_mixed_check.rb:
     tier: runtime
     capabilities:
