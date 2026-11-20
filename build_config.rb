@@ -578,13 +578,30 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
       end
       f.puts
 
+      # GEM_ARENA: as mruby's own mrb_init_mrbgems, each gem's init runs inside an arena save/restore, or what it
+      # created stays protected for the life of the process (the compiled gems' inits leave thousands of entries).
+      # The arena's capacity is given back after the last gem: it only grows (gc_arena_keep).
+      f.puts 'static void rpg_maker_gem_arena_trim(mrb_state *mrb) {'
+      f.puts '#ifndef MRB_GC_FIXED_ARENA'
+      f.puts '  if (mrb->gc.arena_capa > MRB_GC_ARENA_SIZE && mrb->gc.arena_idx <= MRB_GC_ARENA_SIZE) {'
+      f.puts '    mrb->gc.arena = (struct RBasic**)mrb_realloc(mrb, mrb->gc.arena, sizeof(struct RBasic*) * MRB_GC_ARENA_SIZE);'
+      f.puts '    mrb->gc.arena_capa = MRB_GC_ARENA_SIZE;'
+      f.puts '  }'
+      f.puts '#endif'
+      f.puts '}'
+      f.puts
       emit_call = lambda do |g|
-        f.puts "  GENERATED_TMP_mrb_#{g.funcname}_gem_init(mrb);"
+        f.puts '  {'
+        f.puts '    int ai = mrb_gc_arena_save(mrb);'
+        f.puts "    GENERATED_TMP_mrb_#{g.funcname}_gem_init(mrb);"
+        f.puts '    mrb_gc_arena_restore(mrb, ai);'
+        f.puts '  }'
         f.puts '  if (mrb->exc) mrb_exc_raise(mrb, mrb_obj_value(mrb->exc));'
       end
 
       f.puts 'void rpg_maker_init_shared_gems(mrb_state *mrb) {'
       shared.each(&emit_call)
+      f.puts '  rpg_maker_gem_arena_trim(mrb);'
       f.puts '}'
 
       # single_format_only's maker_gem_names is just ['mruby-rpg2k'], so
@@ -600,6 +617,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
       maker_private['mruby-rpg2k'].each(&emit_call)
       emit_call.call(rpg2k)
       after_maker['mruby-rpg2k'].each(&emit_call)
+      f.puts '  rpg_maker_gem_arena_trim(mrb);'
       f.puts '}'
       if rpgxp
         f.puts
@@ -607,6 +625,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-rpgxp'].each(&emit_call)
         emit_call.call(rpgxp)
         after_maker['mruby-rpgxp'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
       if rpgvx
@@ -616,6 +635,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-rpgvx'].each(&emit_call)
         emit_call.call(rpgvx)
         after_maker['mruby-rpgvx'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
       if wolf
@@ -624,6 +644,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-wolf'].each(&emit_call)
         emit_call.call(wolf)
         after_maker['mruby-wolf'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
       if mvjs
@@ -632,6 +653,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-mvjs'].each(&emit_call)
         emit_call.call(mvjs)
         after_maker['mruby-mvjs'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
     end
