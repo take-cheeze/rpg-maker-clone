@@ -21,6 +21,8 @@ WIO_UNIALGO_LIB_DIR=<uni-algo lib dir> \
 ```
 
 `MRUBY_TARGET=wio` without `RPGMAKER_BC2CPP=1` fails in `build_config.rb`.
+The compiled engine runs from the external QSPI flash, so the board also needs the second image the link writes
+(`firmware_qspi.bin`). See `docs/wio-qspi.md` for how to program it.
 `env:wio` is `app/wio/src/wio_rgss_boot_main.cxx`, which boots the compiled
 engine.
 
