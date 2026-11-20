@@ -390,6 +390,30 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/installed_name_devirt_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/keyword_dynamic_send_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/keyword_rest_only_entry_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/hash_build_ops_check.rb:
     tier: runtime
     capabilities:
@@ -399,6 +423,30 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/keyword_receiver_target_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/struct_class_decls_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/module_definer_includers_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/method_missing_arms_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -1018,6 +1066,10 @@ checks:
     capabilities:
     - closed_build
   scripts/bc2cpp/vm_unreachable_check.rb:
+    tier: fast
+    capabilities:
+    - closed_build
+  scripts/bc2cpp/cross_unit_row_check.rb:
     tier: fast
     capabilities:
     - closed_build

@@ -1,0 +1,1 @@
+The closed build proves that no Fiber is ever created and drops the Fiber-resumable copies of the core iterators, about 310 KB of code and 58 KB of RAM on the host closed build. Other builds are unchanged.
