@@ -1,0 +1,1 @@
+- bc2cpp: `LCF::File#[]` is declared to take a Symbol or an Integer. Loading a save indexes the file by Integer chunk id, which the now-checked Symbol-only declaration rejected.
