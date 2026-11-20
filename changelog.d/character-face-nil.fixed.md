@@ -1,0 +1,1 @@
+- bc2cpp: `Game::Character#face` is declared to return `Integer?`; it returns nil when facing is locked, which the now-checked declaration rejected on 19 maps.
