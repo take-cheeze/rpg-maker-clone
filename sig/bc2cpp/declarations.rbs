@@ -12755,8 +12755,8 @@ class LCF::SaveTyped::Save
   %a{bc2cpp:hint} def save_system=: (untyped) -> LCF::SaveTyped::System?
   %a{bc2cpp:hint} def save_screen: () -> LCF::SaveTyped::Screen?
   %a{bc2cpp:hint} def save_screen=: (untyped) -> LCF::SaveTyped::Screen?
-  %a{bc2cpp:hint} def save_pictures: () -> Array?
-  %a{bc2cpp:hint} def save_pictures=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_pictures: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_pictures=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_hero: () -> LCF::SaveTyped::PartyLocation?
   %a{bc2cpp:hint} def save_hero=: (untyped) -> LCF::SaveTyped::PartyLocation?
   %a{bc2cpp:hint} def save_boat: () -> LCF::SaveTyped::Movable?
@@ -12765,18 +12765,18 @@ class LCF::SaveTyped::Save
   %a{bc2cpp:hint} def save_ship=: (untyped) -> LCF::SaveTyped::Movable?
   %a{bc2cpp:hint} def save_airship: () -> LCF::SaveTyped::Movable?
   %a{bc2cpp:hint} def save_airship=: (untyped) -> LCF::SaveTyped::Movable?
-  %a{bc2cpp:hint} def save_actors: () -> Array?
-  %a{bc2cpp:hint} def save_actors=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_actors: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_actors=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_inventory: () -> LCF::SaveTyped::Inventory?
   %a{bc2cpp:hint} def save_inventory=: (untyped) -> LCF::SaveTyped::Inventory?
-  %a{bc2cpp:hint} def save_targets: () -> Array?
-  %a{bc2cpp:hint} def save_targets=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_targets: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_targets=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_map_events: () -> LCF::SaveTyped::MapEvent?
   %a{bc2cpp:hint} def save_map_events=: (untyped) -> LCF::SaveTyped::MapEvent?
   %a{bc2cpp:hint} def save_foreground_event: () -> LCF::SaveTyped::EventExecState?
   %a{bc2cpp:hint} def save_foreground_event=: (untyped) -> LCF::SaveTyped::EventExecState?
-  %a{bc2cpp:hint} def save_common_events: () -> Array?
-  %a{bc2cpp:hint} def save_common_events=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_common_events: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_common_events=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_lsd_ext: () -> Array?
   %a{bc2cpp:hint} def save_lsd_ext=: (untyped) -> Array?
 end
@@ -13187,8 +13187,8 @@ class LCF::SaveTyped::MapEvent
   %a{bc2cpp:hint} def save_scroll_y=: (untyped) -> Integer?
   %a{bc2cpp:hint} def save_encounter_steps: () -> Integer?
   %a{bc2cpp:hint} def save_encounter_steps=: (untyped) -> Integer?
-  %a{bc2cpp:hint} def save_events: () -> Array?
-  %a{bc2cpp:hint} def save_events=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_events: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_events=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_chip_replacement_lower: () -> Array?
   %a{bc2cpp:hint} def save_chip_replacement_lower=: (untyped) -> Array?
   %a{bc2cpp:hint} def save_chip_replacement_upper: () -> Array?
@@ -13202,8 +13202,8 @@ class LCF::SaveTyped::MapEvent
 end
 
 class LCF::SaveTyped::EventExecState
-  %a{bc2cpp:hint} def save_stack: () -> Array?
-  %a{bc2cpp:hint} def save_stack=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_stack: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_stack=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_keyinput_variable: () -> Integer?
   %a{bc2cpp:hint} def save_keyinput_variable=: (untyped) -> Integer?
   %a{bc2cpp:hint} def save_keyinput_decision: () -> Integer?
