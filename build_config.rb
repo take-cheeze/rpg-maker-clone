@@ -578,13 +578,30 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
       end
       f.puts
 
+      # GEM_ARENA: as mruby's own mrb_init_mrbgems, each gem's init runs inside an arena save/restore, or what it
+      # created stays protected for the life of the process (the compiled gems' inits leave thousands of entries).
+      # The arena's capacity is given back after the last gem: it only grows (gc_arena_keep).
+      f.puts 'static void rpg_maker_gem_arena_trim(mrb_state *mrb) {'
+      f.puts '#ifndef MRB_GC_FIXED_ARENA'
+      f.puts '  if (mrb->gc.arena_capa > MRB_GC_ARENA_SIZE && mrb->gc.arena_idx <= MRB_GC_ARENA_SIZE) {'
+      f.puts '    mrb->gc.arena = (struct RBasic**)mrb_realloc(mrb, mrb->gc.arena, sizeof(struct RBasic*) * MRB_GC_ARENA_SIZE);'
+      f.puts '    mrb->gc.arena_capa = MRB_GC_ARENA_SIZE;'
+      f.puts '  }'
+      f.puts '#endif'
+      f.puts '}'
+      f.puts
       emit_call = lambda do |g|
-        f.puts "  GENERATED_TMP_mrb_#{g.funcname}_gem_init(mrb);"
+        f.puts '  {'
+        f.puts '    int ai = mrb_gc_arena_save(mrb);'
+        f.puts "    GENERATED_TMP_mrb_#{g.funcname}_gem_init(mrb);"
+        f.puts '    mrb_gc_arena_restore(mrb, ai);'
+        f.puts '  }'
         f.puts '  if (mrb->exc) mrb_exc_raise(mrb, mrb_obj_value(mrb->exc));'
       end
 
       f.puts 'void rpg_maker_init_shared_gems(mrb_state *mrb) {'
       shared.each(&emit_call)
+      f.puts '  rpg_maker_gem_arena_trim(mrb);'
       f.puts '}'
 
       # single_format_only's maker_gem_names is just ['mruby-rpg2k'], so
@@ -600,6 +617,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
       maker_private['mruby-rpg2k'].each(&emit_call)
       emit_call.call(rpg2k)
       after_maker['mruby-rpg2k'].each(&emit_call)
+      f.puts '  rpg_maker_gem_arena_trim(mrb);'
       f.puts '}'
       if rpgxp
         f.puts
@@ -607,6 +625,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-rpgxp'].each(&emit_call)
         emit_call.call(rpgxp)
         after_maker['mruby-rpgxp'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
       if rpgvx
@@ -616,6 +635,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-rpgvx'].each(&emit_call)
         emit_call.call(rpgvx)
         after_maker['mruby-rpgvx'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
       if wolf
@@ -624,6 +644,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-wolf'].each(&emit_call)
         emit_call.call(wolf)
         after_maker['mruby-wolf'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
       if mvjs
@@ -632,6 +653,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-mvjs'].each(&emit_call)
         emit_call.call(mvjs)
         after_maker['mruby-mvjs'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
     end
@@ -665,22 +687,28 @@ abort 'MRUBY_TARGET=wio requires RPGMAKER_BC2CPP=1 (the Wio build is closed-worl
 # started without them stops here, and so does one whose lists were computed from other sources. 'none' (the
 # presym phase of closed_build.bash, which compiles no core C) leaves nothing out.
 #
-# The list is proven for the closed world: the RPG2000/2003 engine's mrblib, every core and external gem's mrblib,
-# every native source under src/, app/, include/, the engine gems and 3rd/mruby, and the closed build's generated
-# code. A build may take it only when everything it can run is inside that world, so:
+# The lists are proven for one world (`world`, the file's own; tools/bc2cpp/lists_world.rb) and a build takes only
+# lists of the world it names. The closed world: the RPG2000/2003 engine's mrblib, every core and external gem's
+# mrblib, every native source under src/, app/, include/, the engine gems and 3rd/mruby, and the closed build's
+# generated code. A build may take it only when everything it can run is inside that world, so:
 #   - closed, and the interpreted psp and maix builds: single format (no game Ruby, no other maker gem), the same
 #     engine mrblib less some files (psp's debug tools), and native sources the proof already reads. An interpreted
 #     build (interpreted: true) takes core_excluded only: engine_rom and core_rows count an engine send the closed
 #     build compiles to a direct call as no lookup, but the interpreter looks it up by name (RGSS.window_title=);
 #   - not psp/maix with RPGMAKER_BC2CPP=1: their generated code is not the closed build's, and a by-name fallback it
 #     emits may name a core method the closed generation never did;
-#   - not wio (nor m5stack, which links the wio libmruby): its mrblib is rewritten (wio_strip_*) and swaps in a
-#     generated schema_blob.rb, neither of which the proof reads;
+#   - not wio: it takes lists of its own world (`BC2CPP_LISTS_WORLD=wio scripts/bc2cpp/static_dispatch_lists.bash`),
+#     proven over its gem set, app/wio's HAL and Math gems and env:wio's wio_rgss_boot_main.cxx. Being VM-free it
+#     loads no mrblib (bc2cpp_drop_mrblib), so the wio_strip_* copies and the schema blob never run;
 #   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
-def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false)
+def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false, world: 'closed')
   require File.join(BC2CPP_TREE, 'tools/bc2cpp/core_native_candidates')
   require File.join(BC2CPP_TREE, 'tools/bc2cpp/static_dispatch_lists')
   lists = StaticDispatchLists.current(required: true)
+  unless lists.digest == 'none' || lists.world == world
+    raise "#{conf.name}: #{StaticDispatchLists::PATH_ENV} holds lists proven for the #{lists.world} world, not #{world}; " \
+          "run BC2CPP_LISTS_WORLD=#{world} scripts/bc2cpp/static_dispatch_lists.bash"
+  end
   # verify: false for the device builds, whose Ruby (the apt or Alpine one) may lack the Prism the digest needs. They
   # take the file CI's `bc2cpp-lists` job computed from the same commit (docs/bc2cpp-unregistered-methods.md).
   StaticDispatchLists.verify_current!(lists, __dir__) if verify
@@ -1158,9 +1186,9 @@ if wio
     conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     rpg_maker_gems(conf)
-    # Core method-table omission for wio (the closed-world lists, computed for this tree; wio's rewritten mrblib only
-    # removes code, so every name the lists keep stays kept). Under bc2cpp only.
-    bc2cpp_core_mt_exclude(conf) if ENV['RPGMAKER_BC2CPP']
+    # Core method-table omission for wio, from lists proven for the wio world (bc2cpp_core_mt_exclude). Under bc2cpp
+    # only.
+    bc2cpp_core_mt_exclude(conf, world: 'wio') if ENV['RPGMAKER_BC2CPP']
     # VM-free (bc2cpp_vm_free?), as the closed stanza: mruby-enumerator, mruby-string-ext, mruby-symbol-ext and
     # mruby-compar-ext arrive only as dependencies, which mruby resolves after this block, so they are declared here for
     # the mrblib drop to reach them (rpg_maker_gems declares the last two for closed only, in a form compiled_gems.rb reads).

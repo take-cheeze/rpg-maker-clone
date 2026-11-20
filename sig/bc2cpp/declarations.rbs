@@ -18,6 +18,26 @@
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # ---- base stubs (scripts/bc2cpp/base_rbs*.rb, untyped shapes)
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -1048,165 +1068,6 @@ end
 module Game::Backdrop
   def self.int_field: (untyped, untyped) -> untyped
   def self.name_for: (untyped, untyped, ?untyped) -> untyped
-end
-# bc2cpp-native: base_rpg2k
-class Game::Battle
-  def allies: () -> untyped
-  def enemies: () -> untyped
-  def rounds: () -> untyped
-  def result: () -> untyped
-  def log: () -> untyped
-  def rng: () -> untyped
-  def escape_chance: () -> untyped
-  def battle_type: () -> untyped
-  def battle_type=: (untyped) -> untyped
-  def above_attr_limit?: (untyped) -> untyped
-  def acting_battler: () -> untyped
-  def actor_command: (untyped, ?untyped) -> untyped
-  def actor_turn: (untyped, ?untyped) -> untyped
-  def adjust_stat: (untyped, untyped) -> untyped
-  def advance_gauges: (?untyped) -> untyped
-  def alive?: (untyped) -> untyped
-  def all_combatants: () -> untyped
-  def ally?: (untyped) -> untyped
-  def ally_by_actor_id: (untyped) -> untyped
-  def apply_action_switches: (untyped) -> untyped
-  def apply_attr_multiplier: (untyped, untyped, untyped) -> untyped
-  def apply_attr_shift: (untyped, untyped) -> untyped
-  def apply_command: (untyped, ?untyped) -> untyped
-  def apply_command_all: (untyped, untyped, ?untyped) -> untyped
-  def apply_knockout_reset: (untyped) -> untyped
-  def apply_skill_hit: (untyped, untyped, untyped, untyped, untyped) -> untyped
-  def apply_to_party: () -> untyped
-  def apply_turn_states: (untyped) -> untyped
-  def attack_target: (untyped) -> untyped
-  def attempt_escape: (?untyped) -> untyped
-  def attr_rate: (untyped, untyped) -> untyped
-  def attribute_physical?: (untyped) -> untyped
-  def auto_battle_attack_rank: (untyped) -> untyped
-  def auto_battle_attack_target_rank: (untyped, untyped) -> untyped
-  def auto_battle_best_target: (untyped) -> untyped
-  def auto_battle_damage_rank: (untyped, untyped, untyped) -> untyped
-  def auto_battle_heal_rank: (untyped, untyped, untyped) -> untyped
-  def auto_battle_raw_cost: (untyped, untyped) -> untyped
-  def auto_battle_skill_rank: (untyped, untyped, untyped) -> untyped
-  def avg_agi: (untyped) -> untyped
-  def battle_command_type: (untyped, untyped) -> untyped
-  def battler_restriction: (untyped) -> untyped
-  def begin_gauge_turn: (untyped) -> untyped
-  def begin_round: () -> untyped
-  def can_leave_front_row?: (untyped) -> untyped
-  def choose_auto_battle_command: (untyped) -> untyped
-  def choose_enemy_action: (untyped) -> untyped
-  def combatant_permanent_states: (untyped) -> untyped
-  def combo_hits: (untyped, untyped) -> untyped
-  def command_attack: (untyped, untyped) -> untyped
-  def command_defend: (untyped) -> untyped
-  def command_item: (untyped, untyped, item_id: untyped, name: untyped, ?hp: untyped, ?mp: untyped, ?cured: untyped, ?switch_id: untyped) -> untyped
-  def command_item_all: (untyped, untyped, item_id: untyped, name: untyped, ?cured: untyped) -> untyped
-  def command_restricted?: (untyped) -> untyped
-  def command_skill: (untyped, untyped, name: untyped, cost: untyped, ?hp: untyped, ?mp: untyped, ?inflict: untyped, ?chance: untyped, ?variance: untyped, ?attributes: untyped, ?skill_id: untyped, ?absorb: untyped, ?attr_shift: untyped, ?attr_ids: untyped, ?stat_mod_keys: untyped, ?stat_effect: untyped, ?cured: untyped, ?attack: untyped, ?physical_rate: untyped, ?item_id: untyped, ?switch_id: untyped) -> untyped
-  def command_skill_all: (untyped, untyped, name: untyped, cost: untyped, ?inflict: untyped, ?chance: untyped, ?variance: untyped, ?attributes: untyped, ?skill_id: untyped, ?absorb: untyped, ?attr_shift: untyped, ?attr_ids: untyped, ?stat_mod_keys: untyped, ?stat_effect: untyped, ?cured: untyped, ?attack: untyped, ?physical_rate: untyped, ?item_id: untyped) -> untyped
-  def command_skip: (untyped) -> untyped
-  def command_targets_dead_ok?: (untyped) -> untyped
-  def compute_escape_chance: () -> untyped
-  def critical?: (untyped) -> untyped
-  def cure_state: (untyped, untyped) -> untyped
-  def damage_cap: () -> untyped
-  def deal_attack: (untyped, untyped, ?untyped, ?charged: untyped) -> untyped
-  def deal_attack_with_current_weapon: (untyped, untyped, ?charged: untyped) -> untyped
-  def do_nothing_restricted?: (untyped) -> untyped
-  def effective_spi: (untyped) -> untyped
-  def end_round: () -> untyped
-  def enemy: (untyped) -> untyped
-  def enemy_action_valid?: (untyped, untyped) -> untyped
-  def enemy_active?: (untyped) -> untyped
-  def enemy_autodestruct: (untyped) -> untyped
-  def enemy_basic_action: (untyped, untyped, untyped) -> untyped
-  def enemy_fallback_attack: (untyped, untyped) -> untyped
-  def enemy_skill_action: (untyped, untyped, untyped) -> untyped
-  def enemy_skill_ready?: (untyped, untyped) -> untyped
-  def enemy_skill_targets: (untyped, untyped) -> untyped
-  def enemy_transform_action: (untyped, untyped, untyped) -> untyped
-  def enemy_turn: (untyped, ?untyped) -> untyped
-  def escaped?: () -> untyped
-  def fatigue: () -> untyped
-  def finished?: () -> untyped
-  def first_strike?: () -> untyped
-  def flee_all_enemies: () -> untyped
-  def flee_enemy: (untyped) -> untyped
-  def force_flee?: () -> untyped
-  def force_flee_party: () -> untyped
-  def hit_modifier: (untyped) -> untyped
-  def hits?: (untyped, untyped) -> untyped
-  def incapacitated?: (untyped) -> untyped
-  def inflict_state: (untyped, untyped) -> untyped
-  def pay_weapon_sp_cost: (untyped) -> untyped
-  def pending_empty?: () -> untyped
-  def perform_enemy_action: (untyped, untyped) -> untyped
-  def pop_ready: () -> untyped
-  def preemptive_boost?: (untyped) -> untyped
-  def queue_auto_battle_attack: (untyped) -> untyped
-  def queue_auto_battle_group_skill: (untyped, untyped, untyped, untyped) -> untyped
-  def queue_auto_battle_skill: (untyped, untyped, untyped) -> untyped
-  def queue_single_auto_battle_skill: (untyped, untyped, untyped, untyped) -> untyped
-  def random_living: (untyped) -> untyped
-  def ready_combatants: () -> untyped
-  def record_action: (untyped) -> untyped
-  def recover_cap: () -> untyped
-  def recovers_from_state?: (untyped, untyped, untyped) -> untyped
-  def refill_queue: () -> untyped
-  def reset_gauge: (untyped) -> untyped
-  def restricted_target: (untyped, untyped) -> untyped
-  def roll_inflict: (untyped, untyped) -> untyped
-  def roll_weapon_states: (untyped, untyped) -> untyped
-  def row_adjusted?: (untyped, untyped) -> untyped
-  def rpg2003?: () -> untyped
-  def run: () -> untyped
-  def run_round: () -> untyped
-  def shake_off_states: (untyped, untyped) -> untyped
-  def side_of: (untyped) -> untyped
-  def skill_command_hash: (untyped, untyped, untyped) -> untyped
-  def skill_effect_hits?: (untyped) -> untyped
-  def skill_name_of: (untyped) -> untyped
-  def skill_sealed?: (untyped, untyped) -> untyped
-  def slip_stat: (untyped, untyped, untyped, untyped, untyped) -> untyped
-  def stat_mod_key?: (untyped) -> untyped
-  def stat_mode: (untyped, untyped) -> untyped
-  def state_def: (untyped) -> untyped
-  def state_field: (untyped, untyped) -> untyped
-  def state_flag: (untyped, untyped) -> untyped
-  def state_hit_ratio: (untyped) -> untyped
-  def state_rate: (untyped, untyped) -> untyped
-  def state_susceptibility: (untyped, untyped) -> untyped
-  def step: () -> untyped
-  def step_action: () -> untyped
-  def strike: (untyped) -> untyped
-  def surviving_states: (untyped) -> untyped
-  def swing: (untyped, untyped, ?untyped) -> untyped
-  def sync_allies_from_party: () -> untyped
-  def target_enemy_index: (untyped) -> untyped
-  def terminate: () -> untyped
-  def terminated?: () -> untyped
-  def to_hit: (untyped, untyped) -> untyped
-  def toggle_row: (untyped) -> untyped
-  def turn: () -> untyped
-  def turn_order: () -> untyped
-  def turn_state_message: (untyped, untyped) -> untyped
-  def update_ally_ready_order: () -> untyped
-  def varied: (untyped, untyped) -> untyped
-  def within_percent?: (untyped, untyped, untyped) -> untyped
-  def self.actor_states: (untyped) -> untyped
-  def self.atk_attrs_of: (untyped) -> untyped
-  def self.atk_states_of: (untyped) -> untyped
-  def self.attack_damage: (untyped, untyped) -> untyped
-  def self.attr_ranks_of: (untyped) -> untyped
-  def self.crit_chance_of: (untyped) -> untyped
-  def self.flag_of: (untyped, untyped) -> untyped
-  def self.hit_rate_of: (untyped) -> untyped
-  def self.prevents_crit_of: (untyped) -> untyped
-  def self.state_ranks_of: (untyped) -> untyped
-  def self.strike_count_of: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 class Game::Battle::Combatant
@@ -6327,6 +6188,152 @@ class Game::State
   def self.tile_replacement_hash: (untyped) -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rpg
+class Game::Battle
+  def allies: () -> untyped
+  def enemies: () -> untyped
+  def rounds: () -> untyped
+  def result: () -> untyped
+  def log: () -> untyped
+  def rng: () -> untyped
+  def escape_chance: () -> untyped
+  def battle_type: () -> untyped
+  def battle_type=: (untyped) -> untyped
+  def above_attr_limit?: (untyped) -> untyped
+  def acting_battler: () -> untyped
+  def actor_command: (untyped, ?untyped) -> untyped
+  def actor_turn: (untyped, ?untyped) -> untyped
+  def adjust_stat: (untyped, untyped) -> untyped
+  def advance_gauges: (?untyped) -> untyped
+  def alive?: (untyped) -> untyped
+  def all_combatants: () -> untyped
+  def ally?: (untyped) -> untyped
+  def ally_by_actor_id: (untyped) -> untyped
+  def apply_action_switches: (untyped) -> untyped
+  def apply_attr_multiplier: (untyped, untyped, untyped) -> untyped
+  def apply_attr_shift: (untyped, untyped) -> untyped
+  def apply_command: (untyped, ?untyped) -> untyped
+  def apply_command_all: (untyped, untyped, ?untyped) -> untyped
+  def apply_knockout_reset: (untyped) -> untyped
+  def apply_to_party: () -> untyped
+  def apply_turn_states: (untyped) -> untyped
+  def attempt_escape: (?untyped) -> untyped
+  def attr_rate: (untyped, untyped) -> untyped
+  def attribute_physical?: (untyped) -> untyped
+  def auto_battle_attack_rank: (untyped) -> untyped
+  def auto_battle_attack_target_rank: (untyped, untyped) -> untyped
+  def auto_battle_best_target: (untyped) -> untyped
+  def auto_battle_damage_rank: (untyped, untyped, untyped) -> untyped
+  def auto_battle_heal_rank: (untyped, untyped, untyped) -> untyped
+  def auto_battle_raw_cost: (untyped, untyped) -> untyped
+  def avg_agi: (untyped) -> untyped
+  def battler_restriction: (untyped) -> untyped
+  def begin_gauge_turn: (untyped) -> untyped
+  def begin_round: () -> untyped
+  def can_leave_front_row?: (untyped) -> untyped
+  def combatant_permanent_states: (untyped) -> untyped
+  def command_attack: (untyped, untyped) -> untyped
+  def command_defend: (untyped) -> untyped
+  def command_item: (untyped, untyped, item_id: untyped, name: untyped, ?hp: untyped, ?mp: untyped, ?cured: untyped, ?switch_id: untyped) -> untyped
+  def command_item_all: (untyped, untyped, item_id: untyped, name: untyped, ?cured: untyped) -> untyped
+  def command_restricted?: (untyped) -> untyped
+  def command_skill: (untyped, untyped, name: untyped, cost: untyped, ?hp: untyped, ?mp: untyped, ?inflict: untyped, ?chance: untyped, ?variance: untyped, ?attributes: untyped, ?skill_id: untyped, ?absorb: untyped, ?attr_shift: untyped, ?attr_ids: untyped, ?stat_mod_keys: untyped, ?stat_effect: untyped, ?cured: untyped, ?attack: untyped, ?physical_rate: untyped, ?item_id: untyped, ?switch_id: untyped) -> untyped
+  def command_skill_all: (untyped, untyped, name: untyped, cost: untyped, ?inflict: untyped, ?chance: untyped, ?variance: untyped, ?attributes: untyped, ?skill_id: untyped, ?absorb: untyped, ?attr_shift: untyped, ?attr_ids: untyped, ?stat_mod_keys: untyped, ?stat_effect: untyped, ?cured: untyped, ?attack: untyped, ?physical_rate: untyped, ?item_id: untyped) -> untyped
+  def command_skip: (untyped) -> untyped
+  def command_targets_dead_ok?: (untyped) -> untyped
+  def compute_escape_chance: () -> untyped
+  def critical?: (untyped) -> untyped
+  def cure_state: (untyped, untyped) -> untyped
+  def damage_cap: () -> untyped
+  def deal_attack: (untyped, untyped, ?untyped, ?charged: untyped) -> untyped
+  def deal_attack_with_current_weapon: (untyped, untyped, ?charged: untyped) -> untyped
+  def do_nothing_restricted?: (untyped) -> untyped
+  def effective_spi: (untyped) -> untyped
+  def end_round: () -> untyped
+  def enemy: (untyped) -> untyped
+  def enemy_action_valid?: (untyped, untyped) -> untyped
+  def enemy_active?: (untyped) -> untyped
+  def enemy_skill_ready?: (untyped, untyped) -> untyped
+  def enemy_skill_targets: (untyped, untyped) -> untyped
+  def enemy_turn: (untyped, ?untyped) -> untyped
+  def escaped?: () -> untyped
+  def fatigue: () -> untyped
+  def finished?: () -> untyped
+  def first_strike?: () -> untyped
+  def flee_all_enemies: () -> untyped
+  def flee_enemy: (untyped) -> untyped
+  def force_flee?: () -> untyped
+  def force_flee_party: () -> untyped
+  def hit_modifier: (untyped) -> untyped
+  def hits?: (untyped, untyped) -> untyped
+  def incapacitated?: (untyped) -> untyped
+  def inflict_state: (untyped, untyped) -> untyped
+  def pending_empty?: () -> untyped
+  def pop_ready: () -> untyped
+  def preemptive_boost?: (untyped) -> untyped
+  def queue_auto_battle_attack: (untyped) -> untyped
+  def queue_auto_battle_group_skill: (untyped, untyped, untyped, untyped) -> untyped
+  def queue_auto_battle_skill: (untyped, untyped, untyped) -> untyped
+  def queue_single_auto_battle_skill: (untyped, untyped, untyped, untyped) -> untyped
+  def random_living: (untyped) -> untyped
+  def ready_combatants: () -> untyped
+  def record_action: (untyped) -> untyped
+  def recover_cap: () -> untyped
+  def recovers_from_state?: (untyped, untyped, untyped) -> untyped
+  def refill_queue: () -> untyped
+  def reset_gauge: (untyped) -> untyped
+  def restricted_target: (untyped, untyped) -> untyped
+  def roll_inflict: (untyped, untyped) -> untyped
+  def roll_weapon_states: (untyped, untyped) -> untyped
+  def row_adjusted?: (untyped, untyped) -> untyped
+  def rpg2003?: () -> untyped
+  def run: () -> untyped
+  def run_round: () -> untyped
+  def shake_off_states: (untyped, untyped) -> untyped
+  def side_of: (untyped) -> untyped
+  def skill_command_hash: (untyped, untyped, untyped) -> untyped
+  def skill_effect_hits?: (untyped) -> untyped
+  def skill_name_of: (untyped) -> untyped
+  def skill_sealed?: (untyped, untyped) -> untyped
+  def slip_stat: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def stat_mod_key?: (untyped) -> untyped
+  def stat_mode: (untyped, untyped) -> untyped
+  def state_def: (untyped) -> untyped
+  def state_field: (untyped, untyped) -> untyped
+  def state_flag: (untyped, untyped) -> untyped
+  def state_hit_ratio: (untyped) -> untyped
+  def state_rate: (untyped, untyped) -> untyped
+  def state_susceptibility: (untyped, untyped) -> untyped
+  def step: () -> untyped
+  def step_action: () -> untyped
+  def surviving_states: (untyped) -> untyped
+  def swing: (untyped, untyped, ?untyped) -> untyped
+  def sync_allies_from_party: () -> untyped
+  def target_enemy_index: (untyped) -> untyped
+  def terminate: () -> untyped
+  def terminated?: () -> untyped
+  def to_hit: (untyped, untyped) -> untyped
+  def toggle_row: (untyped) -> untyped
+  def turn: () -> untyped
+  def turn_order: () -> untyped
+  def turn_state_message: (untyped, untyped) -> untyped
+  def update_ally_ready_order: () -> untyped
+  def varied: (untyped, untyped) -> untyped
+  def within_percent?: (untyped, untyped, untyped) -> untyped
+  def self.actor_states: (untyped) -> untyped
+  def self.atk_attrs_of: (untyped) -> untyped
+  def self.atk_states_of: (untyped) -> untyped
+  def self.attack_damage: (untyped, untyped) -> untyped
+  def self.attr_ranks_of: (untyped) -> untyped
+  def self.crit_chance_of: (untyped) -> untyped
+  def self.flag_of: (untyped, untyped) -> untyped
+  def self.hit_rate_of: (untyped) -> untyped
+  def self.prevents_crit_of: (untyped) -> untyped
+  def self.state_ranks_of: (untyped) -> untyped
+  def self.strike_count_of: (untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -6495,6 +6502,12 @@ module Game
     # The one writer is `@lines = lines || []` in #initialize; both constructor calls (Scene::Map#open_message
     # and #install_choice_lines) pass `plain`, a `map { ... .join }` result, so every element is a String.
     @lines: Array[String]
+    # The one writer each is #initialize: `(pauses || []).sort { }`, `(speeds || []).sort { }`, `instants || []`.
+    # Scene::Map#open_message passes Arrays it fills with `PauseMarker.new` (its own and #message_page_layout's),
+    # `SpeedMarker.new` and `[offset + a, offset + b]`; #install_choice_lines passes #message_page_layout's, `[]`, `[]`.
+    @pauses: Array[Game::Message::PauseMarker]
+    @speeds: Array[Game::Message::SpeedMarker]
+    @instants: Array[Array[untyped]]
   end
   class Actor
     def equipped_weapons: () -> Array
@@ -6771,6 +6784,10 @@ module RPG2k
   # as an empty slot.
   def load_save_state: (?untyped slot) -> Game::State?
   module Scene
+    class Map
+      # `[]`, or a `map { }` of the row's enemy_groups (LCF::Array2D includes Enumerable): an Array either way.
+      def troop_ids: (untyped row) -> Array
+    end
     # POLY: both definitions are `@mode == :target ? SCREEN_W - TARGET_W : SCREEN_W`, so both are declared; the
     # MONO-only FIXNUM_RETURN_PROOF cannot name a POLY result.
     class SkillMenu
@@ -6955,7 +6972,7 @@ class RPG2k::Scene::Battle
   @monster_cache: (nil | RPG2k::Scene::Map::LRUBitmapCache)
   @system2_cache: (nil | RPG2k::Scene::Map::LRUBitmapCache)
   def cached_bitmap: ((nil | RPG2k::Scene::Map::LRUBitmapCache), untyped) -> untyped
-  def initialize: (RPG2k::Scene::Map, Hash, Game::Interpreter) -> untyped
+  def initialize: (RPG2k::Scene::Map, Game::Interpreter::BattleRequest, Game::Interpreter) -> untyped
   def battle_list_window: (untyped, Integer, untyped, untyped, untyped, ?column_max: untyped, ?idxs: untyped, ?desc: untyped, ?scroll_key: untyped) -> untyped
   def tick_battle_list_arrows: () -> untyped
   def update: () -> untyped
@@ -7915,13 +7932,17 @@ module RPG2k
       # is optional; `@ui.update({...})` in #start, the only writer of :battle (Game::Battle.new), :troop
       # (`troop = Game::Troop.new(...)`), :events (Game::Interpreter.new), :allies/:foes (block `map`s) and
       # :pages_run (`{}`, also reset by `@ui[:pages_run] = {}`); `@ui[:enemy_sprites]`/`[:actor_sprites]` are nil or
-      # `Array.new(n) { }`. The other keys hold method results or arithmetic the checker cannot trace: untyped.
-      @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: untyped,
+      # `Array.new(n) { }`; :pending is nil or a Hash literal. :allies (`party.actors.map { }`) and :items
+      # (Party#battle_items) are traced through the calls (RECORD_FIELD_TRACE). :foes stays untyped (Troop#members
+      # shares its name with natively defined Struct#members), and so does :skills (Actor#skills= stores a method result
+      # of its argument). The other keys hold method results or arithmetic the checker cannot trace: untyped.
+      @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: Array,
              ?foes: untyped, ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
              ?actor_sprites: Array[untyped]?,
              ?phase: untyped, ?options_shown: untyped, ?opt: untyped, ?actor_i: untyped, ?cmd: untyped,
-             ?target_i: untyped, ?skill_i: untyped, ?item_i: untyped, ?ally_i: untyped, ?pending: untyped,
-             ?skills: untyped, ?items: untyped, ?status_win: untyped, ?cmd_win: untyped, ?target_win: untyped,
+             ?target_i: untyped, ?skill_i: untyped, ?item_i: untyped, ?ally_i: untyped,
+             ?pending: Hash[untyped, untyped]?, ?skills: untyped, ?items: Array, ?status_win: untyped,
+             ?cmd_win: untyped, ?target_win: untyped,
              ?skill_win: untyped, ?item_win: untyped, ?ally_win: untyped, ?action_win: untyped,
              ?anim_timer: untyped, ?back_sprite: untyped, ?result_win: untyped, ?result: untyped,
              ?event_win: untyped, ?battler_boundary: untyped, ?event_return_phase: untyped, ?frame: untyped,
@@ -7976,6 +7997,58 @@ class RPG2k
   end
 end
 
+# ---- combatant_types.rbs
+# Battler facts of Game::Battle's action chain. The battlers are Combatant.new values only: Battle.from_actor /
+# from_enemy (one `Combatant.new` each, no subclass). The rosters: @allies / @enemies are set once by #initialize
+# (one constructor call, Scene::Battle#start, with `from_actor`/`from_enemy` maps); the only pushes are
+# #sync_allies_from_party's `from_actor` and Scene::Battle#add_battle_actor_sprite's `from_actor` or
+# #ally_by_actor_id element. @queue is `[]`, `[b]` (#begin_gauge_turn, from #ready_combatants), #turn_order (the
+# @allies + @enemies members) or its own #reject. Every `b` parameter below is a shifted non-empty @queue entry
+# (#step / #step_action), the caller's own `b`, or a Scene::Battle `living_allies` / `ready_combatants` element.
+class Game::Battle
+  @allies: Array[Game::Battle::Combatant]
+  @enemies: Array[Game::Battle::Combatant]
+  @queue: Array[Game::Battle::Combatant]
+  def strike: (Game::Battle::Combatant b) -> untyped
+  def pay_weapon_sp_cost: (Game::Battle::Combatant b) -> untyped
+  def battle_command_type: (Game::Battle::Combatant b, untyped cmd_id) -> untyped
+  def combo_hits: (Game::Battle::Combatant b, untyped kind) -> untyped
+  def choose_enemy_action: (Game::Battle::Combatant b) -> untyped
+  def perform_enemy_action: (Game::Battle::Combatant b, untyped act) -> untyped
+  def enemy_basic_action: (Game::Battle::Combatant b, untyped act, untyped charged) -> untyped
+  def enemy_autodestruct: (Game::Battle::Combatant b) -> untyped
+  def enemy_skill_action: (Game::Battle::Combatant b, untyped act, untyped charged) -> untyped
+  def enemy_transform_action: (Game::Battle::Combatant b, untyped act, untyped charged) -> untyped
+  def enemy_fallback_attack: (Game::Battle::Combatant b, untyped charged) -> untyped
+  def choose_auto_battle_command: (Game::Battle::Combatant b) -> untyped
+  def auto_battle_skill_rank: (Game::Battle::Combatant b, untyped sk, untyped sid) -> untyped
+  def attack_target: (Game::Battle::Combatant b) -> untyped
+  def apply_skill_hit: (Game::Battle::Combatant b, untyped target, untyped hp, untyped mp, untyped cmd) -> untyped
+end
+class RPG2k
+  module Scene
+    class Battle
+      # Callers pass a `living_allies` element (nil-checked, or past `controllable?`'s @ui[:allies] membership test)
+      # or the non-nil `ready_combatants.first`.
+      def force_ai_actor?: (Game::Battle::Combatant combatant) -> untyped
+      # The one caller iterates #battle_status_gauge_window's `allies`, always @ui[:allies].
+      def draw_battle_gauge_card: (untyped c, untyped system2, Game::Battle::Combatant ally, untyped i) -> untyped
+    end
+    class Menu
+      # One writer (#initialize): #build_commands, a `keys.map { ... }` over an Array (a filter_map result or
+      # RPG2K_COMMAND_KEYS); #select_command only replaces an element.
+      @commands: Array
+    end
+  end
+end
+module Game
+  class Actor
+    # Writers: `[]` (#initialize, #change_class), #skills= (`(ids || []).reject { }.uniq`, an Array whatever ids is)
+    # and #change_class's `old_skills`, an `@skills.dup`.
+    @skills: Array
+  end
+end
+
 # ---- trace-derived types (trace_candidates + trace_params)
 # Both sections are read off BC2CPP_TRACE_TYPES dumps: the promoted candidates first, then the types of the
 # four game projects. Declarations are unchanged by the merge.
@@ -8020,7 +8093,7 @@ module LCF
 end
 module LCF
   class File
-    def []: (Symbol idx) -> untyped
+    def []: (Symbol | Integer idx) -> untyped
     def []=: (Integer idx, untyped value) -> untyped
   end
 end
@@ -8081,7 +8154,7 @@ end
 
 class Game::Character
   %a{bc2cpp:hint}
-  def face: (untyped) -> Integer
+  def face: (untyped) -> Integer?
   def move: (untyped) -> false
   %a{bc2cpp:hint}
   def set_graphic: (untyped, untyped) -> Integer
@@ -8123,7 +8196,7 @@ end
 class Game::TextReveal
   def auto_close?: () -> untyped
   def done?: () -> untyped
-  def initialize: (untyped) -> untyped
+  def initialize: (untyped, ?untyped, ?Array? pauses, ?untyped, ?untyped, ?Array? speeds) -> untyped
   %a{bc2cpp:hint}
   def release_pause: () -> Integer
   %a{bc2cpp:hint}
@@ -12755,8 +12828,8 @@ class LCF::SaveTyped::Save
   %a{bc2cpp:hint} def save_system=: (untyped) -> LCF::SaveTyped::System?
   %a{bc2cpp:hint} def save_screen: () -> LCF::SaveTyped::Screen?
   %a{bc2cpp:hint} def save_screen=: (untyped) -> LCF::SaveTyped::Screen?
-  %a{bc2cpp:hint} def save_pictures: () -> Array?
-  %a{bc2cpp:hint} def save_pictures=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_pictures: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_pictures=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_hero: () -> LCF::SaveTyped::PartyLocation?
   %a{bc2cpp:hint} def save_hero=: (untyped) -> LCF::SaveTyped::PartyLocation?
   %a{bc2cpp:hint} def save_boat: () -> LCF::SaveTyped::Movable?
@@ -12765,18 +12838,18 @@ class LCF::SaveTyped::Save
   %a{bc2cpp:hint} def save_ship=: (untyped) -> LCF::SaveTyped::Movable?
   %a{bc2cpp:hint} def save_airship: () -> LCF::SaveTyped::Movable?
   %a{bc2cpp:hint} def save_airship=: (untyped) -> LCF::SaveTyped::Movable?
-  %a{bc2cpp:hint} def save_actors: () -> Array?
-  %a{bc2cpp:hint} def save_actors=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_actors: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_actors=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_inventory: () -> LCF::SaveTyped::Inventory?
   %a{bc2cpp:hint} def save_inventory=: (untyped) -> LCF::SaveTyped::Inventory?
-  %a{bc2cpp:hint} def save_targets: () -> Array?
-  %a{bc2cpp:hint} def save_targets=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_targets: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_targets=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_map_events: () -> LCF::SaveTyped::MapEvent?
   %a{bc2cpp:hint} def save_map_events=: (untyped) -> LCF::SaveTyped::MapEvent?
   %a{bc2cpp:hint} def save_foreground_event: () -> LCF::SaveTyped::EventExecState?
   %a{bc2cpp:hint} def save_foreground_event=: (untyped) -> LCF::SaveTyped::EventExecState?
-  %a{bc2cpp:hint} def save_common_events: () -> Array?
-  %a{bc2cpp:hint} def save_common_events=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_common_events: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_common_events=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_lsd_ext: () -> Array?
   %a{bc2cpp:hint} def save_lsd_ext=: (untyped) -> Array?
 end
@@ -13187,8 +13260,8 @@ class LCF::SaveTyped::MapEvent
   %a{bc2cpp:hint} def save_scroll_y=: (untyped) -> Integer?
   %a{bc2cpp:hint} def save_encounter_steps: () -> Integer?
   %a{bc2cpp:hint} def save_encounter_steps=: (untyped) -> Integer?
-  %a{bc2cpp:hint} def save_events: () -> Array?
-  %a{bc2cpp:hint} def save_events=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_events: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_events=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_chip_replacement_lower: () -> Array?
   %a{bc2cpp:hint} def save_chip_replacement_lower=: (untyped) -> Array?
   %a{bc2cpp:hint} def save_chip_replacement_upper: () -> Array?
@@ -13202,8 +13275,8 @@ class LCF::SaveTyped::MapEvent
 end
 
 class LCF::SaveTyped::EventExecState
-  %a{bc2cpp:hint} def save_stack: () -> Array?
-  %a{bc2cpp:hint} def save_stack=: (untyped) -> Array?
+  %a{bc2cpp:hint} def save_stack: () -> LCF::Array2D?
+  %a{bc2cpp:hint} def save_stack=: (untyped) -> LCF::Array2D?
   %a{bc2cpp:hint} def save_keyinput_variable: () -> Integer?
   %a{bc2cpp:hint} def save_keyinput_variable=: (untyped) -> Integer?
   %a{bc2cpp:hint} def save_keyinput_decision: () -> Integer?

@@ -1,0 +1,1 @@
+Compiled method calls whose possible receivers are all already checked by class now raise NoMethodError directly instead of a run-time lookup, about 320 fewer lookups in the closed build. Behaviour is unchanged.

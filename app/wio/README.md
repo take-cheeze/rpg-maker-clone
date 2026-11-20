@@ -11,6 +11,8 @@ The `wio` environment links a libmruby and uni-algo built outside
 `platformio.ini`:
 
 ```sh
+# the lists proven for the wio world (bc2cpp's closed-list proof)
+export BC2CPP_STATIC_DISPATCH_LISTS="$(BC2CPP_LISTS_WORLD=wio scripts/bc2cpp/static_dispatch_lists.bash)"
 RPGMAKER_BC2CPP=1 MRUBY_TARGET=wio \
   RGSS_WIO_ARDUINO_INCLUDES=<colon-separated PlatformIO framework -I dirs> \
   rake                                          # libmruby.a (closed world)
