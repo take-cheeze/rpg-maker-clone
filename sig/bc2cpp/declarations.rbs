@@ -7476,7 +7476,7 @@ class RPG2k::Scene::Battle
   @monster_cache: (nil | RPG2k::Scene::Map::LRUBitmapCache)
   @system2_cache: (nil | RPG2k::Scene::Map::LRUBitmapCache)
   def cached_bitmap: ((nil | RPG2k::Scene::Map::LRUBitmapCache), untyped) -> untyped
-  def initialize: (RPG2k::Scene::Map, Hash, Game::Interpreter) -> untyped
+  def initialize: (RPG2k::Scene::Map, Game::Interpreter::BattleRequest, Game::Interpreter) -> untyped
   def battle_list_window: (untyped, Integer, untyped, untyped, untyped, ?column_max: untyped, ?idxs: untyped, ?desc: untyped, ?scroll_key: untyped) -> untyped
   def tick_battle_list_arrows: () -> untyped
   def update: () -> untyped
