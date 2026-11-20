@@ -625,9 +625,11 @@ These builds do not take the list:
 - **psp or maix with `RPGMAKER_BC2CPP=1`.** Their generated code is not the
   closed build's, and a by-name fallback it emits may name a core method the
   closed generation never did.
-- **wio, and m5stack, which links the wio library.** `wio_strip_*` rewrites its
-  mrblib, and it swaps in a generated `schema_blob.rb`. The proof reads
-  neither.
+- **wio.** It takes lists of its own world instead:
+  `BC2CPP_LISTS_WORLD=wio scripts/bc2cpp/static_dispatch_lists.bash` proves
+  them over the wio gem set, `app/wio`'s gems and `wio_rgss_boot_main.cxx`.
+  The file records `"world": "wio"`; only the wio build takes its closed parts,
+  and the wio build refuses lists of any other world.
 - **desktop, wasm and android.** They run a game's own Ruby (RGSS scripts,
   `eval`), which may name any method.
 
