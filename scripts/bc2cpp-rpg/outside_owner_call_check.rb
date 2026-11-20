@@ -26,6 +26,8 @@ require_relative '../bc2cpp/fixture_runtime'
 require_relative '../../tools/bc2cpp/bc2cpp'
 
 ENV['BC2CPP_SIG_DIRS'] ||= ''
+# As a real build (OWNER_ROWS_TRIM): direct rows only for owners the build leaves out, none in this fixture.
+ENV['BC2CPP_OWNER_ROWS'] ||= 'left_out'
 runtime = Bc2cppFixtureRuntime
 failures = []
 check = lambda do |what, condition|

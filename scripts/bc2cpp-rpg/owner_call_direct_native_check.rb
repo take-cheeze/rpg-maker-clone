@@ -78,7 +78,12 @@ site = ->(name, owners, guard: nil) do
   call = %(r1 = bc2cpp_owner_call_named(M, r0, "#{name}", 2, BC2CPP_OWNERS(#{owners.map { |o| %("#{o}") }.join(', ')}), mrb_nil_value(), 0, self);\n)
   guard ? "#{guard}} else {\n#{call}}\n" : call
 end
-rewrite = ->(code) { OwnerCallDirect.rewrite(code, rows, {}, Set.new) }
+# As the closed build: every listed owner's name is one the build leaves out (unregistered_keys).
+rewrite = lambda do |code|
+  name = code[/bc2cpp_owner_call_named\(M, r0, "([^"]+)"/, 1]
+  owners = code[/BC2CPP_OWNERS\(([^)]*)\)/, 1].scan(/"([^"]+)"/).flatten
+  OwnerCallDirect.rewrite(code, rows, {}, Set.new, owners.to_set { |o| "#{o}##{name}" })
+end
 one = rewrite.call(site.call('get_pixel', ['RGSS::Bitmap']))
 check.call('a call listing only RGSS::Bitmap#get_pixel carries its native row',
            one.include?('BC2CPP_OWNERS_D(BC2CPP_OWNER_DIRECT("RGSS::Bitmap", rgss_row_bitmap_get_pixel, MRB_ARGS_REQ(2), MRB_METHOD_PUBLIC_FL), "RGSS::Bitmap")'))
