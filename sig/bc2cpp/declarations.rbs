@@ -8081,7 +8081,7 @@ module LCF
 end
 module LCF
   class File
-    def []: (Symbol idx) -> untyped
+    def []: (Symbol | Integer idx) -> untyped
     def []=: (Integer idx, untyped value) -> untyped
   end
 end
