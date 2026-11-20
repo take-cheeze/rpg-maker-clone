@@ -848,9 +848,11 @@ class RPG2k
     map = RGSS::Profiler.section("map.transition.load") { load_map map_id }
     x, y = preview_map_id ? [map.width / 2, map.height / 2]
                            : [init[:initial_x], init[:initial_y]]
-    state = RGSS::Profiler.section("map.transition.party") do
-      Game::State.new Game::Party.new(@db), map_id, x, y
-    end
+    # Game::State.new stays outside the section: CORE_ENUMERATOR_FREE cannot type
+    # section's value (its native tables are unattributed), and the scenes'
+    # blockless `state.map` calls need `state`'s class to rule out Array#map.
+    party = RGSS::Profiler.section("map.transition.party") { Game::Party.new(@db) }
+    state = Game::State.new party, map_id, x, y
     RGSS::Profiler.section("map.transition.seed") do
       # The database's System tab configures the six screen transitions a
       # "use the configured transition" (-1) Erase / Show Screen resolves against.

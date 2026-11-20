@@ -6447,7 +6447,7 @@ module Game
 #
 # @state: the only writer in each class is `@state = state` in #initialize. Every construction site passes nil, an
 # `@state` of another class below (or Scene::Battle's `map.state`, Scene::Map's attr_reader) or RPG2k's own `state`:
-# `Game::State.new(...)` (#start_new_game, through RGSS::Profiler.section, which returns its block's value),
+# `Game::State.new(party, ...)` (#start_new_game, its party built in an RGSS::Profiler.section block),
 # `load_save_state` (Game::State.from_lsd, whose one return is `new(party, ...)`, or nil) or that same local.
   class Interpreter
     @state: Game::State?
