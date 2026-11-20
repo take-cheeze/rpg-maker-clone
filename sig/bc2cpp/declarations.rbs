@@ -8133,7 +8133,7 @@ end
 class Game::TextReveal
   def auto_close?: () -> untyped
   def done?: () -> untyped
-  def initialize: (untyped) -> untyped
+  def initialize: (untyped, ?untyped, ?Array? pauses, ?untyped, ?untyped, ?Array? speeds) -> untyped
   %a{bc2cpp:hint}
   def release_pause: () -> Integer
   %a{bc2cpp:hint}
