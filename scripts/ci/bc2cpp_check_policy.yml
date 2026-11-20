@@ -1827,6 +1827,9 @@ checks:
   scripts/bc2cpp/fixpoint_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/foreign_definer_calls_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/foreign_definers_cache_check.rb:
     tier: fast
     capabilities: []
