@@ -1556,6 +1556,22 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/module_zsuper_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/prepended_override_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/owner_set_share_check.rb:
     tier: runtime
     capabilities:
@@ -1843,6 +1859,9 @@ checks:
     tier: fast
     capabilities: []
   scripts/bc2cpp/fixpoint_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/foreign_definer_calls_check.rb:
     tier: fast
     capabilities: []
   scripts/bc2cpp/foreign_definers_cache_check.rb:
