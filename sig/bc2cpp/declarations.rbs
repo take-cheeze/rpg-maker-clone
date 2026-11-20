@@ -6502,6 +6502,12 @@ module Game
     # The one writer is `@lines = lines || []` in #initialize; both constructor calls (Scene::Map#open_message
     # and #install_choice_lines) pass `plain`, a `map { ... .join }` result, so every element is a String.
     @lines: Array[String]
+    # The one writer each is #initialize: `(pauses || []).sort { }`, `(speeds || []).sort { }`, `instants || []`.
+    # Scene::Map#open_message passes Arrays it fills with `PauseMarker.new` (its own and #message_page_layout's),
+    # `SpeedMarker.new` and `[offset + a, offset + b]`; #install_choice_lines passes #message_page_layout's, `[]`, `[]`.
+    @pauses: Array[Game::Message::PauseMarker]
+    @speeds: Array[Game::Message::SpeedMarker]
+    @instants: Array[Array[untyped]]
   end
   class Actor
     def equipped_weapons: () -> Array
@@ -6778,6 +6784,10 @@ module RPG2k
   # as an empty slot.
   def load_save_state: (?untyped slot) -> Game::State?
   module Scene
+    class Map
+      # `[]`, or a `map { }` of the row's enemy_groups (LCF::Array2D includes Enumerable): an Array either way.
+      def troop_ids: (untyped row) -> Array
+    end
     # POLY: both definitions are `@mode == :target ? SCREEN_W - TARGET_W : SCREEN_W`, so both are declared; the
     # MONO-only FIXNUM_RETURN_PROOF cannot name a POLY result.
     class SkillMenu
@@ -8184,7 +8194,7 @@ end
 class Game::TextReveal
   def auto_close?: () -> untyped
   def done?: () -> untyped
-  def initialize: (untyped) -> untyped
+  def initialize: (untyped, ?untyped, ?Array? pauses, ?untyped, ?untyped, ?Array? speeds) -> untyped
   %a{bc2cpp:hint}
   def release_pause: () -> Integer
   %a{bc2cpp:hint}
