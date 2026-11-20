@@ -1,0 +1,1 @@
+- The Wio Terminal build leaves bc2cpp's compiled copy of the LCF schema out of the firmware, saving about 147 KB of flash. The wio build reads the schema from its own blob; save/load on the device has not been verified yet.

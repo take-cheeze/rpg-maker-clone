@@ -6,7 +6,7 @@
 # any of fonts 2-8: mruby-rgss/src/wio.cxx (env:wio, env:wio_rgss_boot) only
 # pushes pixels (startWrite/setAddrWindow/pushColors/endWrite/begin/
 # setRotation/setSwapBytes/fillScreen), and app/wio/src/walk_main.cxx
-# (env:wio_walk) calls drawString() without ever selecting a font
+# (the removed walk firmware) called drawString() without ever selecting a font
 # (setTextFont/setFreeFont/loadFont appear nowhere in the repo), so it only
 # renders font 1 (GLCD). Fonts 2-8 still cost ~13.5 KB of glyph tables plus
 # their RLE renderer, kept alive because drawChar/drawString are virtual (the
@@ -27,7 +27,7 @@
 # which is a no-op by itself: every build keeps all fonts unless its own
 # build_flags define RPGMAKER_WIO_TFT_NO_EXTRA_FONTS, so a package patched by
 # one environment never changes what another (or another checkout sharing
-# ~/.platformio) compiles. LOAD_GLCD (font 1, env:wio_walk's text) and
+# ~/.platformio) compiles. LOAD_GLCD (font 1, the removed walk firmware's text) and
 # LOAD_GFXFF stay outside the guard: TFT_eSPI.h declares the class's gfxFont
 # member under LOAD_GFXFF, and libmruby.a's own wio.o (which defines the
 # `TFT_eSPI g_tft` global) is compiled by the mruby cross build without these

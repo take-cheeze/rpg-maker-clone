@@ -1,0 +1,1 @@
+- The Battle grid, encounter-rate, flying bob and menu row-count code uses integer arithmetic (the no-Float build has no Float in these paths). The bob table and the grid truncation are unchanged; the encounter roll rounds half up as a whole number.

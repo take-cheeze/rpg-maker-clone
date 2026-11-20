@@ -16,6 +16,8 @@
 #include <mruby/hash.h>
 #include <mruby/string.h>
 
+#include "rgss_number.hxx"
+
 #include <lvgl.h>
 
 #include <algorithm>
@@ -631,11 +633,11 @@ mrb_value prof_stats(mrb_state* M, mrb_value) {
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frames")),
                mrb_fixnum_value(static_cast<mrb_int>(g_frames.frames)));
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "fps")),
-               mrb_float_value(M, fps));
+               rgss::num_value(M, fps));
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frame_avg_ms")),
-               mrb_float_value(M, avg_ms));
+               rgss::num_value(M, avg_ms));
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frame_max_ms")),
-               mrb_float_value(M, g_frames.work_ns_max / 1e6));
+               rgss::num_value(M, g_frames.work_ns_max / 1e6));
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frame_drops")),
                mrb_fixnum_value(static_cast<mrb_int>(g_frames.drops)));
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "rss_bytes")),
@@ -659,9 +661,9 @@ mrb_value prof_stats(mrb_state* M, mrb_value) {
     mrb_hash_set(M, sh, mrb_symbol_value(mrb_intern_lit(M, "calls")),
                  mrb_fixnum_value(static_cast<mrb_int>(a.calls)));
     mrb_hash_set(M, sh, mrb_symbol_value(mrb_intern_lit(M, "avg_ms")),
-                 mrb_float_value(M, a.calls ? a.ns_sum / a.calls / 1e6 : 0.0));
+                 rgss::num_value(M, a.calls ? a.ns_sum / a.calls / 1e6 : 0.0));
     mrb_hash_set(M, sh, mrb_symbol_value(mrb_intern_lit(M, "max_ms")),
-                 mrb_float_value(M, a.ns_max / 1e6));
+                 rgss::num_value(M, a.ns_max / 1e6));
     mrb_hash_set(M, sections, mrb_str_new(M, kv.first.data(), kv.first.size()),
                  sh);
   }

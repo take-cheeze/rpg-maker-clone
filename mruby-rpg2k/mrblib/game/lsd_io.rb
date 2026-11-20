@@ -91,7 +91,9 @@ module Game
       # only the leader-specific name/level/hp fields, which have nothing to
       # read from an empty party, stay conditional.
       title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+# FLOAT-BEGIN timestamp
       title[1] = timestamp.to_f
+# FLOAT-END timestamp
       if leader
         title[11] = leader.name
         title[12] = leader.level
@@ -152,7 +154,9 @@ module Game
       hero[83] = pf ? pf[:blue] : 0
       if pf && pf[:frames] && pf[:frames] > 0
         total = pf[:total] && pf[:total] > 0 ? pf[:total] : pf[:frames]
+# FLOAT-BEGIN flash_power
         hero[84] = pf[:power].to_f * pf[:frames] / total
+# FLOAT-END flash_power
         hero[85] = pf[:frames]
       end
       # Fields 32/41/43/51 (move_frequency/move_route/move_route_index/
@@ -208,15 +212,15 @@ module Game
         hero[73] = leader.charset_name
         hero[74] = leader.charset_index || 0
       end
-      # Native camera coordinates are hero-relative sixteenths of pixels.
-      # Right/down camera motion decreases them.
+      # Native camera coordinates are hero-relative sixteenths of pixels, the
+      # same unit Screen keeps its pan in. Right/down camera motion decreases them.
       px, py, tx, ty, step, locked = @screen.pan_save_data
       hero[111] = locked ? 0 : 1
-      hero[112] = 2304 - (px * 16).round if px != 0
-      hero[113] = 1792 - (py * 16).round if py != 0
-      hero[114] = 2304 - (tx * 16).round if tx != 0
-      hero[115] = 1792 - (ty * 16).round if ty != 0
-      hero[121] = (step * 16).round if step != 1
+      hero[112] = 2304 - px if px != 0
+      hero[113] = 1792 - py if py != 0
+      hero[114] = 2304 - tx if tx != 0
+      hero[115] = 1792 - ty if ty != 0
+      hero[121] = step if step != 16
       hero[124] = @encounter_total if @encounter_total != 0
       if @boarded
         hero[102] = true
@@ -701,42 +705,42 @@ module Game
           e[1] = p.name if p.shown?
           e[6] = true if p.fixed_to_map
           e[9] = true if p.use_transparent_color
-          e[2] = p.show_x
-          e[3] = p.show_y
-          e[4] = p.x
-          e[5] = p.y
-          e[7] = p.zoom if p.zoom != 100
-          cur_trans = 100.0 - Game.clamp(p.to_h[:opacity], 0, 255) * 100.0 / 255.0
-          e[8] = cur_trans if cur_trans != 0
-          # Field 18 (current_bot_trans, RPG2003-only) has no independent
-          # value of its own here -- see SAVE_PICTURE's own schema.rb comment
-          # -- so it mirrors field 8 (top == bottom).
-          e[18] = cur_trans if cur_trans != 0
-          e[11] = p.red if p.red != 100
-          e[12] = p.green if p.green != 100
-          e[13] = p.blue if p.blue != 100
-          e[14] = p.saturation if p.saturation != 100
+          raw = p.save_fixed
+          e[2] = LCF.double_from_fixed(raw[:show_x])
+          e[3] = LCF.double_from_fixed(raw[:show_y])
+          e[4] = LCF.double_from_fixed(raw[:x])
+          e[5] = LCF.double_from_fixed(raw[:y])
+          e[7] = LCF.double_from_fixed(raw[:zoom]) if p.zoom != 100
+          # Transparency is a percentage of the 0..255 opacity, in 1/1024 units.
+          cur_trans = 102_400 - Game.clamp(raw[:opacity], 0, 261_120) * 100 / 255
+          e[8] = LCF.double_from_fixed(cur_trans) if cur_trans != 0
+          # Field 18 (current_bot_trans, RPG2003-only) mirrors field 8 (top == bottom).
+          e[18] = LCF.double_from_fixed(cur_trans) if cur_trans != 0
+          e[11] = LCF.double_from_fixed(raw[:red]) if p.red != 100
+          e[12] = LCF.double_from_fixed(raw[:green]) if p.green != 100
+          e[13] = LCF.double_from_fixed(raw[:blue]) if p.blue != 100
+          e[14] = LCF.double_from_fixed(raw[:saturation]) if p.saturation != 100
           moving = p.moving?
-          fx = moving ? p.finish_x : p.x
-          fy = moving ? p.finish_y : p.y
-          fzoom = moving ? p.finish_zoom : p.zoom
-          fopacity = moving ? p.finish_opacity : p.opacity
-          fred = moving ? p.finish_red : p.red
-          fgreen = moving ? p.finish_green : p.green
-          fblue = moving ? p.finish_blue : p.blue
-          fsat = moving ? p.finish_saturation : p.saturation
-          e[31] = fx
-          e[32] = fy
-          e[33] = fzoom if fzoom != 100
-          fin_trans = (100.0 - Game.clamp(fopacity, 0, 255) * 100.0 / 255.0).round
+          fx = moving ? raw[:tx] : raw[:x]
+          fy = moving ? raw[:ty] : raw[:y]
+          fzoom = moving ? raw[:tzoom] : raw[:zoom]
+          fopacity = moving ? raw[:topacity] : raw[:opacity]
+          fred = moving ? raw[:tred] : raw[:red]
+          fgreen = moving ? raw[:tgreen] : raw[:green]
+          fblue = moving ? raw[:tblue] : raw[:blue]
+          fsat = moving ? raw[:tsat] : raw[:saturation]
+          e[31] = LCF.double_from_fixed(fx)
+          e[32] = LCF.double_from_fixed(fy)
+          e[33] = Picture.unfix(fzoom) if fzoom != 102_400
+          # Rounded to a whole percent, as the finish transparency always was.
+          fin_trans = (102_400 - Game.clamp(fopacity, 0, 261_120) * 100 / 255 + 512) / 1024
           e[34] = fin_trans if fin_trans != 0
-          # Field 35 (finish_bot_trans, RPG2003-only) mirrors field 34 for
-          # the same reason field 18 mirrors field 8 above.
+          # Field 35 (finish_bot_trans, RPG2003-only) mirrors field 34.
           e[35] = fin_trans if fin_trans != 0
-          e[41] = fred if fred != 100
-          e[42] = fgreen if fgreen != 100
-          e[43] = fblue if fblue != 100
-          e[44] = fsat if fsat != 100
+          e[41] = Picture.unfix(fred) if fred != 102_400
+          e[42] = Picture.unfix(fgreen) if fgreen != 102_400
+          e[43] = Picture.unfix(fblue) if fblue != 102_400
+          e[44] = Picture.unfix(fsat) if fsat != 102_400
           e[51] = p.frames_left if moving
         end
         pics[id] = e
@@ -1305,7 +1309,9 @@ module Game
       # an actual in-progress flash to compare against.
       if hero[:flash_time_left] && hero[:flash_time_left] > 0
         frames = hero[:flash_time_left]
+# FLOAT-BEGIN flash_level
         level = hero[:flash_current_level] || 0.0
+# FLOAT-END flash_level
         state.player_flash = { red: hero[:flash_red] || 0, green: hero[:flash_green] || 0,
                                blue: hero[:flash_blue] || 0, power: level, frames: frames,
                                total: frames }
@@ -1499,14 +1505,15 @@ module Game
       end
       # Older unmarked exports used only SaveScreen's pixel offsets.
       if hero.key?(111) || hero.key?(112) || hero.key?(113) || hero.key?(114) || hero.key?(115) || hero.key?(121)
-        state.screen.load_h(pan_x: (2304 - hero[:pan_current_x]) / 16.0,
-                            pan_y: (1792 - hero[:pan_current_y]) / 16.0,
-                            pan_tx: (2304 - hero[:pan_finish_x]) / 16.0,
-                            pan_ty: (1792 - hero[:pan_finish_y]) / 16.0,
-                            pan_step: hero[:pan_speed] / 16.0, pan_locked: hero[:pan_state] == 0)
+        state.screen.load_h(pan_x: 2304 - hero[:pan_current_x],
+                            pan_y: 1792 - hero[:pan_current_y],
+                            pan_tx: 2304 - hero[:pan_finish_x],
+                            pan_ty: 1792 - hero[:pan_finish_y],
+                            pan_step: hero[:pan_speed], pan_locked: hero[:pan_state] == 0)
       elsif scr
-        px = scr[:pan_x] || 0
-        py = scr[:pan_y] || 0
+        # SaveScreen's pan fields are whole pixels; Screen keeps 1/16 pixels.
+        px = (scr[:pan_x] || 0) * 16
+        py = (scr[:pan_y] || 0) * 16
         state.screen.load_h(pan_x: px, pan_y: py, pan_tx: px, pan_ty: py)
       end
       state.encounter_total = hero[:total_encounter_rate]
@@ -1713,27 +1720,30 @@ module Game
         time_left = pic[:time_left] || 0
         moving = time_left > 0
         transparency = moving || pic.key?(8) ? pic[:current_transparency] : pic[:transparency]
-        state.show_picture(id, name: name,
-                               x: ((moving ? pic[:current_x] : pic[:finish_x]) || 0).to_i,
-                               y: ((moving ? pic[:current_y] : pic[:finish_y]) || 0).to_i,
-                               show_x: pic.key?(2) ? pic[:show_x] : nil,
-                               show_y: pic.key?(3) ? pic[:show_y] : nil,
-                               zoom: moving ? pic[:current_zoom] : pic[:zoom],
-                               opacity: transparency ? Game.trans_to_opacity(transparency) : nil,
-                               red: moving ? pic[:current_tone_red] : pic[:tone_red],
-                               green: moving ? pic[:current_tone_green] : pic[:tone_green],
-                               blue: moving ? pic[:current_tone_blue] : pic[:tone_blue],
-                               saturation: moving ? pic[:current_tone_saturation] : pic[:tone_saturation],
+        state.show_picture(id, name: name, raw: true,
+                               x: Picture.fixed_of(moving ? pic[:current_x] : pic[:finish_x]),
+                               y: Picture.fixed_of(moving ? pic[:current_y] : pic[:finish_y]),
+                               show_x: Picture.fixed_of(pic.key?(2) ? pic[:show_x] : nil),
+                               show_y: Picture.fixed_of(pic.key?(3) ? pic[:show_y] : nil),
+                               zoom: Picture.fixed_of(moving ? pic[:current_zoom] : pic[:zoom]),
+                               opacity: Picture.fixed_opacity(transparency),
+                               red: Picture.fixed_of(moving ? pic[:current_tone_red] : pic[:tone_red]),
+                               green: Picture.fixed_of(moving ? pic[:current_tone_green] : pic[:tone_green]),
+                               blue: Picture.fixed_of(moving ? pic[:current_tone_blue] : pic[:tone_blue]),
+                               saturation: Picture.fixed_of(moving ? pic[:current_tone_saturation] : pic[:tone_saturation]),
                                fixed_to_map: pic[:fixed_to_map],
                                use_transparent_color: pic[:use_transparent_color])
         state.erase_picture(id) if pic[:name].nil? || pic[:name].empty?
         next unless moving
         finish_trans = pic[:transparency]
-        state.move_picture(id, (pic[:finish_x] || 0).to_i, (pic[:finish_y] || 0).to_i,
-                           pic[:zoom],
-                           finish_trans ? Game.trans_to_opacity(finish_trans) : 255,
-                           pic[:tone_red], pic[:tone_green], pic[:tone_blue],
-                           pic[:tone_saturation], time_left)
+        state.move_picture_fixed(id, Picture.arg(Picture.fixed_of(pic[:finish_x]), true, 0),
+                                 Picture.arg(Picture.fixed_of(pic[:finish_y]), true, 0),
+                                 Picture.arg(Picture.fixed_of(pic[:zoom]), true, 100),
+                                 Picture.arg(finish_trans ? Game.trans_to_opacity(finish_trans) << 10 : nil, true, 255),
+                                 Picture.arg(Picture.fixed_of(pic[:tone_red]), true, 100),
+                                 Picture.arg(Picture.fixed_of(pic[:tone_green]), true, 100),
+                                 Picture.arg(Picture.fixed_of(pic[:tone_blue]), true, 100),
+                                 Picture.arg(Picture.fixed_of(pic[:tone_saturation]), true, 100), time_left)
       end
     end
 
@@ -1749,10 +1759,14 @@ module Game
     #
     # 2000-01-01, the sentinel: recognisable in a file screen as "not a real
     # play session" without being a value RPG_RT rejects.
+# FLOAT-BEGIN clock_sentinel
     NO_CLOCK_TIMESTAMP = 36526.0
+# FLOAT-END clock_sentinel
 
     def self.ole_now
+# FLOAT-BEGIN ole_now
       Time.now.to_i / 86400.0 + OLE_EPOCH_OFFSET
+# FLOAT-END ole_now
     rescue StandardError => e
       $stderr.puts "[RPG2k] no usable clock (#{e.class}: #{e.message}), stamping the save 2000-01-01"
       NO_CLOCK_TIMESTAMP

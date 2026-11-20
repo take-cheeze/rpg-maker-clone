@@ -1,0 +1,1 @@
+- The closed-world build's generated code guards its Float paths with `MRB_NO_FLOAT`, so a no-Float build compiles the output (bc2cpp in nfcxx).

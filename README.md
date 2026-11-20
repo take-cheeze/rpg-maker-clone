@@ -2221,14 +2221,10 @@
   half — the file format, the movement rule, the camera, the layer
   compositing — is
   [`app/shared/rpg2k_walk`](app/shared/rpg2k_walk), plain C with no I/O; each
-  device supplies only its own buffers, screen and buttons. `pio run -e
-  wio_walk` builds it for the Wio Terminal (LCD, microSD, 5-way switch, no
-  LVGL and no mruby), which is what lets that board run real RPG Maker map
-  data now rather than after the interpreter fits in its 192 KB of SRAM
-  ([`docs/adr/0007`](docs/adr/0007-wio-terminal-port.md) is still the plan for
-  that). Export with `--target wio` to size a map for it. The shared core is
-  covered by the `walk_core` ctest — neither device is reachable from CI, but
-  the engine half of both firmwares is plain host-testable C. See
+  device supplies only its own buffers, screen and buttons. The Wio Terminal
+  walk firmware (`env:wio_walk`) was removed; the Wio build is now the
+  closed-world game only ([`app/wio/README.md`](app/wio/README.md)). The shared
+  core is covered by the `walk_core` ctest and the nano 7G host emulator. See
   [`docs/adr/0091-shared-minimal-walk-engine.md`](docs/adr/0091-shared-minimal-walk-engine.md).
 - **A host-side emulator for the nano 7G app itself.**
   [`app/nano7/host`](app/nano7/host) implements the small

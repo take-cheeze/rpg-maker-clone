@@ -1,0 +1,1 @@
+- **Font names** are read from the font's own `name` ivar. A subclass that overrides `Font#name` no longer changes the font face the game loads.

@@ -72,7 +72,10 @@ class SpecProbe
     def <<(_other) = self
   end
 
-  Build = Struct.new(:name)
+  Build = Struct.new(:name) do
+    # The rake files read spec.build.cc.defines; the probe records no defines (the no-Float branch stays off).
+    def cc = @cc ||= Compiler.new
+  end
   class Compiler
     attr_reader :defines
 

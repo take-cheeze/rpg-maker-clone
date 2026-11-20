@@ -23,6 +23,7 @@
 #include "mrb_array_access.hxx"
 #include "profiler.hxx"
 #include "rgss_construct.hxx"
+#include "rgss_number.hxx"
 #include "shinonome.hxx"
 
 #include <algorithm>
@@ -488,19 +489,20 @@ mrb_data_type DataType<T>::data_type{
 // Generic floating point component getter/setter usable by Color and Tone.
 template <class T, double T::* Field>
 mrb_value component_get(mrb_state* M, V self) {
-  return mrb_float_value(M, DataType<T>::get(M, self).*Field);
+  return rgss::num_value(M, DataType<T>::get(M, self).*Field);
 }
 
 template <class T, double T::* Field, int Lo, int Hi>
 mrb_value component_set(mrb_state* M, V self) {
-  mrb_float v;
-  mrb_get_args(M, "f", &v);
+  mrb_value vv;
+  mrb_get_args(M, "o", &vv);
+  double v = rgss::num_arg(M, vv);
   if (v < Lo)
     v = Lo;
   if (v > Hi)
     v = Hi;
   DataType<T>::get(M, self).*Field = v;
-  return mrb_float_value(M, v);
+  return rgss::num_value(M, v);
 }
 
 std::string pack_doubles(std::initializer_list<double> vals) {
@@ -524,13 +526,14 @@ void unpack_doubles(const char* p, mrb_int len, double* out, int n) {
 // ---- Color ----------------------------------------------------------------
 
 mrb_value color_init(mrb_state* M, V self) {
-  mrb_float r = 0, g = 0, b = 0, a = 255;
-  mrb_get_args(M, "|ffff", &r, &g, &b, &a);
+  mrb_value rv = mrb_fixnum_value(0), gv = mrb_fixnum_value(0),
+            bv = mrb_fixnum_value(0), av = mrb_fixnum_value(255);
+  mrb_get_args(M, "|oooo", &rv, &gv, &bv, &av);
   Color& c = DataType<Color>::alloc_obj(M, self);
-  c.red = clamp255(r);
-  c.green = clamp255(g);
-  c.blue = clamp255(b);
-  c.alpha = clamp255(a);
+  c.red = clamp255(rgss::num_arg(M, rv));
+  c.green = clamp255(rgss::num_arg(M, gv));
+  c.blue = clamp255(rgss::num_arg(M, bv));
+  c.alpha = clamp255(rgss::num_arg(M, av));
   return self;
 }
 
@@ -541,12 +544,12 @@ mrb_value color_set(mrb_state* M, V self) {
     mrb_get_args(M, "o", &o);
     c = DataType<Color>::get(M, o);
   } else {
-    mrb_float r, g, b, a = 255;
-    mrb_get_args(M, "fff|f", &r, &g, &b, &a);
-    c.red = clamp255(r);
-    c.green = clamp255(g);
-    c.blue = clamp255(b);
-    c.alpha = clamp255(a);
+    mrb_value rv, gv, bv, av = mrb_fixnum_value(255);
+    mrb_get_args(M, "ooo|o", &rv, &gv, &bv, &av);
+    c.red = clamp255(rgss::num_arg(M, rv));
+    c.green = clamp255(rgss::num_arg(M, gv));
+    c.blue = clamp255(rgss::num_arg(M, bv));
+    c.alpha = clamp255(rgss::num_arg(M, av));
   }
   return self;
 }
@@ -605,13 +608,14 @@ mrb_value color_load(mrb_state* M, V self) {
 // ---- Tone -----------------------------------------------------------------
 
 mrb_value tone_init(mrb_state* M, V self) {
-  mrb_float r = 0, g = 0, b = 0, gray = 0;
-  mrb_get_args(M, "|ffff", &r, &g, &b, &gray);
+  mrb_value rv = mrb_fixnum_value(0), gv = mrb_fixnum_value(0),
+            bv = mrb_fixnum_value(0), grv = mrb_fixnum_value(0);
+  mrb_get_args(M, "|oooo", &rv, &gv, &bv, &grv);
   Tone& t = DataType<Tone>::alloc_obj(M, self);
-  t.red = clamp_signed255(r);
-  t.green = clamp_signed255(g);
-  t.blue = clamp_signed255(b);
-  t.gray = clamp255(gray);
+  t.red = clamp_signed255(rgss::num_arg(M, rv));
+  t.green = clamp_signed255(rgss::num_arg(M, gv));
+  t.blue = clamp_signed255(rgss::num_arg(M, bv));
+  t.gray = clamp255(rgss::num_arg(M, grv));
   return self;
 }
 
@@ -622,12 +626,12 @@ mrb_value tone_set(mrb_state* M, V self) {
     mrb_get_args(M, "o", &o);
     t = DataType<Tone>::get(M, o);
   } else {
-    mrb_float r, g, b, gray = 0;
-    mrb_get_args(M, "fff|f", &r, &g, &b, &gray);
-    t.red = clamp_signed255(r);
-    t.green = clamp_signed255(g);
-    t.blue = clamp_signed255(b);
-    t.gray = clamp255(gray);
+    mrb_value rv, gv, bv, grv = mrb_fixnum_value(0);
+    mrb_get_args(M, "ooo|o", &rv, &gv, &bv, &grv);
+    t.red = clamp_signed255(rgss::num_arg(M, rv));
+    t.green = clamp_signed255(rgss::num_arg(M, gv));
+    t.blue = clamp_signed255(rgss::num_arg(M, bv));
+    t.gray = clamp255(rgss::num_arg(M, grv));
   }
   return self;
 }
@@ -1619,8 +1623,8 @@ mrb_value bmp_init_copy(mrb_state* M, V self) {
 mrb_value bmp_transition_alpha_native_body(mrb_state* M,
                                            V self,
                                            mrb_value map_v,
-                                           mrb_float prog,
-                                           mrb_float vague) {
+                                           double prog,
+                                           double vague) {
   Bitmap& dst = DataType<Bitmap>::get(M, self);
   const Bitmap& map = DataType<Bitmap>::get(M, map_v);
   const unsigned bpp = lv_color_format_get_size(dst.format);
@@ -1656,9 +1660,11 @@ mrb_value bmp_transition_alpha_native_body(mrb_state* M,
 
 mrb_value bmp_transition_alpha(mrb_state* M, V self) {
   V map_v;
-  mrb_float prog, vague;
-  mrb_get_args(M, "off", &map_v, &prog, &vague);
-  return bmp_transition_alpha_native_body(M, self, map_v, prog, vague);
+  mrb_value prog_v, vague_v;
+  mrb_get_args(M, "ooo", &map_v, &prog_v, &vague_v);
+  return bmp_transition_alpha_native_body(M, self, map_v,
+                                          rgss::fraction_arg(M, prog_v),
+                                          rgss::fraction_arg(M, vague_v));
 }
 
 // Read a whole file. Answers false when it cannot be opened or read fully, so
@@ -2236,8 +2242,8 @@ mrb_value bmp_get_pixel(mrb_state* M, V self) {
   int r = 0, g = 0, bl = 0, a = 0;
   if (x >= 0 && y >= 0 && x < b.width && y < b.height)
     bmp_read(b, x, y, r, g, bl, a);
-  const V args[] = {mrb_float_value(M, r), mrb_float_value(M, g),
-                    mrb_float_value(M, bl), mrb_float_value(M, a)};
+  const V args[] = {rgss::num_value(M, r), rgss::num_value(M, g),
+                    rgss::num_value(M, bl), rgss::num_value(M, a)};
   return mrb_obj_new(
       M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);
 }
@@ -2666,8 +2672,9 @@ mrb_value bmp_wave_blt(mrb_state* M, V self) {
   Bitmap& dst = bmp_self(M, self);
   V src_v;
   mrb_int depth;
-  mrb_float phase;
-  mrb_get_args(M, "oif", &src_v, &depth, &phase);
+  mrb_value phase_v;
+  mrb_get_args(M, "oio", &src_v, &depth, &phase_v);
+  const double phase = rgss::fraction_arg(M, phase_v);
   Bitmap& src = DataType<Bitmap>::get(M, src_v);
 
   if (src.width != dst.width || src.height != dst.height) {
@@ -2953,48 +2960,6 @@ std::string find_font_path(mrb_state* M, const std::string& name) {
 }
 #endif  // !defined(WIO_TERMINAL)
 
-MRB_BEGIN_DECL
-mrb_value mrb_funcall_with_method(mrb_state*,
-                                  mrb_value,
-                                  mrb_sym,
-                                  const mrb_method_t*,
-                                  struct RClass*,
-                                  mrb_int,
-                                  const mrb_value*,
-                                  mrb_value);
-MRB_END_DECL
-
-// `obj.reader` with one method search. mruby's own attr_reader (a NOARG
-// cfunc proc whose one env slot is the reader's ivar, class.c
-// mod_attr_define) is that ivar's read; any other method found (a compiled
-// accessor, an override) runs in the frame mrb_funcall would push, and none
-// found is mrb_funcall itself (method_missing). The ivar is taken from the
-// proc, so this file spells no ivar name of Font's (bc2cpp counts every ivar
-// name a native source spells as one native code may write).
-static V attr_read(mrb_state* M, V obj, mrb_sym reader) {
-  struct RClass* c = mrb_class(M, obj);
-  const mrb_method_t m = mrb_method_search_vm(M, &c, reader);
-  if (MRB_METHOD_UNDEF_P(m))
-    return mrb_funcall_argv(M, obj, reader, 0, nullptr);
-  const struct RProc* p = MRB_METHOD_PROC_P(m) ? MRB_METHOD_PROC(m) : nullptr;
-  if (p && MRB_PROC_CFUNC_P(p) && MRB_PROC_NOARG_P(p) && MRB_PROC_ENV_P(p)) {
-    const struct REnv* e = MRB_PROC_ENV(p);
-    mrb_int reader_len = 0, ivar_len = 0;
-    const char* reader_name = mrb_sym_name_len(M, reader, &reader_len);
-    const mrb_sym ivar = MRB_ENV_LEN(e) == 1 && mrb_symbol_p(e->stack[0])
-                             ? mrb_symbol(e->stack[0])
-                             : 0;
-    const char* ivar_name =
-        ivar ? mrb_sym_name_len(M, ivar, &ivar_len) : nullptr;
-    if (reader_name && ivar_name && ivar_len == reader_len + 1 &&
-        ivar_name[0] == '@' &&
-        std::memcmp(ivar_name + 1, reader_name, reader_len) == 0)
-      return mrb_iv_get(M, obj, ivar);
-  }
-  return mrb_funcall_with_method(M, obj, reader, &m, c, 0, nullptr,
-                                 mrb_nil_value());
-}
-
 // RGSS::Font.default_path, or "" when unset: the font to use for a project that
 // ships none of its own. Opt-in per maker rather than automatic, because
 // "wrong" differs by maker — RPG Maker XP/VX projects want a real TrueType face
@@ -3012,7 +2977,7 @@ std::string font_default_path(mrb_state* M) {
     return std::string();
   const V font = mrb_const_get(M, rgss_mod, font_sym);
   // Font.default_path is a class-level attr_accessor (mrblib/lib.rb).
-  V v = attr_read(M, font, mrb_intern_lit(M, "default_path"));
+  V v = mrb_iv_get(M, font, mrb_intern_lit(M, "@default_path"));
   if (!mrb_string_p(v))
     return std::string();
   return std::string(RSTRING_PTR(v), RSTRING_LEN(v));
@@ -3073,9 +3038,10 @@ FontAttr read_font(mrb_state* M, V self) {
 #endif
   const V fv = mrb_iv_get(M, self, mrb_intern_lit(M, "@font"));
   if (!mrb_nil_p(fv)) {
-    // Each attribute is read through attr_read (no by-name send).
+    // Font's attributes are read from their ivars (attr_accessor-backed): an
+    // override of a reader is not consulted.
 #if !defined(WIO_TERMINAL)
-    V nv = attr_read(M, fv, mrb_intern_lit(M, "name"));
+    V nv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@name"));
     if (mrb_string_p(nv)) {
       name.assign(RSTRING_PTR(nv), RSTRING_LEN(nv));
     } else if (mrb_array_p(nv) && ary_size(nv) > 0 &&
@@ -3085,22 +3051,22 @@ FontAttr read_font(mrb_state* M, V self) {
       name.assign(RSTRING_PTR(n0), RSTRING_LEN(n0));
     }
 #endif
-    V sv = attr_read(M, fv, mrb_intern_lit(M, "size"));
+    V sv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@size"));
     if (mrb_fixnum_p(sv))
       fa.size = static_cast<double>(mrb_fixnum(sv));
-    else if (mrb_float_p(sv))
-      fa.size = mrb_float(sv);
-    V bv = attr_read(M, fv, mrb_intern_lit(M, "bold"));
+    else if (rgss::num_p(sv))
+      fa.size = rgss::num_arg(M, sv);
+    V bv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@bold"));
     fa.bold = mrb_bool(bv);
-    V iv = attr_read(M, fv, mrb_intern_lit(M, "italic"));
+    V iv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@italic"));
     fa.italic = mrb_bool(iv);
-    V ov = attr_read(M, fv, mrb_intern_lit(M, "outline"));
+    V ov = mrb_iv_get(M, fv, mrb_intern_lit(M, "@outline"));
     fa.outline = mrb_bool(ov);
-    V shv = attr_read(M, fv, mrb_intern_lit(M, "shadow"));
+    V shv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@shadow"));
     fa.shadow = mrb_bool(shv);
-    V cv = attr_read(M, fv, mrb_intern_lit(M, "color"));
+    V cv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@color"));
     color_rgba(M, cv, fa.color);
-    V ocv = attr_read(M, fv, mrb_intern_lit(M, "out_color"));
+    V ocv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@out_color"));
     color_rgba(M, ocv, fa.out_color);
   }
 #if defined(WIO_TERMINAL)
@@ -4438,37 +4404,35 @@ mrb_value spr_set_opacity_body(mrb_state* M, mrb_value self, mrb_int opa) {
 // @zoom_x/@zoom_y so the Ruby reader (defaulting to 1.0) returns it. A fresh
 // sprite is already LV_SCALE_NONE, matching RGSS's 1.0 default. mruby's "f"
 // coerces an Integer argument (e.g. `zoom_x = 1`) to Float.
-mrb_value spr_set_zoom_x_native_body(mrb_state* M,
-                                     mrb_value self,
-                                     mrb_float z) {
+mrb_value spr_set_zoom_x_native_body(mrb_state* M, mrb_value self, double z) {
   if (z < 0.0)
     z = 0.0;
   lv_obj_t* obj = obj_require(M, self);
   lv_image_set_scale_x(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), mrb_float_value(M, z));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), rgss::num_value(M, z));
   return self;
 }
 
 mrb_value spr_set_zoom_x(mrb_state* M, mrb_value self) {
-  mrb_float z;
-  mrb_get_args(M, "f", &z);
+  mrb_value zv;
+  mrb_get_args(M, "o", &zv);
+  const double z = rgss::num_arg(M, zv);
   return spr_set_zoom_x_native_body(M, self, z);
 }
 
-mrb_value spr_set_zoom_y_native_body(mrb_state* M,
-                                     mrb_value self,
-                                     mrb_float z) {
+mrb_value spr_set_zoom_y_native_body(mrb_state* M, mrb_value self, double z) {
   if (z < 0.0)
     z = 0.0;
   lv_obj_t* obj = obj_require(M, self);
   lv_image_set_scale_y(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), mrb_float_value(M, z));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), rgss::num_value(M, z));
   return self;
 }
 
 mrb_value spr_set_zoom_y(mrb_state* M, mrb_value self) {
-  mrb_float z;
-  mrb_get_args(M, "f", &z);
+  mrb_value zv;
+  mrb_get_args(M, "o", &zv);
+  const double z = rgss::num_arg(M, zv);
   return spr_set_zoom_y_native_body(M, self, z);
 }
 
@@ -4479,9 +4443,7 @@ mrb_value spr_set_zoom_y(mrb_state* M, mrb_value self) {
 // sets the origin before rotating gets the right pivot; a later ox=/oy= that
 // must re-pivot simply re-assigns angle. The float is mirrored into @angle for
 // the Ruby reader.
-mrb_value spr_set_angle_native_body(mrb_state* M,
-                                    mrb_value self,
-                                    mrb_float deg) {
+mrb_value spr_set_angle_native_body(mrb_state* M, mrb_value self, double deg) {
   lv_obj_t* obj = obj_require(M, self);
   long tenths = ::lround(-deg * 10.0) % 3600;
   if (tenths < 0)
@@ -4492,13 +4454,14 @@ mrb_value spr_set_angle_native_body(mrb_state* M,
       obj, mrb_nil_p(ox) ? 0 : static_cast<int32_t>(mrb_as_int(M, ox)),
       mrb_nil_p(oy) ? 0 : static_cast<int32_t>(mrb_as_int(M, oy)));
   lv_image_set_rotation(obj, static_cast<int32_t>(tenths));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@angle"), mrb_float_value(M, deg));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@angle"), rgss::num_value(M, deg));
   return self;
 }
 
 mrb_value spr_set_angle(mrb_state* M, mrb_value self) {
-  mrb_float deg;
-  mrb_get_args(M, "f", &deg);
+  mrb_value degv;
+  mrb_get_args(M, "o", &degv);
+  const double deg = rgss::num_arg(M, degv);
   return spr_set_angle_native_body(M, self, deg);
 }
 
@@ -4718,8 +4681,8 @@ void plane_retile(mrb_state* M, mrb_value self) {
   // A non-positive or absent zoom is treated as 1.0 (the fast integer path).
   const mrb_value zx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@zoom_x"));
   const mrb_value zy_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@zoom_y"));
-  double zx = mrb_test(zx_v) ? mrb_as_float(M, zx_v) : 1.0;
-  double zy = mrb_test(zy_v) ? mrb_as_float(M, zy_v) : 1.0;
+  double zx = mrb_test(zx_v) ? rgss::num_arg(M, zx_v) : 1.0;
+  double zy = mrb_test(zy_v) ? rgss::num_arg(M, zy_v) : 1.0;
   if (zx <= 0.0)
     zx = 1.0;
   if (zy <= 0.0)
@@ -4887,31 +4850,29 @@ mrb_value plane_set_color(mrb_state* M, mrb_value self) {
 
 // Plane#zoom_x= / #zoom_y= scale the tiled pattern; plane_retile samples the
 // source at the reciprocal rate, so assigning a zoom re-tiles.
-mrb_value plane_set_zoom_x_native_body(mrb_state* M,
-                                       mrb_value self,
-                                       mrb_float z) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), mrb_float_value(M, z));
+mrb_value plane_set_zoom_x_native_body(mrb_state* M, mrb_value self, double z) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), rgss::num_value(M, z));
   plane_retile(M, self);
   return self;
 }
 
 mrb_value plane_set_zoom_x(mrb_state* M, mrb_value self) {
-  mrb_float z;
-  mrb_get_args(M, "f", &z);
+  mrb_value zv;
+  mrb_get_args(M, "o", &zv);
+  const double z = rgss::num_arg(M, zv);
   return plane_set_zoom_x_native_body(M, self, z);
 }
 
-mrb_value plane_set_zoom_y_native_body(mrb_state* M,
-                                       mrb_value self,
-                                       mrb_float z) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), mrb_float_value(M, z));
+mrb_value plane_set_zoom_y_native_body(mrb_state* M, mrb_value self, double z) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), rgss::num_value(M, z));
   plane_retile(M, self);
   return self;
 }
 
 mrb_value plane_set_zoom_y(mrb_state* M, mrb_value self) {
-  mrb_float z;
-  mrb_get_args(M, "f", &z);
+  mrb_value zv;
+  mrb_get_args(M, "o", &zv);
+  const double z = rgss::num_arg(M, zv);
   return plane_set_zoom_y_native_body(M, self, z);
 }
 #endif  // !defined(WIO_TERMINAL)
@@ -6858,9 +6819,9 @@ bool window_sync_tone(mrb_state* M, mrb_value self) {
                          ? vp_tone_key(DataType<Tone>::get(M, tv))
                          : 0.0;
   const mrb_value prev = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tone_key"));
-  if (mrb_float_p(prev) && mrb_float(prev) == key)
+  if (rgss::key_is(M, prev, key))
     return false;
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tone_key"), mrb_float_value(M, key));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tone_key"), rgss::key_value(M, key));
   return true;
 }
 
@@ -7132,8 +7093,8 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self) {
       mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_key"));
   const mrb_value prev_size =
       mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_size"));
-  if (mrb_float_p(prev_color) && mrb_float(prev_color) == color_key &&
-      mrb_float_p(prev_size) && mrb_float(prev_size) == size_key) {
+  if (rgss::key_is(M, prev_color, color_key) &&
+      rgss::key_is(M, prev_size, size_key)) {
     lv_obj_remove_flag(ov, LV_OBJ_FLAG_HIDDEN);
     return;
   }
@@ -7161,9 +7122,9 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self) {
   lv_obj_move_foreground(ov);
   lv_obj_invalidate(ov);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_key"),
-             mrb_float_value(M, color_key));
+             rgss::key_value(M, color_key));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_size"),
-             mrb_float_value(M, size_key));
+             rgss::key_value(M, size_key));
 }
 
 // Re-composite every display object that lives in this viewport, so a tone
@@ -7215,9 +7176,9 @@ bool vp_sync_tone(mrb_state* M, mrb_value self) {
   const Tone tn = viewport_tone(M, self);
   const double key = vp_tone_key(tn);
   const mrb_value prev = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tone_key"));
-  if (mrb_float_p(prev) && mrb_float(prev) == key)
+  if (rgss::key_is(M, prev, key))
     return false;
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tone_key"), mrb_float_value(M, key));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tone_key"), rgss::key_value(M, key));
   vp_refresh_children(M, self);
   return true;
 }
@@ -7548,20 +7509,20 @@ mrb_value rect_new_direct(mrb_state* M,
 
 mrb_value color_new_direct(mrb_state* M,
                            RClass* klass,
-                           mrb_float r,
-                           mrb_float g,
-                           mrb_float b,
-                           mrb_float a) {
+                           double r,
+                           double g,
+                           double b,
+                           double a) {
   return DataType<Color>::make(M, klass, clamp255(r), clamp255(g), clamp255(b),
                                clamp255(a));
 }
 
 mrb_value tone_new_direct(mrb_state* M,
                           RClass* klass,
-                          mrb_float r,
-                          mrb_float g,
-                          mrb_float b,
-                          mrb_float gray) {
+                          double r,
+                          double g,
+                          double b,
+                          double gray) {
   return DataType<Tone>::make(M, klass, clamp_signed255(r), clamp_signed255(g),
                               clamp_signed255(b), clamp255(gray));
 }
@@ -8369,12 +8330,11 @@ mrb_value bmp_stbi_error_direct(mrb_state* M, mrb_value self) {
   return bmp_stbi_error(M, self);
 }
 
-mrb_value bmp_transition_alpha_direct(mrb_state* M,
-                                      mrb_value self,
-                                      mrb_value map_v,
-                                      mrb_float prog,
-                                      mrb_float vague) {
-  return bmp_transition_alpha_native_body(M, self, map_v, prog, vague);
+mrb_value bmp_text_size_direct(mrb_state* M,
+                               mrb_value self,
+                               const char* s,
+                               mrb_int len) {
+  return bmp_text_size_native_body(M, self, s, len);
 }
 
 mrb_value color_dump_direct(mrb_state* M, mrb_value self) {
@@ -8469,26 +8429,6 @@ mrb_value plane_set_tone_direct(mrb_state* M, mrb_value self, mrb_value) {
 }
 #endif
 
-#if !defined(WIO_TERMINAL)
-mrb_value plane_set_zoom_x_direct(mrb_state* M, mrb_value self, mrb_float z) {
-  return plane_set_zoom_x_native_body(M, self, z);
-}
-#else
-mrb_value plane_set_zoom_x_direct(mrb_state* M, mrb_value self, mrb_float) {
-  return native_split_compiled_out(M, self);
-}
-#endif
-
-#if !defined(WIO_TERMINAL)
-mrb_value plane_set_zoom_y_direct(mrb_state* M, mrb_value self, mrb_float z) {
-  return plane_set_zoom_y_native_body(M, self, z);
-}
-#else
-mrb_value plane_set_zoom_y_direct(mrb_state* M, mrb_value self, mrb_float) {
-  return native_split_compiled_out(M, self);
-}
-#endif
-
 mrb_value rect_dump_direct(mrb_state* M, mrb_value self) {
   return rect_dump_native_body(M, self);
 }
@@ -8510,10 +8450,6 @@ mrb_value rect_s_load_direct(mrb_state* M,
 
 mrb_value rect_to_s_direct(mrb_state* M, mrb_value self) {
   return rect_to_s_native_body(M, self);
-}
-
-mrb_value spr_set_angle_direct(mrb_state* M, mrb_value self, mrb_float deg) {
-  return spr_set_angle_native_body(M, self, deg);
 }
 
 mrb_value spr_set_blend_type_direct(mrb_state* M, mrb_value self, mrb_int t) {
@@ -8538,14 +8474,6 @@ mrb_value spr_set_src_rect_direct(mrb_state* M, mrb_value self, mrb_value v) {
 
 mrb_value spr_set_tone_direct(mrb_state* M, mrb_value self, mrb_value v) {
   return spr_set_tone_native_body(M, self, v);
-}
-
-mrb_value spr_set_zoom_x_direct(mrb_state* M, mrb_value self, mrb_float z) {
-  return spr_set_zoom_x_native_body(M, self, z);
-}
-
-mrb_value spr_set_zoom_y_direct(mrb_state* M, mrb_value self, mrb_float z) {
-  return spr_set_zoom_y_native_body(M, self, z);
 }
 
 mrb_value table_dim_direct(mrb_state* M, mrb_value self) {
@@ -9446,9 +9374,11 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
 mrb_value rgss_obj_dispose_direct(mrb_state* M, mrb_value self) {
   return obj_dispose(M, self);
 }
+#if !defined(WIO_TERMINAL)  // LOCAL MEASUREMENT GUARD, not committed
 mrb_value rgss_tilemap_dispose_direct(mrb_state* M, mrb_value self) {
   return tilemap_dispose(M, self);
 }
+#endif  // LOCAL MEASUREMENT GUARD
 
 // OWNER_CALL_DIRECT rows of the other natives an owner call reaches by name
 // (NATIVE_ROWS in tools/bc2cpp/owner_call_direct.rb): the body of a ROM entry
@@ -9474,5 +9404,19 @@ OWNER_ROW(rgss_row_input_poll, input_poll)
 OWNER_ROW(rgss_row_plane_opacity_set, spr_set_opacity)
 OWNER_ROW(rgss_row_window_opacity_set, window_set_opacity)
 OWNER_ROW(rgss_row_bitmap_hue_change, bmp_hue_change)
+#else
+// The rows above are registered on every target (owner_call_direct.rb), but
+// their bodies are compiled out on wio, so the wio link needs a symbol for
+// each. A call raises rather than doing nothing, so a game that reaches one
+// sees why.
+#define WIO_UNAVAILABLE_ROW(wrapper)                             \
+  mrb_value wrapper(mrb_state* mrb, mrb_value) {                 \
+    mrb_raise(mrb, E_RUNTIME_ERROR,                              \
+              #wrapper " is not available on the Wio Terminal"); \
+  }
+WIO_UNAVAILABLE_ROW(rgss_row_plane_opacity_set)
+WIO_UNAVAILABLE_ROW(rgss_row_window_opacity_set)
+WIO_UNAVAILABLE_ROW(rgss_row_bitmap_hue_change)
+#undef WIO_UNAVAILABLE_ROW
 #endif
 #undef OWNER_ROW

@@ -247,10 +247,10 @@ class RPG2k
       # proxy.
       def initial_index
         best = 0
-        best_time = -Float::INFINITY
+        best_time = nil
         (1..SLOT_COUNT).each do |slot|
           ts = slot_timestamp(slot)
-          next unless ts && ts > best_time
+          next unless ts && (best_time.nil? || ts > best_time)
           best_time = ts
           best = slot - 1
         end
