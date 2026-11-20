@@ -279,13 +279,13 @@ def rpg_maker_gems(conf, include_mvjs: true)
   conf.gem core: 'mruby-range-ext'
   # Symbol's Comparable (and casecmp/upcase/...) come from mruby-symbol-ext.
   # The closed world's bc2cpp model (compiled_gems.rb) assumes Symbol includes
-  # Comparable, so a VM-free build has to load the gem that declares it. Declared
-  # here, not left to mruby-core-compiled's dependency, so bc2cpp_drop_mrblib reaches it.
-  conf.gem core: 'mruby-symbol-ext' if bc2cpp_vm_free?(conf)
+  # Comparable, so a VM-free build has to load the gem that declares it (the wio
+  # stanza declares it for wio). A condition here is one compiled_gems.rb can read.
+  conf.gem core: 'mruby-symbol-ext' if conf.name == 'closed'
   # Comparable's methods (clamp, between?, the operators' Ruby bodies) come from
   # mruby-compar-ext. The closed world's bc2cpp model (compiled_gems.rb) assumes
   # Comparable is defined and its owner is compiled, so a VM-free build loads it.
-  conf.gem core: 'mruby-compar-ext' if bc2cpp_vm_free?(conf)
+  conf.gem core: 'mruby-compar-ext' if conf.name == 'closed'
   # Fiber: the RGSS script host drives the game's bundled blocking main loop
   # (`$scene.main while $scene`) one frame at a time through a Fiber so the web
   # build's per-frame emscripten callback keeps control each frame. Not in the
@@ -1161,10 +1161,13 @@ if wio
     # Core method-table omission for wio (the closed-world lists, computed for this tree; wio's rewritten mrblib only
     # removes code, so every name the lists keep stays kept). Under bc2cpp only.
     bc2cpp_core_mt_exclude(conf) if ENV['RPGMAKER_BC2CPP']
-    # VM-free (bc2cpp_vm_free?), as the closed stanza: mruby-enumerator and mruby-string-ext arrive only as dependencies,
-    # which mruby resolves after this block, so they are declared here for the mrblib drop to reach them.
+    # VM-free (bc2cpp_vm_free?), as the closed stanza: mruby-enumerator, mruby-string-ext, mruby-symbol-ext and
+    # mruby-compar-ext arrive only as dependencies, which mruby resolves after this block, so they are declared here for
+    # the mrblib drop to reach them (rpg_maker_gems declares the last two for closed only, in a form compiled_gems.rb reads).
     conf.gem core: 'mruby-enumerator'
     conf.gem core: 'mruby-string-ext'
+    conf.gem core: 'mruby-symbol-ext'
+    conf.gem core: 'mruby-compar-ext'
     bc2cpp_blank_core_units(conf)
     bc2cpp_drop_mrblib(conf)
 
