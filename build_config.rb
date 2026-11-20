@@ -127,11 +127,19 @@ def wio_strip_clock(spec)
   end
 end
 
+# VM-free builds: the closed build, and wio, which is a closed world built under bc2cpp only (MRUBY_TARGET=wio aborts
+# without RPGMAKER_BC2CPP=1). They define MRB_VM_FREE, so no bytecode may run: the core and every gem run their compiled
+# class units instead of loading mrblib (MRB_CORE_CLASS_UNITS, bc2cpp_blank_units, bc2cpp_blank_core_units,
+# bc2cpp_drop_mrblib).
+def bc2cpp_vm_free?(build)
+  build.name == 'closed' || (build.name == 'wio' && ENV['RPGMAKER_BC2CPP'] == '1')
+end
+
 # UNIT_BLANK (tools/bc2cpp/unit_blank.rb): a compiled gem's mrblib copy without the top-level class and module statements
 # its generation emitted as units (the *_units.txt manifest). Those units run from gem_init, so the VM must not run them
 # again. Called last in the gem's stanza: the copies depend on the generation that writes the manifest.
 def bc2cpp_blank_units(spec)
-  return unless spec.build.name == 'closed'
+  return unless bc2cpp_vm_free?(spec.build)
 
   compiled = BC2CPP_COMPILED_GEMS["#{spec.name}-compiled"]
   return unless compiled
@@ -150,9 +158,9 @@ end
 # UNIT_BLANK for mruby's core extension gems (BC2CPP_CORE_MRBLIB_GEMS, BC2CPP_EXTERNAL_MRBLIB_GEMS): their top-level class
 # and module statements that the core generation emitted as units are removed from the copies the VM loads, as
 # bc2cpp_blank_units does for the engine gems. mruby's own top-level mrblib/*.rb is no gem and is not rewritten here.
-# Called once the gem declarations are in place (closed build only).
+# Called once the gem declarations are in place (VM-free builds only).
 def bc2cpp_blank_core_units(conf)
-  return unless conf.name == 'closed' && conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
+  return unless bc2cpp_vm_free?(conf) && conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
 
   require File.join(BC2CPP_TREE, 'tools/bc2cpp/compiled_gems')
   require File.join(BC2CPP_TREE, 'tools/bc2cpp/unit_blank')
@@ -173,10 +181,10 @@ def bc2cpp_blank_core_units(conf)
   end
 end
 
-# VM-free: every gem's mrblib bytecode is dropped in the closed build, not only the ones the generation blanks. A gem's
+# VM-free: every gem's mrblib bytecode is dropped, not only the ones the generation blanks. A gem's
 # rbfiles are set when its setup runs and its build-config initializer runs after that, so the empty list is set last.
 def bc2cpp_drop_mrblib(conf)
-  return unless conf.name == 'closed'
+  return unless bc2cpp_vm_free?(conf)
 
   conf.gems.each do |spec|
     previous = spec.build_config_initializer
@@ -255,8 +263,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # VM-start counter (measurement only, scripts/bc2cpp/vm_start_counter.patch). Compiled into the VM when
   # BC2CPP_VM_START_COUNTER=1; off otherwise, so no shipped build changes.
   conf.cc.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
-  # MRB_CORE_CLASS_UNITS (mruby tasks/mrblib.rake): the closed build runs the core's compiled class bodies, not the core mrblib.
-  conf.cc.defines << 'MRB_CORE_CLASS_UNITS' if conf.name == 'closed'
+  # MRB_CORE_CLASS_UNITS (mruby tasks/mrblib.rake): a VM-free build runs the core's compiled class bodies, not the core mrblib.
+  conf.cc.defines << 'MRB_CORE_CLASS_UNITS' if bc2cpp_vm_free?(conf)
   # MRB_VM_FREE (vm.c): the closed build has no bytecode interpreter; mrb_vm_exec raises.
   conf.cc.defines << 'MRB_VM_FREE' if conf.name == 'closed'
   conf.cxx.defines << 'MRB_VM_FREE' if conf.name == 'closed'
@@ -271,11 +279,12 @@ def rpg_maker_gems(conf, include_mvjs: true)
   conf.gem core: 'mruby-range-ext'
   # Symbol's Comparable (and casecmp/upcase/...) come from mruby-symbol-ext.
   # The closed world's bc2cpp model (compiled_gems.rb) assumes Symbol includes
-  # Comparable, so the closed build has to load the gem that declares it.
+  # Comparable, so a VM-free build has to load the gem that declares it (the wio
+  # stanza declares it for wio). A condition here is one compiled_gems.rb can read.
   conf.gem core: 'mruby-symbol-ext' if conf.name == 'closed'
   # Comparable's methods (clamp, between?, the operators' Ruby bodies) come from
   # mruby-compar-ext. The closed world's bc2cpp model (compiled_gems.rb) assumes
-  # Comparable is defined and its owner is compiled, so the closed build loads it.
+  # Comparable is defined and its owner is compiled, so a VM-free build loads it.
   conf.gem core: 'mruby-compar-ext' if conf.name == 'closed'
   # Fiber: the RGSS script host drives the game's bundled blocking main loop
   # (`$scene.main while $scene`) one frame at a time through a Fiber so the web
@@ -848,9 +857,6 @@ MRuby::Build.new do |conf|
 end
 
 if wio
-  # The wio build takes LCF::Schema from its blob (mruby-lcf/mrbgem.rake), so bc2cpp's compiled copy of schema.rb is
-  # left out (see 3rd/nfcxx's compiled_gems.rb). ||= keeps an explicit BC2CPP_SKIP_LCF_SCHEMA_RB=0.
-  ENV['BC2CPP_SKIP_LCF_SCHEMA_RB'] ||= '1'
   # Cross build for the Wio Terminal (Seeed, ATSAMD51 / Cortex-M4F). Produces a
   # libmruby.a that the PlatformIO firmware (app/wio, platformio.ini) links. The
   # host build above supplies mrbc.
@@ -1155,6 +1161,15 @@ if wio
     # Core method-table omission for wio (the closed-world lists, computed for this tree; wio's rewritten mrblib only
     # removes code, so every name the lists keep stays kept). Under bc2cpp only.
     bc2cpp_core_mt_exclude(conf) if ENV['RPGMAKER_BC2CPP']
+    # VM-free (bc2cpp_vm_free?), as the closed stanza: mruby-enumerator, mruby-string-ext, mruby-symbol-ext and
+    # mruby-compar-ext arrive only as dependencies, which mruby resolves after this block, so they are declared here for
+    # the mrblib drop to reach them (rpg_maker_gems declares the last two for closed only, in a form compiled_gems.rb reads).
+    conf.gem core: 'mruby-enumerator'
+    conf.gem core: 'mruby-string-ext'
+    conf.gem core: 'mruby-symbol-ext'
+    conf.gem core: 'mruby-compar-ext'
+    bc2cpp_blank_core_units(conf)
+    bc2cpp_drop_mrblib(conf)
 
     # Tried and reverted: -fno-exceptions, matching PlatformIO's own Arduino
     # framework build (platformio.ini's own comment on this). This project's
