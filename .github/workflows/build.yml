@@ -813,6 +813,7 @@ jobs:
           ruby scripts/bc2cpp/vm_bytecode_free_check.rb
           ruby scripts/bc2cpp/vm_free_inventory_check.rb build-closed-bc2cpp/closed
           ruby scripts/bc2cpp/vm_unreachable_check.rb build-closed-bc2cpp/closed
+          ruby scripts/bc2cpp/cross_unit_row_check.rb build-closed-bc2cpp/closed
           ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs --jobs 4 build-closed-bc2cpp/closed
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host ruby scripts/native/binding_split.rb check --facts "$RUNNER_TEMP/binding-facts"
           # ci:parallel end
