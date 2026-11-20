@@ -64,7 +64,7 @@ RUBY
 PROBE_FN = /^mrb_value CxHolder_probe_impl\(mrb_state\* M.*?(?=^mrb_value \w+\(mrb_state\* M|\z)/m
 ARM = %r{(?:// NATIVE_OWNER_MAP :empty\? -- [^\n]*\n\s*)?if \(bc2cpp_class_is\(M, r\d+, bc2cpp_owner_class_\d+\(M\)\)\) \{\n\s*r\d+ = CxQueue_empty\$3f_impl\(M, r\d+\);\n\s*\} else }
 # Both dispatch forms carry the calling self for visibility checks.
-BY_NAME_ELSE = /bc2cpp_send\(M, r\d+, \d+, 0, self\)|bc2cpp_owner_call\(M, r\d+, \d+, \d+, BC2CPP_OWNERS\(.*?\), mrb_nil_value\(\), 0, self\)/
+BY_NAME_ELSE = /bc2cpp_send\(M, r\d+, \d+, 0, self\)|bc2cpp_owner_call\(M, r\d+, BC2CPP_OWNERS\(\d+, \d+, .*?\), mrb_nil_value\(\), 0, self\)/
 
 # The state may be spelled `M` as well as `mrb`: `M->array_class` is the Array class, so an alias or definition through
 # it has an owner rather than UNKNOWN (mruby-rgss captures the core sort that way). An unknown field stays UNKNOWN.
