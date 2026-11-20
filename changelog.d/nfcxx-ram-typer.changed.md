@@ -1,0 +1,1 @@
+- Wio: compiled gems need about 94 KB less RAM, from one shared frame-free set (−51 KB), presym symbols (−24 KB) and per-name constant caches (−19 KB). bc2cpp also uses checked return and Array/Hash/String ivar declarations, which removes 34 owner calls from the closed build.

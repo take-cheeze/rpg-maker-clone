@@ -8081,7 +8081,7 @@ end
 
 class Game::Character
   %a{bc2cpp:hint}
-  def face: (untyped) -> Integer
+  def face: (untyped) -> Integer?
   def move: (untyped) -> false
   %a{bc2cpp:hint}
   def set_graphic: (untyped, untyped) -> Integer
