@@ -143,7 +143,7 @@ Dir.mktmpdir('outside-owner-call') do |dir|
   check.call('delete: else is the owner call', del.include?('bc2cpp_owner_call(M, ') && del.include?('CLOSED_WORLD owner-call: delete'))
   check.call('delete: no by-name send left', !del.include?('bc2cpp_send(') && !del.include?('kept: core_or_native'))
   check.call('delete: owners are the core definers', (%w[Array Hash String] - owners_of.call(del)).empty?)
-  check.call('delete: explicit receiver checks (level 2)', del.match?(/bc2cpp_owner_call\(M, r\d+, \d+, 2, /))
+  check.call('delete: explicit receiver checks (level 2)', del.match?(/bc2cpp_owner_call\(M, r\d+, BC2CPP_OWNERS(?:_D)?\(\d+, 2, /))
   check.call('delete: the Ruby arm stays first', del.index('Bag_delete_impl').to_i < del.index('bc2cpp_owner_call').to_i)
   check.call('name: owners include Symbol and NameError', (%w[NameError Symbol] - owners_of.call(body.call(code, 'nm'))).empty?)
   check.call('at: owners include Array', owners_of.call(body.call(code, 'at')).include?('Array'))
