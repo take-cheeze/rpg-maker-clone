@@ -26,6 +26,9 @@ require_relative '../bc2cpp/fixture_runtime'
 require_relative '../../tools/bc2cpp/bc2cpp'
 
 ENV['BC2CPP_SIG_DIRS'] ||= ''
+# The runtime rows make an Array subclass the closed world does not see, which ARMS_COMPLETE_ELSE rules out; off,
+# the owner call stays the else they test.
+ENV['BC2CPP_ARMS_COMPLETE_ELSE'] = '0'
 runtime = Bc2cppFixtureRuntime
 failures = []
 check = lambda do |what, condition|
