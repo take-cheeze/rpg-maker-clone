@@ -171,6 +171,8 @@ class String < Object
   def size: () -> Integer
   # bc2cpp-native: core_results
   def length: () -> Integer
+  # bc2cpp-native: core_results
+  def to_s: () -> String
 end
 
 # bc2cpp-native: core_hierarchy
@@ -321,6 +323,10 @@ class Array[unchecked out Elem] < Object
   def +: (Array[untyped] other) -> Array[untyped]
   # bc2cpp-native: core_results
   def -: (Array[untyped] other) -> Array[untyped]
+  # bc2cpp-native: core_results
+  def size: () -> Integer
+  # bc2cpp-native: core_results
+  def length: () -> Integer
 end
 
 class Hash[unchecked out K, unchecked out V] < Object
