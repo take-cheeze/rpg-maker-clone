@@ -8036,6 +8036,12 @@ class Game::Battle
   def attack_target: (Game::Battle::Combatant b) -> untyped
   def apply_skill_hit: (Game::Battle::Combatant b, untyped target, untyped hp, untyped mp, untyped cmd) -> untyped
 end
+# Combatant#initialize's `states` (nil default; from_actor passes `actor_states`, an Array, from_enemy `[]`) and
+# `states=` (`b.states - [id]`, `(states || []) - [sid]`, Game::States.prune of an Array, which returns it or a
+# select of it) are the only writers.
+class Game::Battle::Combatant
+  @states: Array?
+end
 class RPG2k
   module Scene
     class Battle
