@@ -7942,12 +7942,12 @@ module RPG2k
       # is optional; `@ui.update({...})` in #start, the only writer of :battle (Game::Battle.new), :troop
       # (`troop = Game::Troop.new(...)`), :events (Game::Interpreter.new), :allies/:foes (block `map`s) and
       # :pages_run (`{}`, also reset by `@ui[:pages_run] = {}`); `@ui[:enemy_sprites]`/`[:actor_sprites]` are nil or
-      # `Array.new(n) { }`; :pending is nil or a Hash literal. :allies (`party.actors.map { }`) and :items
-      # (Party#battle_items) are traced through the calls (RECORD_FIELD_TRACE). :foes stays untyped (Troop#members
-      # shares its name with natively defined Struct#members), and so does :skills (Actor#skills= stores a method result
-      # of its argument). The other keys hold method results or arithmetic the checker cannot trace: untyped.
+      # `Array.new(n) { }`; :pending is nil or a Hash literal. :allies (`party.actors.map { }`), :items
+      # (Party#battle_items) and :foes (`troop.members.map { }` on the exact Game::Troop.new) are traced through the
+      # calls (RECORD_FIELD_TRACE). :skills stays untyped (Actor#skills= stores a method result of its argument). The
+      # other keys hold method results or arithmetic the checker cannot trace: untyped.
       @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: Array,
-             ?foes: untyped, ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
+             ?foes: Array, ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
              ?actor_sprites: Array[untyped]?,
              ?phase: untyped, ?options_shown: untyped, ?opt: untyped, ?actor_i: untyped, ?cmd: untyped,
              ?target_i: untyped, ?skill_i: untyped, ?item_i: untyped, ?ally_i: untyped,
