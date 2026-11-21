@@ -8031,6 +8031,19 @@ end
 class Game::Battle::Combatant
   @states: Array?
 end
+# ChipSet#initialize is the only writer: the chipset row's `passable_data_lower`/`_upper` (:int8_array, LCF.decode's
+# `d.bytes`) and `terrain_data` (:int16_array without `order:`, an unpack), or nil without a row.
+class Game::ChipSet
+  @passable_lower: Array?
+  @passable_upper: Array?
+  @terrain: Array?
+end
+# Every store is an Array built from the class curve (Array.new, #dup, #map, #base_stats), or #restore_base's `dup`
+# of a saved total, which lsd_io builds with Array.new; nil before the first #set_level.
+class Game::Actor
+  @base: Array?
+  @base_raw: Array?
+end
 class RPG2k
   module Scene
     class Battle
