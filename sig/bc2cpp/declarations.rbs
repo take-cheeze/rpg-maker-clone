@@ -1927,7 +1927,6 @@ module Game::States
   def self.map_step_drain: (untyped, untyped, untyped) -> untyped
   def self.name: (untyped, untyped) -> untyped
   def self.priority_of: (untyped, untyped) -> untyped
-  def self.prune: (untyped, untyped, ?keep: untyped) -> untyped
   def self.recovery_message: (untyped, untyped, untyped) -> untyped
   def self.row: (untyped, untyped) -> untyped
   def self.significant: (untyped, untyped) -> untyped
@@ -7922,6 +7921,17 @@ class RPG2k
     end
   end
 end
+# ---- keyword_types.rbs
+# Keyword parameter types, checked where each KARG writes the given value (DECLARED_KEYWORD_PARAM): every caller and
+# default passes these kinds.
+module Game::States
+  def self.prune: (untyped, untyped, ?keep: Array[Integer]) -> untyped
+end
+class RPG2k::Scene::Battle
+  def battle_list_window: (untyped, Integer, untyped, untyped, untyped, ?column_max: Integer, ?idxs: Array[Integer]?,
+                           ?desc: String?, ?scroll_key: Symbol?) -> untyped
+end
+
 # ---- record_types.rbs
 # Record types: checked at every write of the ivar name in the closed world, so a
 # wrong field is a TC1009 build error at the offending write, never a silent hint.
