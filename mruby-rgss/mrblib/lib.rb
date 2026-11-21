@@ -6,6 +6,14 @@ RENDER_FPS = 60
 module RGSS
   class Timeout < StandardError; end
 
+  # FLOAT-BEGIN: the unit and fractions the Ruby side hands the native layer. mruby-rgss/gen_rgss_nofloat.rb replaces
+  # this block on a no-Float build (MRB_NO_FLOAT), where the same names are Integers.
+  def self.unit; 1.0 end
+  def self.half; 0.5 end
+  def self.fraction(n, d); n / d.to_f end
+  def self.brightness(v); v / 255.0 end
+  # FLOAT-END
+
   # Emit a warning only the first time it is raised. Warning on every call would
   # flood the log from within the game loop, so each distinct message is
   # reported once.
@@ -263,7 +271,7 @@ module RGSS
       map.fill_rect(x, 0, 1, h, Color.new(shade, shade, shade, 255))
       x += 1
     end
-    shaped = still._transition_alpha(map, 0.5, 40 / 255.0)
+    shaped = still._transition_alpha(map, RGSS.half, RGSS.brightness(40))
     cover = Sprite.new
     cover.bitmap = still
     cover.z = Graphics::TRANSITION_Z
@@ -847,11 +855,11 @@ module RGSS
     end
 
     def zoom_x
-      @zoom_x.nil? ? 1.0 : @zoom_x
+      @zoom_x.nil? ? RGSS.unit : @zoom_x
     end
 
     def zoom_y
-      @zoom_y.nil? ? 1.0 : @zoom_y
+      @zoom_y.nil? ? RGSS.unit : @zoom_y
     end
 
     def blend_type
@@ -938,11 +946,11 @@ module RGSS
     end
 
     def zoom_x
-      @zoom_x.nil? ? 1.0 : @zoom_x
+      @zoom_x.nil? ? RGSS.unit : @zoom_x
     end
 
     def zoom_y
-      @zoom_y.nil? ? 1.0 : @zoom_y
+      @zoom_y.nil? ? RGSS.unit : @zoom_y
     end
 
     def angle
@@ -1667,13 +1675,13 @@ module RGSS
         sprite.bitmap = frozen
         sprite.z = TRANSITION_Z
         # `vague` is on the transition graphic's own 0..255 brightness scale.
-        softness = (vague.nil? ? 0 : vague) / 255.0
+        softness = RGSS.brightness(vague.nil? ? 0 : vague)
         duration.times do |i|
           if map
             # One refusal is enough: a snapshot that cannot carry the dissolve
             # will not start carrying it on a later frame, so drop the map and
             # let the rest of the run fade.
-            unless frozen._transition_alpha(map, (i + 1).to_f / duration, softness)
+            unless frozen._transition_alpha(map, RGSS.fraction(i + 1, duration), softness)
               map.dispose
               map = nil
             end

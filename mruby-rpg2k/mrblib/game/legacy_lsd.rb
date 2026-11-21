@@ -27,7 +27,9 @@ module Game
     def self.ext_double_at(io)
       raw = io.read(8)
       raise 'truncated extension double' if raw.nil? || raw.bytesize != 8
+# FLOAT-BEGIN ext_double
       raw.unpack('E')[0]
+# FLOAT-END ext_double
     end
 
     # [[tag, body], ...] parsed from a chunk-200 payload string.
@@ -88,20 +90,23 @@ module Game
             id = LCF.read_ber(io)
             name_len = LCF.read_ber(io)
             name = name_len > 0 ? io.read(name_len) : ''
-            opacity = ext_double_at(io)
+            opacity = LCF.unpack_fixed_double(io.read(8), 10)
             has_target = LCF.read_ber(io) != 0
-            topacity = has_target ? ext_double_at(io) : nil
+            topacity = has_target ? LCF.unpack_fixed_double(io.read(8), 10) : nil
+            raise 'truncated extension double' if opacity.nil? || (has_target && topacity.nil?)
             pic = state.pictures[id]
             pic.restore_legacy_lsd(name, opacity, topacity) if pic
           end
         when EXT_TAG_PAN
           # Old records retain pixel doubles rather than native sixteenths.
           io = StringIO.new(body)
-          px = ext_double_at(io)
-          py = ext_double_at(io)
-          tx = ext_double_at(io)
-          ty = ext_double_at(io)
-          step = ext_double_at(io)
+          # Pan fields as 1/16-pixel Integers, read without a Float; a short read is nil.
+          px = LCF.unpack_fixed_double(io.read(8), 4)
+          py = LCF.unpack_fixed_double(io.read(8), 4)
+          tx = LCF.unpack_fixed_double(io.read(8), 4)
+          ty = LCF.unpack_fixed_double(io.read(8), 4)
+          step = LCF.unpack_fixed_double(io.read(8), 4)
+          raise 'truncated extension double' if [px, py, tx, ty, step].include?(nil)
           locked = LCF.read_ber(io) != 0
           state.screen.load_h(pan_x: px, pan_y: py, pan_tx: tx, pan_ty: ty,
                               pan_step: step, pan_locked: locked)

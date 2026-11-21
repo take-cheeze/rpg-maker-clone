@@ -26,6 +26,8 @@ require_relative '../bc2cpp/fixture_runtime'
 require_relative '../../tools/bc2cpp/bc2cpp'
 
 ENV['BC2CPP_SIG_DIRS'] ||= ''
+# As a real build (OWNER_ROWS_TRIM): direct rows only for owners the build leaves out, none in this fixture.
+ENV['BC2CPP_OWNER_ROWS'] ||= 'left_out'
 # The runtime rows make an Array subclass the closed world does not see, which ARMS_COMPLETE_ELSE rules out; off,
 # the owner call stays the else they test.
 ENV['BC2CPP_ARMS_COMPLETE_ELSE'] = '0'
@@ -141,7 +143,7 @@ Dir.mktmpdir('outside-owner-call') do |dir|
   check.call('delete: else is the owner call', del.include?('bc2cpp_owner_call(M, ') && del.include?('CLOSED_WORLD owner-call: delete'))
   check.call('delete: no by-name send left', !del.include?('bc2cpp_send(') && !del.include?('kept: core_or_native'))
   check.call('delete: owners are the core definers', (%w[Array Hash String] - owners_of.call(del)).empty?)
-  check.call('delete: explicit receiver checks (level 2)', del.match?(/bc2cpp_owner_call\(M, r\d+, \d+, 2, /))
+  check.call('delete: explicit receiver checks (level 2)', del.match?(/bc2cpp_owner_call\(M, r\d+, BC2CPP_OWNERS(?:_D)?\(\d+, 2, /))
   check.call('delete: the Ruby arm stays first', del.index('Bag_delete_impl').to_i < del.index('bc2cpp_owner_call').to_i)
   check.call('name: owners include Symbol and NameError', (%w[NameError Symbol] - owners_of.call(body.call(code, 'nm'))).empty?)
   check.call('at: owners include Array', owners_of.call(body.call(code, 'at')).include?('Array'))
@@ -278,12 +280,21 @@ withdraw.call('native owner not nameable', 'src/rogue_owner.c' => <<~C)
   }
 C
 withdraw.call('outside Ruby owner not nameable', 'mrblib/rogue_owner.rb' => "HOLDER = Object.new\ndef HOLDER.delete(x) = x\n")
+# METHOD_MISSING_ARMS (nfcxx): a method_missing class gets an exact-class arm that sends by name, and the else closes over
+# the owners; with BC2CPP_METHOD_MISSING_ARMS=0 the class makes every owner set unknown.
+GHOST = "#{SOURCE}\nclass Ghost\n  def method_missing(n, *a) = n\n  def respond_to_missing?(n, p = false) = true\nend\n"
 Dir.mktmpdir('outside-owner-call-mm') do |dir|
-  code, = runtime.generate("#{SOURCE}\nclass Ghost\n  def method_missing(n, *a) = n\n  def respond_to_missing?(n, p = false) = true\nend\n",
-                           dir, only_owners: OWNERS)
-  pk = body.call(code, 'pk')
-  check.call('a method_missing class makes every owner set unknown: pack keeps its by-name send',
-             pk.include?('bc2cpp_send(') && !pk.include?('bc2cpp_owner_call('))
+  pk = body.call(runtime.generate(GHOST, dir, only_owners: OWNERS).first, 'pk')
+  check.call('a method_missing class gets a by-name arm, and pack\'s else is the owner call over {Array}',
+             pk.include?('/* METHOD_MISSING_ARM Ghost */') && pk.include?('bc2cpp_owner_call(') && owners_of.call(pk) == %w[Array])
+  begin
+    ENV['BC2CPP_METHOD_MISSING_ARMS'] = '0'
+    off = body.call(runtime.generate(GHOST, FileUtils.mkdir_p(File.join(dir, 'off')).first, only_owners: OWNERS).first, 'pk')
+  ensure
+    ENV.delete('BC2CPP_METHOD_MISSING_ARMS')
+  end
+  check.call('BC2CPP_METHOD_MISSING_ARMS=0: the method_missing class makes every owner set unknown (pack sends by name)',
+             off.include?('bc2cpp_send(') && !off.include?('bc2cpp_owner_call('))
 end
 begin
   ENV['BC2CPP_NATIVE_OWNER_MAP'] = '0'

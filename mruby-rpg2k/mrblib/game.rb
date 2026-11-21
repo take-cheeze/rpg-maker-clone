@@ -3175,7 +3175,7 @@ module Game
       pct = bonus
       if LCF.field?(@db_row, :has_critical_rate) && @db_row[:has_critical_rate]
         n = LCF.field?(@db_row, :critical_rate) ? @db_row[:critical_rate] : 0
-        pct += (100.0 / n).to_i if n && n > 0
+        pct += 100 / n if n && n > 0
       end
       pct
     end
@@ -3769,6 +3769,7 @@ module Game
         cap = exp_max
         return result > cap ? cap : result
       end
+      # FLOAT-BEGIN exp
       base = db_exp_param(:exp_basic).to_f
       inflation = 1.5 + db_exp_param(:exp_increase) * 0.01
       correction = db_exp_param(:exp_correction).to_f
@@ -3778,6 +3779,7 @@ module Game
         base *= inflation
         inflation = ((n + 1) * 0.002 + 0.8) * (inflation - 1) + 1
       end
+      # FLOAT-END exp
       cap = exp_max
       result > cap ? cap : result
     end
@@ -7825,7 +7827,9 @@ module Game
     end
 
     def wave?
+# FLOAT-BEGIN wave
       @style == WAVE_IN || @style == WAVE_OUT
+# FLOAT-END wave
     end
 
     # The pixel block size `Bitmap#mosaic_blt` resamples the captured screen
@@ -7852,7 +7856,9 @@ module Game
     def wave_params
       p = mosaic_wave_progress
       d = span
+# FLOAT-BEGIN wave_phase
       phase = (d <= 0 ? 0 : p * 5 * Math::PI / d) + Math::PI
+# FLOAT-END wave_phase
       [p, phase]
     end
 
@@ -8338,11 +8344,11 @@ module Game
       @flash_frames = 0 # frames left in the current flash (0 = faded out)
       @flash_total = 0
       @flash_continuous = false # RPG2003 Begin/End strobe: re-arms at 0 instead of settling
-      @pan_x = 0        # current pan offset in pixels (added to the camera)
+      @pan_x = 0        # current pan offset in 1/16 px (added to the camera, see #pan_offset)
       @pan_y = 0
       @pan_tx = 0       # target pan offset the current pan/reset scrolls toward
       @pan_ty = 0
-      @pan_step = 1     # pixels moved toward the target per frame
+      @pan_step = 16    # 1/16 px moved toward the target per frame
       @pan_locked = false # when true the scene stops the camera following the hero
       @fade = 0            # screen erasure: 0 fully visible .. 255 fully black
       @fade_target = 0     # the level the current transition eases toward
@@ -8379,11 +8385,13 @@ module Game
     def flashing?; @flash_frames > 0; end
 
     # The current pan offset [x, y] in whole pixels, added to the camera by the
-    # scene. @pan_x/@pan_y themselves may sit at a sub-pixel value mid-pan (see
-    # #pan_step_for) -- rounded only here, at the point of consumption, the
-    # same way real RPG_RT's own 1/16-pixel subpixel pan position is only ever
-    # rounded to a whole pixel for display.
-    def pan_offset; [@pan_x.round, @pan_y.round]; end
+    # scene. @pan_x/@pan_y are 1/16-pixel units and are rounded (half away from
+    # zero) only here, where they are consumed.
+    def pan_offset
+      x = @pan_x
+      y = @pan_y
+      [x < 0 ? -((-x + 8) / 16) : (x + 8) / 16, y < 0 ? -((-y + 8) / 16) : (y + 8) / 16]
+    end
 
     # Native hero pan fields need raw offsets, targets and step so saving
     # retains sub-pixel motion rather than the rounded display position.
@@ -8407,7 +8415,7 @@ module Game
       @pan_y = h[:pan_y] || 0
       @pan_tx = h[:pan_tx] || 0
       @pan_ty = h[:pan_ty] || 0
-      @pan_step = h[:pan_step] || 1
+      @pan_step = h[:pan_step] || 16
       @pan_locked = h[:pan_locked] ? true : false
     end
 
@@ -8575,18 +8583,12 @@ module Game
 
     # Pan (scroll) the view `distance` tiles in `direction` at `speed`, adding
     # onto the current pan target — RPG2000's Pan Screen "pan" operation.
-    # All three arrive straight off one event command, from the single
-    # `screen.pan(cmd.param(1), cmd.param(2), cmd.param(3))` call site in
-    # Interpreter's own Pan Screen handler -- `LCF::EventCommand#param` is
-    # `@parameters[i] || 0` over a decoded integer list, so all three are
-    # Fixnum. (`Game::Screen#approach`, three methods below, deliberately
-    # carries NO fixnum hint for `cur`/`step`: `@pan_step` comes from
-    # `pan_step_for`, whose `(2 << ...) / 16.0` makes it a Float, and
-    # `@pan_x`/`@pan_y` inherit that -- hence #pan_offset's own `.round`.)
+    # All positions and steps are 1/16-pixel Integers (16 per pixel), so pan
+    # never needs a Float. Each argument is a whole Integer off the event command.
 
     def pan(direction, distance, speed)
       dx, dy = PAN_DELTA[direction] || [0, 0]
-      d = distance * Game::TILE
+      d = distance * Game::TILE * 16
       @pan_tx += dx * d
       @pan_ty += dy * d
       @pan_step = pan_step_for(speed)
@@ -8682,10 +8684,12 @@ module Game
     # resetting each frame), just never applied here.
     def update_tint
       return if @frames <= 0
+# FLOAT-BEGIN tint
       @r += (@tr - @r) / @frames.to_f
       @g += (@tg - @g) / @frames.to_f
       @b += (@tb - @b) / @frames.to_f
       @sat += (@tsat - @sat) / @frames.to_f
+# FLOAT-END tint
       @frames -= 1
       return unless @frames.zero?
       @r = @tr; @g = @tg; @b = @tb; @sat = @tsat # land exactly on the target
@@ -8715,7 +8719,9 @@ module Game
       end
       amplitude = 1 + 2 * @shake_power
       phase = (@shake_frames * 4 * (@shake_speed + 2)) % 256
+      # FLOAT-BEGIN shake
       newpos = (amplitude * Math.sin(phase * Math::PI / 128) * -1).to_i
+      # FLOAT-END shake
       # The step off the *previous* frame's own offset is separately capped,
       # a smoothing rule distinct from the amplitude bound above -- without
       # it a low-speed, high-power shake could otherwise jump between two far
@@ -8751,47 +8757,10 @@ module Game
       cur < target ? cur + step : cur - step
     end
 
-    # Pixels moved per frame for a pan speed (1..6): `(2 << speed) / 16.0`,
-    # i.e. a raw `2 << speed` step through a 1/16-pixel subpixel space
-    # (sixteen per this codebase's own real TILE = 16 px) -- 0.25, 0.5, 1, 2,
-    # 4, 8 px/frame for speed 1..6, not a plain doubling starting at a whole
-    # pixel (1, 2, 4, 8, 16, 32), which was 4x too fast at every setting.
-    # @pan_x/@pan_y (see #approach/#pan_offset) accumulate this sub-pixel-
-    # per-frame rate exactly at speeds 1/2 (0.25 and 0.5 are both exact
-    # powers of two in binary floating point, so this never drifts), landing
-    # on the same whole-pixel target #pan_offset's own rounding always
-    # resolves to once a pan finishes.
-    #
-    # **Confirmed against genuine RPG_RT.exe under wine (cycle #178,
-    # 2026-08-26)**, at speeds 1 and 3: Nepheshel's own `Map0521.lmu` event 1
-    # page 1 (trigger=3 autostart, condition flags=0) is a genuine, already-
-    # authored Pan Screen (op=2, direction=left, distance=9 tiles, **wait
-    # ON**) immediately followed by Erase Screen then a Teleport -- the one
-    # `wait==1` Pan Screen call found anywhere across every Nepheshel map
-    # (checked by dumping every map's own event-command list), so its own
-    # Erase Screen (a plain fade to black, ~35 frames/0.58s once the pan's
-    # own interpreter wait releases it) is a directly observable, real-engine
-    # marker of exactly when the pan finished. Timed with fixed-offset
-    # screenshots (0.25s resolution) from the moment Continue loaded a save
-    # standing on map 521 (no code, only Save01.lsd's own hero-position
-    # chunk edited via `gen-rpg2k-save.rb --map 521 --clear-scene`):
-    # at the genuine, unmodified speed 1 the screen was still visibly
-    # scrolling at t=11.5s and fully black by t=12.0s; at speed 3 (the map's
-    # own Pan Screen command's speed parameter edited in place from 1 to 3,
-    # nothing else touched, then restored byte-identical afterward) the same
-    # transition landed at t=4.5-5.0s instead. `(2<<3)/16.0 - (2<<1)/16.0 =
-    # 0.75` px/frame more at speed 3 than speed 1 predicts a 144px/0.25 -
-    # 144px/1.0 = 576 - 144 = 432-frame (7.2s) gap between the two runs'
-    # pan durations; the observed gap between the two runs' own black-screen
-    # landings was ~7.0s (12.0s - ~5.0s) -- matching to within the
-    # measurement's own 0.25s screenshot resolution and ruling out the
-    # rejected "plain doubling from a whole pixel" alternative by a wide
-    # margin (that table predicts only a 2.4s - 0.6s = 1.8s gap between the
-    # same two speeds, a 4x smaller difference than what genuine RPG_RT
-    # actually shows). See docs/TODO.md's cycle #178 entry for the full
-    # screenshot-by-screenshot timing table and the probe scripts.
+    # 1/16-pixel step per frame for a pan speed (1..6): `2 << speed`, i.e. 4..128
+    # (0.25..8 px/frame). A whole-pixel step would be 4x too fast.
     def pan_step_for(speed)
-      (2 << Game.clamp(speed, 1, 6)) / 16.0
+      2 << Game.clamp(speed, 1, 6)
     end
   end
 
@@ -8815,36 +8784,74 @@ module Game
     # (see SAVE_PICTURE's own comment for the experiment): unlike `#x`/`#y`
     # below, a Move Picture (`#move_to`) never touches these, only a fresh
     # `Picture.new` (i.e. another Show Picture on this same id) does.
-    attr_reader :show_x, :show_y
+    def show_x; Picture.unfloat(@show_x); end
+    def show_y; Picture.unfloat(@show_y); end
+
+    # Interpolated values are fixed-point integers in 1/1024 units (FIX_SHIFT),
+    # so the no-Float build can run them. The save keeps its :double fields:
+    # #to_lsd and #to_h read #unfloat values, #from_lsd passes Floats, which
+    # #fix rounds to the nearest 1/1024.
+    FIX_SHIFT = 10
+    def self.fix(v)
+      v.is_a?(Integer) ? (v << FIX_SHIFT) : (v * (1 << FIX_SHIFT)).round
+    end
+    # Truncated toward zero, as the drawn position always was.
+    def self.unfix(n)
+      n < 0 ? -((-n) >> FIX_SHIFT) : (n >> FIX_SHIFT)
+    end
+    # Whole values come back as Integer, as the un-fixed game values always were;
+    # only a fractional value (from a save) is a Float.
+    def self.unfloat(n)
+      return nil if n.nil?
+      LCF.double_from_fixed(n)
+    end
+    # A save :double read as a fixed value, or nil for an absent field.
+    def self.fixed_of(v)
+      v.nil? ? nil : LCF.double_to_fixed(v)
+    end
+    # A fixed value from opts: already fixed when `raw`, else pixels; nil takes the pixel default.
+    def self.arg(v, raw, default)
+      return fix(default) if v.nil?
+      raw ? v : fix(v)
+    end
+    # Opacity (fixed) of a native :double transparency percentage.
+    def self.fixed_opacity(trans)
+      return nil if trans.nil?
+      (102_400 - Game.clamp(fixed_of(trans), 0, 102_400)) * 255 / 100
+    end
+    def self.div_round(a, b)
+      a < 0 ? -(((-a) + (b >> 1)) / b) : (a + (b >> 1)) / b
+    end
 
     # Every interpolated field is truncated to a whole number here (ported
     # from a reference implementation's own display-time truncation,
     # NOT independently confirmed against genuine RPG_RT under wine) but held
     # at full float precision internally between frames -- see #step's own
     # comment for why the two must not be the same value.
-    def x; @x.to_i; end
-    def y; @y.to_i; end
-    def zoom; @zoom.to_i; end
-    def opacity; @opacity.to_i; end
-    def red; @red.to_i; end
-    def green; @green.to_i; end
-    def blue; @blue.to_i; end
+    def x; Picture.unfix(@x); end
+    def y; Picture.unfix(@y); end
+    def zoom; Picture.unfix(@zoom); end
+    # Rounded, not truncated: the percent round trip (see #fixed_opacity) can sit one 1/1024 below a whole pixel.
+    def opacity; Picture.unfix(@opacity + 512); end
+    def red; Picture.unfix(@red); end
+    def green; Picture.unfix(@green); end
+    def blue; Picture.unfix(@blue); end
 
     # The in-flight move's own target values and remaining frame count (nil/0
     # when never moved or already arrived) -- for `.lsd` chunk 103's own
     # finish_*/time_left fields, which #to_lsd writes from these while
     # #moving?, see SAVE_PICTURE's own comment on why fields 31/32/etc are
     # named finish_*, not current_*.
-    def finish_x; @tx; end
-    def finish_y; @ty; end
-    def finish_zoom; @tzoom; end
-    def finish_opacity; @topacity; end
-    def finish_red; @tred; end
-    def finish_green; @tgreen; end
-    def finish_blue; @tblue; end
-    def finish_saturation; @tsat; end
+    def finish_x; Picture.unfloat(@tx); end
+    def finish_y; Picture.unfloat(@ty); end
+    def finish_zoom; Picture.unfloat(@tzoom); end
+    def finish_opacity; Picture.unfloat(@topacity); end
+    def finish_red; Picture.unfloat(@tred); end
+    def finish_green; Picture.unfloat(@tgreen); end
+    def finish_blue; Picture.unfloat(@tblue); end
+    def finish_saturation; Picture.unfloat(@tsat); end
     def frames_left; @frames; end
-    def saturation; @saturation.to_i; end
+    def saturation; Picture.unfix(@saturation); end
 
     # Whether this id is currently on screen -- false once #erase! has run.
     # A distinct flag rather than "name non-empty": a fresh `Picture.new`
@@ -8863,23 +8870,24 @@ module Game
       @id = id
       @name = opts[:name] || ''
       @shown = true
-      @x = opts[:x] || 0
-      @y = opts[:y] || 0
+      raw = opts[:raw] ? true : false
+      @x = Picture.arg(opts[:x], raw, 0)
+      @y = Picture.arg(opts[:y], raw, 0)
       # Defaults to the shown position itself: the live Show Picture command
       # (#do_show_picture) never passes these explicitly, so an ordinary
       # fresh show records its own x/y as-shown, exactly matching genuine
-      # RPG_RT. #restore_pictures passes the saved field 2/3 explicitly, for
+      # RPG_RT. The save reader passes the saved field 2/3 explicitly, for
       # a save whose picture was already mid-Move-Picture when written (so
       # `x`/`y` above hold the live *current* position, not the original
       # show position, which is what these must restore to instead).
-      @show_x = opts[:show_x] || @x
-      @show_y = opts[:show_y] || @y
-      @zoom = opts[:zoom] || 100
-      @opacity = opts[:opacity] || 255
-      @red = opts[:red] || 100
-      @green = opts[:green] || 100
-      @blue = opts[:blue] || 100
-      @saturation = opts[:saturation] || 100
+      @show_x = opts[:show_x].nil? ? @x : Picture.arg(opts[:show_x], raw, 0)
+      @show_y = opts[:show_y].nil? ? @y : Picture.arg(opts[:show_y], raw, 0)
+      @zoom = Picture.arg(opts[:zoom], raw, 100)
+      @opacity = Picture.arg(opts[:opacity], raw, 255)
+      @red = Picture.arg(opts[:red], raw, 100)
+      @green = Picture.arg(opts[:green], raw, 100)
+      @blue = Picture.arg(opts[:blue], raw, 100)
+      @saturation = Picture.arg(opts[:saturation], raw, 100)
       @fixed_to_map = opts[:fixed_to_map] ? true : false
       @use_transparent_color = opts[:use_transparent_color] ? true : false
       @frames = 0
@@ -8888,10 +8896,23 @@ module Game
     # Begin a move toward new visual parameters over `frames` frames; with
     # frames <= 0 the change applies immediately.
     def move_to(x, y, zoom, opacity, red, green, blue, saturation, frames)
+      move_to_fixed(Picture.fix(x), Picture.fix(y), Picture.fix(zoom), Picture.fix(opacity),
+                    Picture.fix(red), Picture.fix(green), Picture.fix(blue), Picture.fix(saturation), frames)
+    end
+
+    def move_to_fixed(x, y, zoom, opacity, red, green, blue, saturation, frames)
       @tx = x; @ty = y; @tzoom = zoom; @topacity = opacity
       @tred = red; @tgreen = green; @tblue = blue; @tsat = saturation
       @frames = frames > 0 ? frames : 0
       finish_move if @frames == 0
+    end
+
+    # The fixed-point state a save writes from, read directly (no pixel truncation).
+    def save_fixed
+      { x: @x, y: @y, show_x: @show_x, show_y: @show_y, zoom: @zoom, opacity: @opacity,
+        red: @red, green: @green, blue: @blue, saturation: @saturation,
+        tx: @tx, ty: @ty, tzoom: @tzoom, topacity: @topacity,
+        tred: @tred, tgreen: @tgreen, tblue: @tblue, tsat: @tsat }
     end
 
     def moving?; @frames > 0; end
@@ -8980,18 +9001,18 @@ module Game
     # Every field this class holds, as a plain hash, for the .lsd's chunk 200 picture
     # record to read (see lsd_io.rb's picture extension).
     def to_h
-      { name: @name, x: @x, y: @y, show_x: @show_x, show_y: @show_y,
-        zoom: @zoom, opacity: @opacity, red: @red, green: @green,
-        blue: @blue, saturation: @saturation, fixed_to_map: @fixed_to_map,
-        use_transparent_color: @use_transparent_color,
-        tx: @tx, ty: @ty, tzoom: @tzoom, topacity: @topacity,
-        tred: @tred, tgreen: @tgreen, tblue: @tblue, tsat: @tsat,
+      { name: @name, x: Picture.unfloat(@x), y: Picture.unfloat(@y), show_x: show_x, show_y: show_y,
+        zoom: Picture.unfloat(@zoom), opacity: Picture.unfloat(@opacity), red: Picture.unfloat(@red),
+        green: Picture.unfloat(@green), blue: Picture.unfloat(@blue), saturation: Picture.unfloat(@saturation),
+        fixed_to_map: @fixed_to_map, use_transparent_color: @use_transparent_color,
+        tx: finish_x, ty: finish_y, tzoom: finish_zoom, topacity: finish_opacity,
+        tred: finish_red, tgreen: finish_green, tblue: finish_blue, tsat: finish_saturation,
         frames: @frames }
     end
 
     private
 
-    def step(cur, target); cur + (target - cur) / @frames.to_f; end
+    def step(cur, target); cur + Picture.div_round(target - cur, @frames); end
 
     def finish_move
       @x = @tx; @y = @ty; @zoom = @tzoom; @opacity = @topacity
@@ -10317,6 +10338,12 @@ module Game
     def move_picture(id, *args)
       pic = @pictures[id]
       pic.move_to(*args) if pic&.shown?
+    end
+
+    # #move_picture with the fixed-point values the save reader holds.
+    def move_picture_fixed(id, *args)
+      pic = @pictures[id]
+      pic.move_to_fixed(*args) if pic&.shown?
     end
 
     # Erase Picture (11130): the `Picture` object itself is kept, not deleted

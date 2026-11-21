@@ -394,8 +394,8 @@ DECODER = <<~'RUBY'
           when 3 then false
           when 4 then true
           when 5 then []
-          when 6 then 0.0
-          when 7 then 100.0
+          when 6 then LCF.double_default(0)
+          when 7 then LCF.double_default(100)
           when 8 then -> { LCF.level_max }
           when 9 then -> { LCF.exp_default }
           else raise "bad default tag: #{tag}"

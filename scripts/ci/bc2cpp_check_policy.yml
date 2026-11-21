@@ -390,15 +390,7 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/hash_build_ops_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    fixture_capabilities:
-    - full_library
-    - cxx
-  scripts/bc2cpp/keyword_receiver_target_check.rb:
+  scripts/bc2cpp/installed_name_devirt_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -422,7 +414,15 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/installed_name_devirt_check.rb:
+  scripts/bc2cpp/hash_build_ops_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/keyword_receiver_target_check.rb:
     tier: runtime
     capabilities:
     - mrbc

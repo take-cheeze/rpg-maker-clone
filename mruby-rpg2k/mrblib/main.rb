@@ -1,3 +1,4 @@
+# rpg2k-lint:allow Dynamic/CoreReopen -- mixes RGSS helpers into every Object (to be replaced by explicit calls)
 class Object
   include RGSS
 end
@@ -87,15 +88,15 @@ class RPG2k
       @pause = false
       @arrow_anim = 0
       # Open/close animation: RPG_RT unrolls a window from its horizontal
-      # centre line rather than popping it in. @openness is 0.0 (closed,
-      # nothing drawn) .. 1.0 (fully open); everything but the skin/frame is
-      # hidden until it reaches 1.0, matching RGSS::Window's own openness
+      # centre line rather than popping it in. @openness is 0 (closed,
+      # nothing drawn) .. 1024 (fully open, 1024 == 1.0); everything but the skin/frame is
+      # hidden until it reaches 1024, matching RGSS::Window's own openness
       # draw (mruby-rgss/src/lib.cxx) -- see #open_animation below. The
       # overall unroll-from-centre mechanic and frame counts are NOT
       # independently confirmed against genuine RPG_RT under wine.
-      @openness = 1.0
+      @openness = 1024
       @anim_frames_left = 0
-      @anim_step = 0.0
+      @anim_step = 0
       @anim_closing = false
 
       # The viewport groups and clips the four layers to the window rect.
@@ -196,12 +197,12 @@ class RPG2k
       @visible = true
       @viewport.visible = true
       if frames > 0
-        @openness = 0.0
+        @openness = 0
         @anim_frames_left = frames
-        @anim_step = 1.0 / frames
+        @anim_step = 1024 / frames
         @anim_closing = false
       else
-        @openness = 1.0
+        @openness = 1024
         @anim_frames_left = 0
       end
       redraw_for_animation
@@ -214,12 +215,12 @@ class RPG2k
     # while the box visibly shrinks. NOT independently confirmed against
     # genuine RPG_RT under wine.
     def close_animation(frames)
-      if frames > 0 && @openness > 0.0
+      if frames > 0 && @openness > 0
         @anim_frames_left = frames
         @anim_step = -@openness / frames
         @anim_closing = true
       else
-        @openness = 0.0
+        @openness = 0
         @anim_frames_left = 0
         self.visible = false
       end
@@ -283,10 +284,10 @@ class RPG2k
           # comes out to 0.9999999999999999, one ULP short of 1.0, which would
           # leave #fully_open? false forever and contents/cursor/the pause
           # arrow permanently hidden behind an apparently-finished window.
-          @openness = @anim_closing ? 0.0 : 1.0
+          @openness = @anim_closing ? 0 : 1024
           self.visible = false if @anim_closing
         else
-          @openness = [[@openness + @anim_step, 0.0].max, 1.0].min
+          @openness = [[@openness + @anim_step, 0].max, 1024].min
         end
         redraw_for_animation
       end
@@ -359,17 +360,17 @@ class RPG2k
     end
 
     def fully_open?
-      @openness >= 1.0
+      @openness >= 1024
     end
 
     # How tall the skin/frame band currently is, centred vertically in the
     # window rect -- the fraction of @height the animation has revealed so
     # far. Mirrors RGSS::Window's own native openness draw (`full_h *
-    # openness / 255`, mruby-rgss/src/lib.cxx) so a fully-open window (the
-    # default @openness of 1.0) draws exactly as before.
+    # openness / 255`, mruby-rgss/src/lib.cxx, in its own 0..255 scale) so a fully-open window (the
+    # default @openness of 1024) draws exactly as before.
     def drawn_height
       return @height if fully_open?
-      h = (@height * @openness).to_i
+      h = @height * @openness / 1024
       h.negative? ? 0 : h
     end
 
@@ -847,9 +848,11 @@ class RPG2k
     map = RGSS::Profiler.section("map.transition.load") { load_map map_id }
     x, y = preview_map_id ? [map.width / 2, map.height / 2]
                            : [init[:initial_x], init[:initial_y]]
-    state = RGSS::Profiler.section("map.transition.party") do
-      Game::State.new Game::Party.new(@db), map_id, x, y
-    end
+    # Game::State.new stays outside the section: CORE_ENUMERATOR_FREE cannot type
+    # section's value (its native tables are unattributed), and the scenes'
+    # blockless `state.map` calls need `state`'s class to rule out Array#map.
+    party = RGSS::Profiler.section("map.transition.party") { Game::Party.new(@db) }
+    state = Game::State.new party, map_id, x, y
     RGSS::Profiler.section("map.transition.seed") do
       # The database's System tab configures the six screen transitions a
       # "use the configured transition" (-1) Erase / Show Screen resolves against.

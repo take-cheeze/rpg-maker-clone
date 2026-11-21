@@ -105,7 +105,9 @@ returns_of = ->(body) { body.scan(/\breturn\b\s*([^;]*);/m).flatten.map { |expr|
 shape = lambda do |kind|
   case kind
   when :fixnum then /\Amrb_fixnum_value\s*\(/
-  when :float then /\Amrb_float_value\s*\(/
+  # rgss::num_value is a Float on the float build, the only build bc2cpp generates code for; the no-Float
+  # build returns a Fixnum there (include/rgss_number.hxx), which this fact does not cover.
+  when :float then /\A(?:mrb_float_value|rgss::num_value)\s*\(/
   when String
     mod, klass = kind.split('::')
     /\Amrb_obj_new\(\s*M,\s*mrb_class_get_under\(\s*M,\s*mrb_module_get\(\s*M,\s*"#{mod}"\s*\),\s*"#{klass}"\s*\),/
@@ -187,7 +189,7 @@ mutants = {
   'Rect#x delegating elsewhere' => ['return rgss::rect_x_direct(M, self);', 'return rgss::rect_y_direct(M, self);'],
   'Color#red bound to another function' => [/color_red_get =\s*component_get<Color, &Color::red>/,
                                              'color_red_get = color_red_other'],
-  'component_get returning nil' => ['return mrb_float_value(M, DataType<T>::get(M, self).*Field);', 'return mrb_nil_value();'],
+  'component_get returning nil' => ['return rgss::num_value(M, DataType<T>::get(M, self).*Field);', 'return mrb_nil_value();'],
   'Bitmap#rect building another class' => ['mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);',
                                            'mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);'],
   'a second Bitmap#width registration' => ['MRB_MT_ENTRY(bmp_width, MRB_SYM(width), MRB_ARGS_NONE())',
@@ -321,13 +323,14 @@ begin
   check.call('opacity caching does not freeze caller strings', !owner.frozen?)
   owner.replace('Other::Leaf')
   check.call('mutating a query string does not corrupt previous cache keys', !world.send(:opaque?, owner) && !world.send(:opaque?, 'Pkg::Leaf'))
-  world.instance_variable_get(:@rebound) << 'Leaf'
+  # The live guards opaque? reads: @rebound_bare (QUALIFIED_REBINDS) and @declared_classes.
+  world.instance_variable_get(:@rebound_bare) << 'Leaf'
   check.call('rebinding still refuses after a negative touch cache hit', world.send(:opaque?, 'Pkg::Leaf'))
-  world.instance_variable_get(:@rebound).clear
+  world.instance_variable_get(:@rebound_bare).clear
   world.instance_variable_get(:@dynamic_subclassed) << 'Leaf'
   check.call('dynamic subclasses still refuse after a negative touch cache hit', world.send(:opaque?, 'Pkg::Leaf'))
   world.instance_variable_get(:@dynamic_subclassed).clear
-  world.instance_variable_get(:@class_decls).delete('Pkg::Leaf')
+  world.instance_variable_get(:@declared_classes).delete('Pkg::Leaf')
   check.call('declaration removal is never hidden by a cached touch answer', world.send(:opaque?, 'Pkg::Leaf'))
   check.call('touch answers do not leak between analysis worlds', make_opacity.call(%w[Pkg Leaf]).send(:opaque?, 'Pkg::Leaf') && !make_opacity.call([]).send(:opaque?, 'Pkg::Leaf'))
 ensure
@@ -650,8 +653,9 @@ if ENV['MRBC']
   check.call('text_size is defined only by Bitmap, so its result is a Rect whatever the receiver: `.width` is exact',
              label.include?('NATIVE_EXACT_DIRECT :width -> RGSS::Rect') && label.include?('operands proven Fixnum'))
   check.call('and the sum has no by-name fallback', !label.include?('bc2cpp_slow_add'))
-  check.call('the unproven receiver of text_size keeps its class guard and Bitmap owner-call fallback',
-             label.match?(/bc2cpp_class_is\(M, r\d+, rgss::native_bitmap_class\(\)\)\) \{\n\s*r\d+ = rgss::bitmap_text_size_direct[^\n]*\n\} else \{\n\s*r\d+ = bc2cpp_owner_call\([^\n]*BC2CPP_OWNERS\("RGSS::Bitmap"\)/))
+  # LEAF_OWNER_ELSE: RGSS::Bitmap is a leaf and text_size's only definer, so any other receiver raises NoMethodError.
+  check.call('the unproven receiver of text_size keeps its class guard, and its else is the leaf owner\'s nomethod',
+             label.match?(/bc2cpp_class_is\(M, r\d+, rgss::native_bitmap_class\(\)\)\) \{\n\s*r\d+ = rgss::bitmap_text_size_direct[^\n]*\n\} else \{\n\s*\/\/ LEAF_OWNER_ELSE :text_size[^\n]*\n\s*r\d+ = bc2cpp_nomethod\(/))
 
   override = generate.call(PRELUDE.sub('class Bitmap; end', "class Bitmap\n    def width; 1.5; end\n  end") + <<~'RUBY', 'nr_override')
     class NrBox
@@ -742,8 +746,11 @@ if ENV['MRBC']
   check.call('a receiver proven NrPane-or-NrPaneB ignores the singleton `width` of NrScreen: the fallback is the proven-dead nomethod',
              read.match?(%r{/\* CLOSED_WORLD nomethod: recv\.width @ \S+:\d+ \*/}) && !read.include?('kept: singleton_definer'))
   read = body_of_impl.call(code, 'NrUse_read_open')
-  check.call('an unproven receiver could be NrScreen itself: the singleton definer keeps the dispatch',
-             read.match?(/bc2cpp_owner_call\([^\n]*BC2CPP_OWNERS\([^\n]*"NrScreen\.singleton"/) && !read.include?('bc2cpp_nomethod'))
+  # An unproven receiver could be NrScreen itself: the class object gets its own arm to the singleton definer, and only
+  # then is the else the nomethod.
+  check.call('an unproven receiver could be NrScreen itself: the class object is armed before the nomethod else',
+             read.include?('CLOSED_WORLD_CONSTANT_OBJECT :width -> NrScreen.singleton#width') &&
+               read.index('NrScreen.singleton#width') < read.index('bc2cpp_nomethod('))
   read = body_of_impl.call(code, 'NrUse_read_class')
   check.call('a send to the class object itself is not an instance receiver', !read.include?('bc2cpp_nomethod'))
 
@@ -754,16 +761,21 @@ if ENV['MRBC']
   RUBY
   check.call('a method_missing class elsewhere does not block a receiver proven not to be one',
              body_of_impl.call(ghost, 'NrUse_read').match?(%r{/\* CLOSED_WORLD nomethod: recv\.width @ \S+:\d+ \*/}))
-  check.call('but it still blocks the unproven receiver',
-             !body_of_impl.call(ghost, 'NrUse_read_open').include?('bc2cpp_nomethod'))
+  # METHOD_MISSING_ARMS: the unproven receiver may be the method_missing class, which gets a by-name arm before the
+  # nomethod else.
+  ghost_open = body_of_impl.call(ghost, 'NrUse_read_open')
+  check.call('but the unproven receiver sends by name to it first',
+             ghost_open.include?('/* METHOD_MISSING_ARM NrGhost */') &&
+               ghost_open.index('METHOD_MISSING_ARM NrGhost') < ghost_open.index('bc2cpp_nomethod('))
 
   ghost_in_set = generate.call(singleton_world.sub('@thing = NrPaneB.new', '@thing = NrGhost.new') + <<~'RUBY', 'nr_ghost_set')
     class NrGhost
       def method_missing(name, *args); name == :width ? 1 : super; end
     end
   RUBY
-  check.call('a receiver that may be the method_missing class keeps the dispatch',
-             !body_of_impl.call(ghost_in_set, 'NrUse_read').include?('bc2cpp_nomethod'))
+  in_set = body_of_impl.call(ghost_in_set, 'NrUse_read')
+  check.call('a receiver that may be the method_missing class sends by name to it before the nomethod else',
+             in_set.include?('/* METHOD_MISSING_ARM NrGhost */') && in_set.index('METHOD_MISSING_ARM NrGhost') < in_set.index('bc2cpp_nomethod('))
 else
   puts '  SKIP generated code: set MRBC'
 end

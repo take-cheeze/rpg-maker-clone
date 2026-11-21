@@ -127,11 +127,19 @@ def wio_strip_clock(spec)
   end
 end
 
+# VM-free builds: the closed build, and wio, which is a closed world built under bc2cpp only (MRUBY_TARGET=wio aborts
+# without RPGMAKER_BC2CPP=1). They define MRB_VM_FREE, so no bytecode may run: the core and every gem run their compiled
+# class units instead of loading mrblib (MRB_CORE_CLASS_UNITS, bc2cpp_blank_units, bc2cpp_blank_core_units,
+# bc2cpp_drop_mrblib).
+def bc2cpp_vm_free?(build)
+  build.name == 'closed' || (build.name == 'wio' && ENV['RPGMAKER_BC2CPP'] == '1')
+end
+
 # UNIT_BLANK (tools/bc2cpp/unit_blank.rb): a compiled gem's mrblib copy without the top-level class and module statements
 # its generation emitted as units (the *_units.txt manifest). Those units run from gem_init, so the VM must not run them
 # again. Called last in the gem's stanza: the copies depend on the generation that writes the manifest.
 def bc2cpp_blank_units(spec)
-  return unless spec.build.name == 'closed'
+  return unless bc2cpp_vm_free?(spec.build)
 
   compiled = BC2CPP_COMPILED_GEMS["#{spec.name}-compiled"]
   return unless compiled
@@ -150,9 +158,9 @@ end
 # UNIT_BLANK for mruby's core extension gems (BC2CPP_CORE_MRBLIB_GEMS, BC2CPP_EXTERNAL_MRBLIB_GEMS): their top-level class
 # and module statements that the core generation emitted as units are removed from the copies the VM loads, as
 # bc2cpp_blank_units does for the engine gems. mruby's own top-level mrblib/*.rb is no gem and is not rewritten here.
-# Called once the gem declarations are in place (closed build only).
+# Called once the gem declarations are in place (VM-free builds only).
 def bc2cpp_blank_core_units(conf)
-  return unless conf.name == 'closed' && conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
+  return unless bc2cpp_vm_free?(conf) && conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
 
   require File.join(BC2CPP_TREE, 'tools/bc2cpp/compiled_gems')
   require File.join(BC2CPP_TREE, 'tools/bc2cpp/unit_blank')
@@ -173,10 +181,10 @@ def bc2cpp_blank_core_units(conf)
   end
 end
 
-# VM-free: every gem's mrblib bytecode is dropped in the closed build, not only the ones the generation blanks. A gem's
+# VM-free: every gem's mrblib bytecode is dropped, not only the ones the generation blanks. A gem's
 # rbfiles are set when its setup runs and its build-config initializer runs after that, so the empty list is set last.
 def bc2cpp_drop_mrblib(conf)
-  return unless conf.name == 'closed'
+  return unless bc2cpp_vm_free?(conf)
 
   conf.gems.each do |spec|
     previous = spec.build_config_initializer
@@ -255,8 +263,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # VM-start counter (measurement only, scripts/bc2cpp/vm_start_counter.patch). Compiled into the VM when
   # BC2CPP_VM_START_COUNTER=1; off otherwise, so no shipped build changes.
   conf.cc.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
-  # MRB_CORE_CLASS_UNITS (mruby tasks/mrblib.rake): the closed build runs the core's compiled class bodies, not the core mrblib.
-  conf.cc.defines << 'MRB_CORE_CLASS_UNITS' if conf.name == 'closed'
+  # MRB_CORE_CLASS_UNITS (mruby tasks/mrblib.rake): a VM-free build runs the core's compiled class bodies, not the core mrblib.
+  conf.cc.defines << 'MRB_CORE_CLASS_UNITS' if bc2cpp_vm_free?(conf)
   # MRB_VM_FREE (vm.c): the closed build has no bytecode interpreter; mrb_vm_exec raises.
   conf.cc.defines << 'MRB_VM_FREE' if conf.name == 'closed'
   conf.cxx.defines << 'MRB_VM_FREE' if conf.name == 'closed'
@@ -271,11 +279,12 @@ def rpg_maker_gems(conf, include_mvjs: true)
   conf.gem core: 'mruby-range-ext'
   # Symbol's Comparable (and casecmp/upcase/...) come from mruby-symbol-ext.
   # The closed world's bc2cpp model (compiled_gems.rb) assumes Symbol includes
-  # Comparable, so the closed build has to load the gem that declares it.
+  # Comparable, so a VM-free build has to load the gem that declares it (the wio
+  # stanza declares it for wio). A condition here is one compiled_gems.rb can read.
   conf.gem core: 'mruby-symbol-ext' if conf.name == 'closed'
   # Comparable's methods (clamp, between?, the operators' Ruby bodies) come from
   # mruby-compar-ext. The closed world's bc2cpp model (compiled_gems.rb) assumes
-  # Comparable is defined and its owner is compiled, so the closed build loads it.
+  # Comparable is defined and its owner is compiled, so a VM-free build loads it.
   conf.gem core: 'mruby-compar-ext' if conf.name == 'closed'
   # Fiber: the RGSS script host drives the game's bundled blocking main loop
   # (`$scene.main while $scene`) one frame at a time through a Fiber so the web
@@ -421,9 +430,18 @@ def rpg_maker_gems(conf, include_mvjs: true)
     conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
   end
 
-  if bc2cpp
+  # wio is VM-free under bc2cpp: its Ruby is compiled, so the bytecode interpreter (vm.c, about 28 KB of flash) and its
+  # native continuation dispatch have nothing to run. mrb_vm_exec raises instead, as in the closed build.
+  vm_free = bc2cpp && conf.name == 'wio'
+  if bc2cpp && !vm_free
     require File.join(BC2CPP_TREE, 'tools/bc2cpp/native_vm_build')
     NativeVM.configure(conf)
+  end
+  if vm_free
+    conf.cc.defines << 'MRB_VM_FREE'
+    conf.cxx.defines << 'MRB_VM_FREE'
+    # The VM-free image has no lv/debug_info (MRB_NO_IREP_DEBUG is already set for wio below), and the bc2cpp proc
+    # stand-ins write irep->lv only when it exists.
   end
 
   rpg_maker_gem_dispatch(conf, include_mvjs: include_mvjs, single_format_only: single_format_only)
@@ -560,13 +578,30 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
       end
       f.puts
 
+      # GEM_ARENA: as mruby's own mrb_init_mrbgems, each gem's init runs inside an arena save/restore, or what it
+      # created stays protected for the life of the process (the compiled gems' inits leave thousands of entries).
+      # The arena's capacity is given back after the last gem: it only grows (gc_arena_keep).
+      f.puts 'static void rpg_maker_gem_arena_trim(mrb_state *mrb) {'
+      f.puts '#ifndef MRB_GC_FIXED_ARENA'
+      f.puts '  if (mrb->gc.arena_capa > MRB_GC_ARENA_SIZE && mrb->gc.arena_idx <= MRB_GC_ARENA_SIZE) {'
+      f.puts '    mrb->gc.arena = (struct RBasic**)mrb_realloc(mrb, mrb->gc.arena, sizeof(struct RBasic*) * MRB_GC_ARENA_SIZE);'
+      f.puts '    mrb->gc.arena_capa = MRB_GC_ARENA_SIZE;'
+      f.puts '  }'
+      f.puts '#endif'
+      f.puts '}'
+      f.puts
       emit_call = lambda do |g|
-        f.puts "  GENERATED_TMP_mrb_#{g.funcname}_gem_init(mrb);"
+        f.puts '  {'
+        f.puts '    int ai = mrb_gc_arena_save(mrb);'
+        f.puts "    GENERATED_TMP_mrb_#{g.funcname}_gem_init(mrb);"
+        f.puts '    mrb_gc_arena_restore(mrb, ai);'
+        f.puts '  }'
         f.puts '  if (mrb->exc) mrb_exc_raise(mrb, mrb_obj_value(mrb->exc));'
       end
 
       f.puts 'void rpg_maker_init_shared_gems(mrb_state *mrb) {'
       shared.each(&emit_call)
+      f.puts '  rpg_maker_gem_arena_trim(mrb);'
       f.puts '}'
 
       # single_format_only's maker_gem_names is just ['mruby-rpg2k'], so
@@ -582,6 +617,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
       maker_private['mruby-rpg2k'].each(&emit_call)
       emit_call.call(rpg2k)
       after_maker['mruby-rpg2k'].each(&emit_call)
+      f.puts '  rpg_maker_gem_arena_trim(mrb);'
       f.puts '}'
       if rpgxp
         f.puts
@@ -589,6 +625,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-rpgxp'].each(&emit_call)
         emit_call.call(rpgxp)
         after_maker['mruby-rpgxp'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
       if rpgvx
@@ -598,6 +635,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-rpgvx'].each(&emit_call)
         emit_call.call(rpgvx)
         after_maker['mruby-rpgvx'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
       if wolf
@@ -606,6 +644,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-wolf'].each(&emit_call)
         emit_call.call(wolf)
         after_maker['mruby-wolf'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
       if mvjs
@@ -614,6 +653,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         maker_private['mruby-mvjs'].each(&emit_call)
         emit_call.call(mvjs)
         after_maker['mruby-mvjs'].each(&emit_call)
+        f.puts '  rpg_maker_gem_arena_trim(mrb);'
         f.puts '}'
       end
     end
@@ -635,6 +675,61 @@ android = ENV['MRUBY_TARGET'] == 'android'
 # Not a device: the sealed RPG2000/2003 closed world built natively for bc2cpp (its stanza below).
 closed = ENV['MRUBY_TARGET'] == 'closed'
 cross = emscripten || wio || maix || psp || android
+# The Wio target is closed-world only: its libmruby is always the bc2cpp build.
+abort 'MRUBY_TARGET=wio requires RPGMAKER_BC2CPP=1 (the Wio build is closed-world only)' if wio && ENV['RPGMAKER_BC2CPP'] != '1'
+
+# CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (StaticDispatchLists#core_excluded) are
+# left out of a build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names
+# (3rd/mruby/include/mruby/class.h). Written only when it changes, so an unchanged list rebuilds nothing. Both
+# compilers get the define: enable_cxx_exception compiles mruby's C as C++.
+#
+# The lists come from BC2CPP_STATIC_DISPATCH_LISTS (scripts/bc2cpp/static_dispatch_lists.bash writes them); a build
+# started without them stops here, and so does one whose lists were computed from other sources. 'none' (the
+# presym phase of closed_build.bash, which compiles no core C) leaves nothing out.
+#
+# The lists are proven for one world (`world`, the file's own; tools/bc2cpp/lists_world.rb) and a build takes only
+# lists of the world it names. The closed world: the RPG2000/2003 engine's mrblib, every core and external gem's
+# mrblib, every native source under src/, app/, include/, the engine gems and 3rd/mruby, and the closed build's
+# generated code. A build may take it only when everything it can run is inside that world, so:
+#   - closed, and the interpreted psp and maix builds: single format (no game Ruby, no other maker gem), the same
+#     engine mrblib less some files (psp's debug tools), and native sources the proof already reads. An interpreted
+#     build (interpreted: true) takes core_excluded only: engine_rom and core_rows count an engine send the closed
+#     build compiles to a direct call as no lookup, but the interpreter looks it up by name (RGSS.window_title=);
+#   - not psp/maix with RPGMAKER_BC2CPP=1: their generated code is not the closed build's, and a by-name fallback it
+#     emits may name a core method the closed generation never did;
+#   - not wio: it takes lists of its own world (`BC2CPP_LISTS_WORLD=wio scripts/bc2cpp/static_dispatch_lists.bash`),
+#     proven over its gem set, app/wio's HAL and Math gems and env:wio's wio_rgss_boot_main.cxx. Being VM-free it
+#     loads no mrblib (bc2cpp_drop_mrblib), so the wio_strip_* copies and the schema blob never run;
+#   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
+def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false, world: 'closed')
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/core_native_candidates')
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/static_dispatch_lists')
+  lists = StaticDispatchLists.current(required: true)
+  unless lists.digest == 'none' || lists.world == world
+    raise "#{conf.name}: #{StaticDispatchLists::PATH_ENV} holds lists proven for the #{lists.world} world, not #{world}; " \
+          "run BC2CPP_LISTS_WORLD=#{world} scripts/bc2cpp/static_dispatch_lists.bash"
+  end
+  # verify: false for the device builds, whose Ruby (the apt or Alpine one) may lack the Prism the digest needs. They
+  # take the file CI's `bc2cpp-lists` job computed from the same commit (docs/bc2cpp-unregistered-methods.md).
+  StaticDispatchLists.verify_current!(lists, __dir__) if verify
+  mruby = File.expand_path('3rd/mruby', __dir__)
+  sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
+  # ENGINE_ROM: the engine gems' ROM tables name their class the same way (MRB_MT_CLASS), so their entries the proof lists
+  # (StaticDispatchLists#engine_rom) are left out at compile time too.
+  engine = CoreNativeCandidates.engine_entries(Dir["#{__dir__}/mruby-{rgss,lcf}/src/**/*.{c,cc,cpp,cxx}"].sort)
+  # Operator names are keyed by the proof's verdict (INDEX_CLOSED admission):
+  # only listed ones are excluded, so naming them here maps keys to entries.
+  # CORE_ROWS: the core entries only proven-receiver calls look up stay as rows (StaticDispatchLists#core_rows).
+  text = CoreNativeCandidates.header(lists.core_excluded.to_a,
+                                     CoreNativeCandidates.entries(sources.sort, operator_names: true),
+                                     interpreted ? [] : lists.engine_rom.to_a, engine,
+                                     rows: interpreted ? [] : lists.core_rows.to_a,
+                                     engine_rows: interpreted ? [] : lists.engine_rows.to_a)
+  path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, text) unless File.exist?(path) && File.read(path) == text
+  [conf.cc, conf.cxx].each { |tool| tool.defines << %(MRB_MT_EXCLUDE_HEADER='"#{path}"') }
+end
 
 if wio
   # wio's own RAM/flash margin is tight enough
@@ -1048,7 +1143,8 @@ if wio
       # No lv/debug_info fields in mrb_irep: this build already compiles its
       # Ruby without -g and strips lv (above), and links no compiler/binding.
       # 8 bytes of flash per irep.
-      t.defines << 'MRB_NO_IREP_DEBUG'
+      # Not under bc2cpp: the bc2cpp proc stand-ins write irep->lv, which only exists with debug info.
+      t.defines << 'MRB_NO_IREP_DEBUG' unless ENV['RPGMAKER_BC2CPP']
       # Mirrors PSP_BUILD below: gates the wio.cxx HAL in the mruby-rgss gem
       # on and the desktop-only sixel/iTerm2 terminal.cxx backend off (that
       # file's own guard is `#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL)`).
@@ -1090,6 +1186,18 @@ if wio
     conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     rpg_maker_gems(conf)
+    # Core method-table omission for wio, from lists proven for the wio world (bc2cpp_core_mt_exclude). Under bc2cpp
+    # only.
+    bc2cpp_core_mt_exclude(conf, world: 'wio') if ENV['RPGMAKER_BC2CPP']
+    # VM-free (bc2cpp_vm_free?), as the closed stanza: mruby-enumerator, mruby-string-ext, mruby-symbol-ext and
+    # mruby-compar-ext arrive only as dependencies, which mruby resolves after this block, so they are declared here for
+    # the mrblib drop to reach them (rpg_maker_gems declares the last two for closed only, in a form compiled_gems.rb reads).
+    conf.gem core: 'mruby-enumerator'
+    conf.gem core: 'mruby-string-ext'
+    conf.gem core: 'mruby-symbol-ext'
+    conf.gem core: 'mruby-compar-ext'
+    bc2cpp_blank_core_units(conf)
+    bc2cpp_drop_mrblib(conf)
 
     # Tried and reverted: -fno-exceptions, matching PlatformIO's own Arduino
     # framework build (platformio.ini's own comment on this). This project's
@@ -1110,52 +1218,6 @@ if wio
   end
 end
 
-# CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (StaticDispatchLists#core_excluded) are
-# left out of a build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names
-# (3rd/mruby/include/mruby/class.h). Written only when it changes, so an unchanged list rebuilds nothing. Both
-# compilers get the define: enable_cxx_exception compiles mruby's C as C++.
-#
-# The lists come from BC2CPP_STATIC_DISPATCH_LISTS (scripts/bc2cpp/static_dispatch_lists.bash writes them); a build
-# started without them stops here, and so does one whose lists were computed from other sources. 'none' (the
-# presym phase of closed_build.bash, which compiles no core C) leaves nothing out.
-#
-# The list is proven for the closed world: the RPG2000/2003 engine's mrblib, every core and external gem's mrblib,
-# every native source under src/, app/, include/, the engine gems and 3rd/mruby, and the closed build's generated
-# code. A build may take it only when everything it can run is inside that world, so:
-#   - closed, and the interpreted psp and maix builds: single format (no game Ruby, no other maker gem), the same
-#     engine mrblib less some files (psp's debug tools), and native sources the proof already reads. An interpreted
-#     build (interpreted: true) takes core_excluded only: engine_rom and core_rows count an engine send the closed
-#     build compiles to a direct call as no lookup, but the interpreter looks it up by name (RGSS.window_title=);
-#   - not psp/maix with RPGMAKER_BC2CPP=1: their generated code is not the closed build's, and a by-name fallback it
-#     emits may name a core method the closed generation never did;
-#   - not wio (nor m5stack, which links the wio libmruby): its mrblib is rewritten (wio_strip_*) and swaps in a
-#     generated schema_blob.rb, neither of which the proof reads;
-#   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
-def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false)
-  require File.join(BC2CPP_TREE, 'tools/bc2cpp/core_native_candidates')
-  require File.join(BC2CPP_TREE, 'tools/bc2cpp/static_dispatch_lists')
-  lists = StaticDispatchLists.current(required: true)
-  # verify: false for the device builds, whose Ruby (the apt or Alpine one) may lack the Prism the digest needs. They
-  # take the file CI's `bc2cpp-lists` job computed from the same commit (docs/bc2cpp-unregistered-methods.md).
-  StaticDispatchLists.verify_current!(lists, __dir__) if verify
-  mruby = File.expand_path('3rd/mruby', __dir__)
-  sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
-  # ENGINE_ROM: the engine gems' ROM tables name their class the same way (MRB_MT_CLASS), so their entries the proof lists
-  # (StaticDispatchLists#engine_rom) are left out at compile time too.
-  engine = CoreNativeCandidates.engine_entries(Dir["#{__dir__}/mruby-{rgss,lcf}/src/**/*.{c,cc,cpp,cxx}"].sort)
-  # Operator names are keyed by the proof's verdict (INDEX_CLOSED admission):
-  # only listed ones are excluded, so naming them here maps keys to entries.
-  # CORE_ROWS: the core entries only proven-receiver calls look up stay as rows (StaticDispatchLists#core_rows).
-  text = CoreNativeCandidates.header(lists.core_excluded.to_a,
-                                     CoreNativeCandidates.entries(sources.sort, operator_names: true),
-                                     interpreted ? [] : lists.engine_rom.to_a, engine,
-                                     rows: interpreted ? [] : lists.core_rows.to_a,
-                                     engine_rows: interpreted ? [] : lists.engine_rows.to_a)
-  path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
-  FileUtils.mkdir_p(File.dirname(path))
-  File.write(path, text) unless File.exist?(path) && File.read(path) == text
-  [conf.cc, conf.cxx].each { |tool| tool.defines << %(MRB_MT_EXCLUDE_HEADER='"#{path}"') }
-end
 
 if maix
   # Cross build for the Sipeed Maix Amigo (Kendryte K210, RV64IMACFD).

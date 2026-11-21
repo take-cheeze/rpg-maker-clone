@@ -23,13 +23,15 @@ cops = ->(src) { lint.call(src)[0].map(&:cop) }
   'Dynamic/MethodDefinition' => ['define_method(:x) { }', 'alias_method :a, :b', 'alias a b', 'undef x'],
   'Dynamic/Eval' => ['eval(src)', 'obj.instance_eval { }', 'Foo.class_eval { }', 'obj.method(:x)', 'binding'],
   'Dynamic/Extend' => ['obj.extend(Mod)'],
-  'Dynamic/RescueModifier' => ['x = (a.b rescue nil)']
+  'Dynamic/RescueModifier' => ['x = (a.b rescue nil)'],
+  'Dynamic/CoreReopen' => ["class Array\n  def x; end\nend", "class Object\n  include RGSS\nend", 'module Kernel; end']
 }.each do |cop, sources|
   sources.each { |src| check.call("#{cop} flags `#{src}`", cops.call(src).include?(cop)) }
 end
 
 [
   'obj.send(:fixed)', 'extend Mod', 'self.extend(Mod)', 'method = 1', 'x.method',
+  'class RPG2k::Array; end', 'class Mine < Array; end', 'class RGSS; end',
   "begin\n  a.b\nrescue StandardError\n  nil\nend"
 ].each { |src| check.call("`#{src.lines.first.strip}` is not flagged", cops.call(src).empty?) }
 

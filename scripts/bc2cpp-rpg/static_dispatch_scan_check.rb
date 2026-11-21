@@ -227,7 +227,7 @@ gen = <<~'CPP'
   r4 = bc2cpp_send(M, r0, 1, 0);
   r5 = mrb_funcall_id(M, r0, bc2cpp_sym(M, 2), 0);
   r6 = bc2cpp_guard_violation(M, r0, 3, "site", 0);
-  r7 = bc2cpp_owner_call(M, r0, 3, 2, BC2CPP_OWNERS("Game::Actor"), mrb_nil_value(), 0);
+  r7 = bc2cpp_owner_call(M, r0, BC2CPP_OWNERS(3, 2, "Game::Actor"), mrb_nil_value(), 0);
 CPP
 free = S.lookup_free_names(gen, {})
 check('non-lookup: only nomethod / nil_receiver / hint_violation uses', free.include?('quiet'))
@@ -249,33 +249,33 @@ owner_gen = <<~'CPP'
     struct RClass* c = bc2cpp_owner_class_slots[1];
     if (!c) {
       static const char* const path[] = {"Game", "Party"};
-  r1 = bc2cpp_owner_call(M, r0, 0, 2, BC2CPP_OWNERS("Array"), mrb_nil_value(), 0);
+  r1 = bc2cpp_owner_call(M, r0, BC2CPP_OWNERS(0, 2, "Array"), mrb_nil_value(), 0);
   if (bc2cpp_class_is(M, r0, bc2cpp_owner_class_1(M))) {
     r2 = Game__Party_chained_impl(M, r0);
   } else if (bc2cpp_class_is(M, r0, rgss::native_bitmap_class())) {
     r2 = rgss::bitmap_chained_direct(M, r0);
   } else {
-    BC2CPP_COLD_ARM r2 = bc2cpp_owner_call(M, r0, 1, 2, BC2CPP_OWNERS("Array", "Game::Party", "RGSS::Bitmap"), mrb_nil_value(), 0);
+    BC2CPP_COLD_ARM r2 = bc2cpp_owner_call(M, r0, BC2CPP_OWNERS(1, 2, "Array", "Game::Party", "RGSS::Bitmap"), mrb_nil_value(), 0);
   }
   if (bc2cpp_class_is(M, r0, bc2cpp_owner_class_1(M))) {
     r3 = Game__Party_subclassed_impl(M, r0);
   } else {
-    r3 = bc2cpp_owner_call(M, r0, 2, 2, BC2CPP_OWNERS("Game::Party"), mrb_nil_value(), 0);
+    r3 = bc2cpp_owner_call(M, r0, BC2CPP_OWNERS(2, 2, "Game::Party"), mrb_nil_value(), 0);
   }
   if (bc2cpp_class_is(M, r0, bc2cpp_owner_class_1(M))) {
     r4 = Game__Party_direct_impl(M, r0);
   } else {
-    r4 = bc2cpp_owner_call(M, r0, 3, 2, BC2CPP_OWNERS_D(BC2CPP_OWNER_DIRECT("Game::Party", Game__Party_direct, MRB_ARGS_REQ(0), MRB_METHOD_PUBLIC_FL) BC2CPP_OWNER_DIRECT("Game::Actor", Game__Actor_direct, MRB_ARGS_REQ(0), MRB_METHOD_PUBLIC_FL), "Game::Actor", "Game::Party"), mrb_nil_value(), 0);
+    r4 = bc2cpp_owner_call(M, r0, BC2CPP_OWNERS_D(3, 2, BC2CPP_OWNER_DIRECT("Game::Party", Game__Party_direct, MRB_ARGS_REQ(0), MRB_METHOD_PUBLIC_FL) BC2CPP_OWNER_DIRECT("Game::Actor", Game__Actor_direct, MRB_ARGS_REQ(0), MRB_METHOD_PUBLIC_FL), "Game::Actor", "Game::Party"), mrb_nil_value(), 0);
   }
   if (bc2cpp_class_is(M, r0, bc2cpp_owner_class_1(M))) {
     r5 = Game__Party_unguarded_impl(M, r0);
   } else {
-    r5 = bc2cpp_owner_call(M, r0, 4, 2, BC2CPP_OWNERS("Game::Actor", "Game::Party"), mrb_nil_value(), 0);
+    r5 = bc2cpp_owner_call(M, r0, BC2CPP_OWNERS(4, 2, "Game::Actor", "Game::Party"), mrb_nil_value(), 0);
   }
   if (bc2cpp_class_is(M, r9, bc2cpp_owner_class_1(M))) {
     r6 = Game__Party_other_recv_impl(M, r9);
   } else {
-    r6 = bc2cpp_owner_call(M, r0, 5, 2, BC2CPP_OWNERS("Game::Party"), mrb_nil_value(), 0);
+    r6 = bc2cpp_owner_call(M, r0, BC2CPP_OWNERS(5, 2, "Game::Party"), mrb_nil_value(), 0);
   }
 CPP
 owner_free = S.lookup_free_names(owner_gen, %w[Bitmap])

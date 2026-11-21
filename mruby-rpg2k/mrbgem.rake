@@ -24,6 +24,21 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   add_dependency 'mruby-enum-ext'
   add_dependency 'mruby-range-ext'
 
+  # No-Float build (MRB_NO_FLOAT): every mrblib file with FLOAT-BEGIN/END blocks is replaced by the copy
+  # gen_rpg2k_nofloat.rb writes, whose blocks hold their no-Float forms. Other builds keep the sources as they are.
+  if spec.build.cc.defines.include?('MRB_NO_FLOAT')
+    nofloat_gen = "#{dir}/gen_rpg2k_nofloat.rb"
+    Dir.glob("#{dir}/mrblib/**/*.rb").sort.each do |src|
+      next unless File.read(src).include?('# FLOAT-BEGIN ')
+      out = "#{build_dir}/nofloat/#{src.delete_prefix("#{dir}/mrblib/")}"
+      file out => [nofloat_gen, src] do |t|
+        FileUtils.mkdir_p File.dirname(t.name), verbose: true
+        ruby nofloat_gen, src, t.name
+      end
+      spec.rbfiles = spec.rbfiles.map { |f| f == src ? out : f }
+    end
+  end
+
   # Zundamon narration (Scene::Map#speak_message) calls RGSS::Tts,
   # which only the desktop "host" build can back. Every other build ships the
   # empty stand-in instead (appended last: Scene::Map is defined by then), so
@@ -1491,4 +1506,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
   bc2cpp_blank_units(spec)
+  # VM-free wio: mruby-rpg2k-compiled provides every method, so this gem's bytecode is not linked
+  # (the compiled gems' rbfiles are cleared the same way in build_config.rb).
+  spec.rbfiles = [] if spec.build.name == 'wio' && ENV['RPGMAKER_BC2CPP'] == '1'
 end

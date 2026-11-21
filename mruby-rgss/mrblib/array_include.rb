@@ -26,6 +26,7 @@
 #
 # Engine-wide rather than RGSS-only, like array_sort.rb's Array#sort/#sort!
 # fix beside this file: this is mruby's own gap, not this game's.
+# rpg2k-lint:allow Dynamic/CoreReopen -- mruby gap fix for Array#include?; see the header above
 class Array
   def include?(obj)
     i = 0

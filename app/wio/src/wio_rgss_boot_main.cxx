@@ -1,25 +1,13 @@
-// Real mruby+RGSS+LVGL boot test for the Wio Terminal: unlike
-// app/wio/src/main.cxx's bring-up firmware ("proves the HAL... without the
-// mruby interpreter"), this one actually opens the real interpreter -- linking
-// the wio-target libmruby.a that first got building -- brings up the same
-// RGSS/mruby-lcf /mruby-rpg2k gem set a real game would run, then exercises the
-// LVGL HAL (wio.cxx, now compiled into libmruby.a itself rather than pulled in
-// via app/wio/src/wio_hal.cxx's bring-up shim) and the button scan through it.
+// Boot test for the Wio Terminal's closed-world libmruby: it opens the VM,
+// brings up the RGSS/mruby-lcf/mruby-rpg2k gem set, then exercises the LVGL HAL
+// (compiled into libmruby.a, mruby-rgss/src/wio.cxx) and the button scan.
 //
-// No game data is loaded -- that needs the SD-backed asset streaming rework
-// libmruby.a alone does not touch. This proves the
-// *interpreter* boots on real silicon and can still draw and read input
-// through the same HAL the bring-up firmware already does, which is what P1
-// actually asks for.
+// No game data is loaded; loading one needs the SD-backed asset streaming that
+// libmruby.a alone does not provide. The status screen echoes the pressed keys.
 //
-// Result is a status screen (mirrors main.cxx's own on-screen echo) plus a
-// magic value in a fixed global, the same Renode-readable convention
-// mruby_sd_smoke_main.cxx already established (`sysbus ReadDoubleWord`, no
-// UART model needed) -- distinct per stage, so a Renode run can tell which
-// step failed without a modelled serial port.
-//
-// Deliberately does NOT define its own mrb_init_mrbgems: unlike
-// mruby_sd_smoke_main.cxx (which links no gem at all and so must stub it),
+// Deliberately does NOT define its own mrb_init_mrbgems: libmruby.a already
+// carries the real, generated one build_config.rb's own
+// rpg_maker_gem_dispatch produces -- defining a second one here would be a
 // libmruby.a already carries the real, generated one build_config.rb's own
 // rpg_maker_gem_dispatch produces -- defining a second one here would be a
 // duplicate-symbol link error. mrb_open_core() + the same
@@ -82,8 +70,7 @@ void build_ui(const char* status) {
   lv_obj_align(g_status_label, LV_ALIGN_CENTER, 0, 20);
 }
 
-// Names for the RGSS key ids, indexed by WioKey, for the on-screen echo --
-// same table app/wio/src/main.cxx's own bring-up firmware uses.
+// Names for the RGSS key ids, indexed by WioKey, for the on-screen echo.
 const char* const kKeyNames[WIO_INPUT_KEY_COUNT] = {
     "Up", "Down", "Left", "Right", "A", "B", "C"};
 

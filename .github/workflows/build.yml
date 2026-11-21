@@ -1162,6 +1162,8 @@ jobs:
               ruby scripts/bc2cpp/base_rbs_check.rb
               ruby scripts/bc2cpp/foreign_definers_cache_check.rb
               ruby scripts/bc2cpp/native_api_lists_parity_check.rb
+              # A stale audit pin silently withdraws the facts its file backs, so the edit that stales it fails here.
+              ruby scripts/bc2cpp/audit_pins_check.rb
 
           - name: RPG2k game-logic checks
             run: |
@@ -1173,6 +1175,8 @@ jobs:
               # become logged empty slots, and corruption never crashes.
               ruby scripts/lcf_save_typed_check.rb
               ruby scripts/rpg2k/lsd_adversarial_check.rb
+              # Every mrblib file with a Float use has a no-Float form (mruby-rpg2k/gen_rpg2k_nofloat.rb).
+              ruby scripts/rpg2k/nofloat_wiring_check.rb
 
       # Runs the host-side checks (the CHECKS list in scripts/coverage/report.rb)
       # under CRuby's Coverage stdlib. Report-only: no floor is enforced.
@@ -1450,11 +1454,10 @@ jobs:
             wasm-build/timidity*.data
 
   # Wio Terminal (SAMD51) firmwares, built with PlatformIO. Disabled until the
-  # bc2cpp cross-build path is more stable; `wio-renode` is disabled with it.
+  # bc2cpp cross-build path is more stable.
   wio:
-    # Builds all three Wio firmwares: `wio` (bring-up, display and input HAL),
-    # `wio_walk` (the non-mruby map walk shared with nano 7G), and
-    # `wio_sd_upload` (serial-to-SD loader). See app/wio/README.md.
+    # Builds the Wio game firmware `wio` (closed world only) and the
+    # `wio_sd_upload` SD loader. See app/wio/README.md.
     if: false
     runs-on: ubuntu-24.04
     steps:
@@ -1492,7 +1495,6 @@ jobs:
       - name: Build firmware
         run: |
           pio run -e wio 2>&1 | tee wio-build.log
-          pio run -e wio_walk 2>&1 | tee -a wio-build.log
           pio run -e wio_sd_upload 2>&1 | tee -a wio-build.log
 
       # Summarises the flash and SRAM budget, which is tight on this board.
@@ -1784,8 +1786,8 @@ jobs:
   # and the SD tooling check. Disabled with `wio` above.
   wio-renode:
     # Covers the CPU running setup()/loop() and the ILI9341 model's pixels.
-    # Not covered: a firmware-driven map render. wio_walk's tile pushes go
-    # through Adafruit_ZeroDMA, which this platform does not model yet.
+    # Not covered: a firmware-driven map render (the walk firmware's tile pushes go
+    # through Adafruit_ZeroDMA, which this platform does not model yet).
     if: false
     runs-on: ubuntu-24.04
     steps:
@@ -1826,7 +1828,6 @@ jobs:
       - name: Build firmware
         run: |
           pio run -e wio
-          pio run -e wio_walk
           pio run -e wio_sd_upload
 
       - name: Install mtools/dosfstools/ImageMagick
@@ -1851,7 +1852,7 @@ jobs:
           RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
         run: |
           "$RENODE_BIN" --version
-          for env in wio wio_walk wio_sd_upload; do
+          for env in wio wio_sd_upload; do
             echo "::group::$env"
             out="$(scripts/wio/renode_boot.bash ".pio/build/$env/firmware.elf" "00:00:00.300")"
             echo "$out"
@@ -2045,7 +2046,7 @@ jobs:
           echo "$keys_line" | grep -qw "Start" || { echo "::error::Start not reported (Gamepad Face Select/Start not read)"; exit 1; }
 
   # Boots the nano 7G walk app under qemu-system-arm's Cortex-A8 model. The PL110
-  # is a stock QEMU display, unlike the peripherals wio-renode needed. Checks a
+  # is a stock QEMU display, unlike the peripherals the Renode Wio sim needed. Checks a
   # real rendered map and prints the PMU cycle count as a per-frame cost signal
   # (not asserted: it is a comparison, not a threshold).
   nano7-qemu:

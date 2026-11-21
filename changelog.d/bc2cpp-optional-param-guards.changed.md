@@ -1,0 +1,1 @@
+- bc2cpp: declared optional parameters (`?T`, `?T?` with a literal default of that kind) and Array, Hash and String parameters are checked on entry and typed in the method body. `Game::TextReveal#initialize`'s `(pauses || []).sort` and `(speeds || []).sort` become direct calls.

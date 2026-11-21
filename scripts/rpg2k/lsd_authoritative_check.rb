@@ -196,6 +196,9 @@ def deep_diff(a, b, path = '')
     a.each_index { |i| out.concat(deep_diff(a[i], b[i], "#{path}[#{i}]")) }
   elsif a.is_a?(Numeric) && b.is_a?(Numeric) && (a - b).abs < 1e-9
     # Wire double conversions may introduce one rounding bit.
+  elsif a.is_a?(Numeric) && b.is_a?(Numeric) && path.end_with?('opacity') && (a - b).abs < 0.005
+    # A picture opacity is saved as a whole-percent transparency in 1/1024 units (Picture#fixed_opacity), so
+    # it round-trips to within one such unit (about 0.0025 px), not exactly.
   elsif a != b
     out << "#{path}: expected=#{a.inspect[0, 90]} lsd=#{b.inspect[0, 90]}"
   end
@@ -455,7 +458,8 @@ check 'a fractional picture opacity survives the LSD save exactly, not rounded t
   st = rich_state(db)
   st.show_picture(9, { name: 'frac', x: 0, y: 0, zoom: 100, opacity: 199.7 })
   l = via_lsd(db, st)
-  ok((199.7 - l.pictures[9].to_h[:opacity]).abs < 1e-9, 'fractional current opacity is preserved')
+  # Picture values are fixed-point in 1/1024 units, so a fraction is kept to that precision.
+  ok((199.7 - l.pictures[9].to_h[:opacity]).abs < 1.0 / 1024, 'fractional current opacity is preserved')
   eq 'frac', l.pictures[9].to_h[:name]
 end
 

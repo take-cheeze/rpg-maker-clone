@@ -1,0 +1,1 @@
+- Auto-battle AI ranks are per-mille integers (1000 == 1.0) instead of Floats, so the no-Float build has no Float in battle skill and attack choice. Ranks are truncated to a thousandth; ties that differed only below that may resolve differently.

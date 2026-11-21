@@ -78,6 +78,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-facts', command: %w[scripts/bc2cpp/ir_facts_check.rb] },
   { name: 'bc2cpp-typed-argc', command: %w[scripts/bc2cpp/typed_argc_check.rb] },
   { name: 'bc2cpp-name-strings', command: %w[scripts/bc2cpp/name_strings_check.rb] },
+  { name: 'bc2cpp-audit-pins', command: %w[scripts/bc2cpp/audit_pins_check.rb] },
   { name: 'bc2cpp-typed-immediates', command: %w[scripts/bc2cpp/typed_immediates_check.rb] },
   { name: 'bc2cpp-ir-binary-operands', command: %w[scripts/bc2cpp/ir_binary_operands_check.rb] },
   { name: 'bc2cpp-rbs-mixin-contracts', command: %w[scripts/bc2cpp-rpg/rbs_mixin_contracts_check.rb] },
@@ -116,6 +117,7 @@ CHECKS = [
   { name: 'rpg2k-logic',        command: %w[scripts/rpg2k/logic_check.rb] },
   { name: 'rpg2k-scene',        command: %w[scripts/rpg2k/scene_check.rb] },
   { name: 'rpg2k-render',       command: %w[scripts/rpg2k/render_check.rb] },
+  { name: 'rpg2k-nofloat',      command: %w[scripts/rpg2k/nofloat_wiring_check.rb] },
   { name: 'rpg2k-testbed-logic', command: %w[scripts/rpg2k/testbed_logic_check.rb] },
   # Spawns the exporter as a child process; the coverage hook rides RUBYOPT
   # into it, so Game::ChipsetLayout/ChipSet and the LCF readers it drives are
