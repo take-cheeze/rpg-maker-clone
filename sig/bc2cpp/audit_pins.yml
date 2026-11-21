@@ -9,6 +9,12 @@ ivar_scopes:
 class_results:
   files:
     mruby-rgss/src/lib.cxx: 8f283f0e1572f2a80dd982ffabe4d9b9a3f98f2ea25699638c119c3419b5f8f8
+    # mruby-onig-regexp 355af1b changes only the internal character/byte offset conversions (identity on a single-byte
+    # string); the natives' result classes and argument handling the tree's pin audits are the same. Both digests stay
+    # listed, so the tree's pin of 2116496 and this one are each valid.
+    3rd/mruby-onig-regexp/src/mruby_onig_regexp.c:
+    - 4b00efbb0d4b26bb8310aff773b8e4d2abf05dca6a993ebd963f69fa9c6cf397
+    - 8ae3ba430ea97b5d9a220c0af2eaf0df52f23c863dc591d27457d77f2209ec87
   # Added to the tree's facts: `kind` must match the tree's kind for a fact the tree already has.
   facts:
     to_s:
