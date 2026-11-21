@@ -390,7 +390,15 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/installed_name_devirt_check.rb:
+  scripts/bc2cpp/hash_build_ops_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/keyword_receiver_target_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -414,15 +422,7 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/hash_build_ops_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    fixture_capabilities:
-    - full_library
-    - cxx
-  scripts/bc2cpp/keyword_receiver_target_check.rb:
+  scripts/bc2cpp/installed_name_devirt_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -1673,6 +1673,22 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/integer_exact_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/kept_send_parity_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/exact_native_slot_check.rb:
     tier: runtime
     capabilities:
     - mrbc
