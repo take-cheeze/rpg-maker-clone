@@ -1436,6 +1436,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/core_own_unit_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/singleton_const_owner_check.rb:
     tier: fast
     capabilities:
