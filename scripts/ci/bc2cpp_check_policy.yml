@@ -390,7 +390,15 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/installed_name_devirt_check.rb:
+  scripts/bc2cpp/hash_build_ops_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/keyword_receiver_target_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -414,15 +422,7 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/hash_build_ops_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    fixture_capabilities:
-    - full_library
-    - cxx
-  scripts/bc2cpp/keyword_receiver_target_check.rb:
+  scripts/bc2cpp/installed_name_devirt_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -2115,3 +2115,91 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/block_splat_send_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/block_zsuper_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/implicit_superclass_zsuper_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/keyword_splat_dynamic_send_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/keyword_yield_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/lambda_rest_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/nested_lambda_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/optional_param_block_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/optional_region_yield_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/strict_mixed_rest_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/sync_yield_names_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
