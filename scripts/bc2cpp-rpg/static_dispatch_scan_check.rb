@@ -318,6 +318,10 @@ check('left out: a bc2cpp_left_out call is no name literal',
 pool_src = %(r1 = bc2cpp_pool_str(M, "x");\n r2 = bc2cpp_pool_str(M, "send_me");\n r3 = mrb_str_new_cstr(M, "x");)
 check('pool value: a pure pool string is no literal, a folded value still is',
       S.c_literals(pool_src, pool_pure: Set['x']) == ['send_me', 'x'])
+# STRCAT_LITERAL appends the same pool value in place (bc2cpp_str_cat_lit).
+cat_src = %(bc2cpp_str_cat_lit(M, r4, "x");\n bc2cpp_str_cat_lit(M, r4, "send_me");)
+check('pool value: an appended pure pool string is no literal, an impure one still is',
+      S.c_literals(cat_src, pool_pure: Set['x']) == ['send_me'])
 # covered_block_names: a block-only name is exempt when each of its sites is matched by covered loops, count for count.
 site = ['d1g3st', 22]
 check('block sites: a generic site (one loop for two sites) keeps the name',
