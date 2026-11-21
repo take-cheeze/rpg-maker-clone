@@ -1680,6 +1680,14 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/kept_send_parity_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/exact_native_slot_check.rb:
     tier: runtime
     capabilities:
