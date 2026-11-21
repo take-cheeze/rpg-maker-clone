@@ -792,8 +792,9 @@ module Game
     # NPC stands behind.
     ABOVE_BIT = 0x10
     COUNTER_BIT = 0x40
-    # Every directional bit ORed together, for a jump's any-side landing check.
-    ALL_DIRS = (DIR_BIT[2] | DIR_BIT[4] | DIR_BIT[6] | DIR_BIT[8]).freeze
+    # Every directional bit ORed together, for a jump's any-side landing check. An Integer, so no `.freeze`: that
+    # would be a no-op the closed world cannot tell from freezing a user object (user_objects_unfrozen?).
+    ALL_DIRS = DIR_BIT[2] | DIR_BIT[4] | DIR_BIT[6] | DIR_BIT[8]
 
     attr_reader :name, :graphic, :animation_type, :animation_speed
 
