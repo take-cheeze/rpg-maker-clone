@@ -1927,7 +1927,6 @@ module Game::States
   def self.map_step_drain: (untyped, untyped, untyped) -> untyped
   def self.name: (untyped, untyped) -> untyped
   def self.priority_of: (untyped, untyped) -> untyped
-  def self.prune: (untyped, untyped, ?keep: untyped) -> untyped
   def self.recovery_message: (untyped, untyped, untyped) -> untyped
   def self.row: (untyped, untyped) -> untyped
   def self.significant: (untyped, untyped) -> untyped
