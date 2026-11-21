@@ -845,15 +845,15 @@ class RPG2k
   def start_new_game
     init = map_tree[:initial]
     map_id = preview_map_id || init[:initial_map_id]
-    map = RGSS::Profiler.section("map.transition.load") { load_map map_id }
+    map = RGSS::Profiler.section(:"map.transition.load") { load_map map_id }
     x, y = preview_map_id ? [map.width / 2, map.height / 2]
                            : [init[:initial_x], init[:initial_y]]
     # Game::State.new stays outside the section: CORE_ENUMERATOR_FREE cannot type
     # section's value (its native tables are unattributed), and the scenes'
     # blockless `state.map` calls need `state`'s class to rule out Array#map.
-    party = RGSS::Profiler.section("map.transition.party") { Game::Party.new(@db) }
+    party = RGSS::Profiler.section(:"map.transition.party") { Game::Party.new(@db) }
     state = Game::State.new party, map_id, x, y
-    RGSS::Profiler.section("map.transition.seed") do
+    RGSS::Profiler.section(:"map.transition.seed") do
       # The database's System tab configures the six screen transitions a
       # "use the configured transition" (-1) Erase / Show Screen resolves against.
       state.seed_screen_transitions @db
@@ -1185,7 +1185,7 @@ class RPG2k
       RGSS.warn_stub "Continue (no save data found)"
       return
     end
-    state.map = RGSS::Profiler.section("map.transition.load") { load_map state.map_id }
+    state.map = RGSS::Profiler.section(:"map.transition.load") { load_map state.map_id }
     # Reapply the Tile Substitution table the save carried for this map --
     # #load_map always builds a fresh, unsubstituted Game::Map (correct for
     # an ordinary map re-visit), but a genuine Continue on the same map
@@ -1325,7 +1325,7 @@ class RPG2k
 
   def main_loop
     RGSS::Profiler.frame do
-      RGSS::Profiler.section("scene.update") do
+      RGSS::Profiler.section(:"scene.update") do
         # F12 is RPG_RT's "return to title" hotkey: it works from any scene
         # (map, menu, game over, ...), not just ones that offer it as a menu
         # command, so it is checked here rather than in an individual scene.
@@ -1351,7 +1351,7 @@ class RPG2k
         maybe_battle_play_test
         @scenes.last.update
       end
-      RGSS::Profiler.section("input.update") { Input.update }
+      RGSS::Profiler.section(:"input.update") { Input.update }
       Graphics.update
     end
   end

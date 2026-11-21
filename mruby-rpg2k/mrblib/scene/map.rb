@@ -477,7 +477,7 @@ class RPG2k
         # now only the most-recently-used ones survive past each cache's own
         # byte budget, and anything evicted is simply reloaded (and re-cached)
         # the next time its name comes up.
-        RGSS::Profiler.section("map.transition.lru_caches") do
+        RGSS::Profiler.section(:"map.transition.lru_caches") do
           @charset_cache = LRUBitmapCache.new(constrained_scale(CHARSET_CACHE_BYTES))
                                  # CharSet/<name> -- event graphics and the
                                  # party leader's own graphic share this, since
@@ -502,14 +502,14 @@ class RPG2k
           @system2_cache = LRUBitmapCache.new(constrained_scale(SYSTEM2_CACHE_BYTES))
                                  # System2/<name> (RPG2003 gauge card sprite sheet)
         end
-        RGSS::Profiler.section("map.transition.access") { apply_map_access if apply_access }
+        RGSS::Profiler.section(:"map.transition.access") { apply_map_access if apply_access }
         # Same Continue-only split as #apply_map_access just above: a fresh
         # map entry (New Game, or any Transfer Player/Teleport, which
         # #perform_teleport already calls #play_map_bgm for separately)
         # recomputes BGM from the map tree, but a Continue resumes a state
         # that already carries its own #current_bgm (restored by
         # Game::State.from_lsd from the save) -- see #resume_saved_bgm.
-        RGSS::Profiler.section("map.transition.bgm") do
+        RGSS::Profiler.section(:"map.transition.bgm") do
           if apply_access
             play_map_bgm
           else
@@ -517,11 +517,11 @@ class RPG2k
           end
         end
         @map = state.map
-        RGSS::Profiler.section("map.transition.chipset") do
+        RGSS::Profiler.section(:"map.transition.chipset") do
           @chipset = build_chipset
           @chipset_bmp = load_chipset_graphic
         end
-        RGSS::Profiler.section("map.transition.charset_windowskin") do
+        RGSS::Profiler.section(:"map.transition.charset_windowskin") do
           @charset = load_charset
           @windowskin = load_windowskin
         end
@@ -543,10 +543,10 @@ class RPG2k
         # @started_auto clear.
         @auto_once = {}
         @auto_once_common = {}
-        RGSS::Profiler.section("map.transition.common_events") { @common = Game::CommonEvent.load(@db) }
+        RGSS::Profiler.section(:"map.transition.common_events") { @common = Game::CommonEvent.load(@db) }
         # The adapter that lets move routes / autonomous movement query the map
         # (@rng is built at the top of #initialize).
-        RGSS::Profiler.section("map.transition.world") do
+        RGSS::Profiler.section(:"map.transition.world") do
           @world = MapWorld.new(self, @rng)
           # One VehicleWorld per type, wrapping #vehicle_passable? instead of the
           # hero's own on-foot #char_passable? -- see #force_vehicle_route.
@@ -584,10 +584,10 @@ class RPG2k
         # and a memo left from the previous visit would answer for the wrong
         # pages (see #page_condition_ids).
         @page_condition_ids = {}
-        RGSS::Profiler.section("map.transition.build_events") { build_events }
+        RGSS::Profiler.section(:"map.transition.build_events") { build_events }
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
-        RGSS::Profiler.section("map.transition.build_parallels") { build_parallels }
+        RGSS::Profiler.section(:"map.transition.build_parallels") { build_parallels }
         @message = nil
         @inn_window = nil
         @inn_bgm_started = false
@@ -820,7 +820,7 @@ class RPG2k
         @anim_frame += 1 # water / animated tiles cycle even during events
         # An event page's conditions may have just stopped (or started) holding;
         # re-select before anything reads a trigger or a graphic this frame.
-        RGSS::Profiler.section("map.refresh_pages") { refresh_event_pages }
+        RGSS::Profiler.section(:"map.refresh_pages") { refresh_event_pages }
         # Parallel processes run every frame on their own schedule, independent
         # of whatever the foreground is doing (yado.tk: a message window or a
         # foreground event parked on a blocking wait is not a pause condition,
@@ -908,8 +908,8 @@ class RPG2k
         record_map_event_positions
         record_foreground_event_exec
         record_tile_substitutions
-        RGSS::Profiler.section("map.animate_events") { animate_events }
-        RGSS::Profiler.section("map.render") { render }
+        RGSS::Profiler.section(:"map.animate_events") { animate_events }
+        RGSS::Profiler.section(:"map.render") { render }
       end
 
       private
@@ -9002,7 +9002,7 @@ class RPG2k
       def perform_teleport(t, keep_pictures: false)
         map_id, x, y, dir = t
         begin
-          @map = RGSS::Profiler.section("map.transition.load") { @parent.load_map(map_id) }
+          @map = RGSS::Profiler.section(:"map.transition.load") { @parent.load_map(map_id) }
         rescue StandardError => e
           # Transfer Player / Recall to Location naming a map id whose .lmu no
           # longer exists (a deleted map, or a stale id left behind by one) --
@@ -9019,7 +9019,7 @@ class RPG2k
         @state.map = @map
         @state.map_id = map_id
         apply_map_access
-        RGSS::Profiler.section("map.transition.bgm") { play_map_bgm }
+        RGSS::Profiler.section(:"map.transition.bgm") { play_map_bgm }
         @state.x = x
         @state.y = y
         @state.direction = dir if dir && dir > 0
@@ -9059,7 +9059,7 @@ class RPG2k
         # falls back to the map's own rate whenever this is nil.
         @state.encounter_rate = nil
         @tileset_id = nil # a Change Map Tileset override does not survive a teleport
-        RGSS::Profiler.section("map.transition.chipset") do
+        RGSS::Profiler.section(:"map.transition.chipset") do
           @chipset = build_chipset
           # The new map may use a different chipset graphic, so reload it too;
           # otherwise the destination is drawn with the previous map's tiles.
@@ -9131,10 +9131,10 @@ class RPG2k
         # left says nothing about the destination.
         @warned_stale_terrain = {}
         @page_condition_ids = {}
-        RGSS::Profiler.section("map.transition.build_events") { build_events }
+        RGSS::Profiler.section(:"map.transition.build_events") { build_events }
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
-        RGSS::Profiler.section("map.transition.build_parallels") { build_parallels }
+        RGSS::Profiler.section(:"map.transition.build_parallels") { build_parallels }
         # Any step in flight is dropped: the party arrives standing on the
         # destination tile rather than sliding toward one on the map it left.
         # A forced route can have a step in flight here -- it advances between
@@ -10853,8 +10853,8 @@ class RPG2k
           set_map_layers_visible false
         else
           set_map_layers_visible true
-          RGSS::Profiler.section("map.parallax") { draw_parallax cam_x, cam_y }
-          RGSS::Profiler.section("map.layers") { draw_layers cam_x, cam_y }
+          RGSS::Profiler.section(:"map.parallax") { draw_parallax cam_x, cam_y }
+          RGSS::Profiler.section(:"map.layers") { draw_layers cam_x, cam_y }
 
           @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
           @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE) -
@@ -10862,7 +10862,7 @@ class RPG2k
           # Reflect the Set Transparent Flag command (and the leader graphic's
           # own translucent-ghost flag) every frame -- see #apply_player_visibility.
           apply_player_visibility
-          RGSS::Profiler.section("map.chars") do
+          RGSS::Profiler.section(:"map.chars") do
             draw_player_frame
             draw_vehicles cam_x, cam_y, px, py
           end
@@ -10871,7 +10871,7 @@ class RPG2k
         # battlers) and #draw_map_animation drives the in-battle Show Battle
         # Animation through the very same path as the map one -- see its own
         # `ma[:battle]` branch.
-        RGSS::Profiler.section("map.animation") { draw_map_animation cam_x, cam_y }
+        RGSS::Profiler.section(:"map.animation") { draw_map_animation cam_x, cam_y }
 
         # Pictures never show on the battle screen (yado.tk / 01_shoshin's
         # 011_siyou: "none show on Menu/Battle screens") -- unlike the Menu
@@ -10888,9 +10888,9 @@ class RPG2k
           @picture_sprite.visible = false
         else
           @picture_sprite.visible = true
-          RGSS::Profiler.section("map.pictures") { draw_pictures cam_x, cam_y }
+          RGSS::Profiler.section(:"map.pictures") { draw_pictures cam_x, cam_y }
         end
-        RGSS::Profiler.section("map.overlay") { update_screen_overlay }
+        RGSS::Profiler.section(:"map.overlay") { update_screen_overlay }
         draw_timer
       end
 

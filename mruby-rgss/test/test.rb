@@ -1686,6 +1686,7 @@ assert "RGSS::Profiler aggregates frames and sections when enabled" do
     3.times do
       RGSS::Profiler.frame do
         RGSS::Profiler.section("work") { 100.times { |i| i * i } }
+        RGSS::Profiler.section(:"sym.work") { 1 }
       end
     end
 
@@ -1703,6 +1704,8 @@ assert "RGSS::Profiler aggregates frames and sections when enabled" do
     assert_true sections.key?("work"), "expected a 'work' section"
     assert_equal 3, sections["work"][:calls]
     assert_true sections["work"][:avg_ms] >= 0.0
+    # A Symbol name is reported under its String form.
+    assert_equal 3, sections["sym.work"][:calls]
 
     # object_types comes straight off the GC's own per-type counters (see
     # the pinned fork commit (mruby-gc-type-live-counts, docs/patch-fork-tracking.md)), not a sampled/capped subset.
