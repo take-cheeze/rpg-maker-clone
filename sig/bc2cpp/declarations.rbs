@@ -1041,7 +1041,6 @@ class Game::Actor
   def set_faceset: (untyped, untyped) -> untyped
   def set_hp: (untyped) -> untyped
   def skill_command_name: () -> untyped
-  def skills=: (untyped) -> untyped
   def state?: (untyped) -> untyped
   def state_ranks: () -> untyped
   def state_resist_mul: (untyped) -> untyped
@@ -7531,7 +7530,7 @@ class Game::Party
   def skill_targets: (untyped, untyped, untyped) -> Array[Game::Actor]
   def item_state_ids: (untyped) -> Array
   def skill_state_ids: (untyped) -> Array
-  def battle_skills: (untyped, untyped) -> Array
+  def battle_skills: (Game::Actor?, untyped) -> Array
   # Runtime-checked: an empty party returns nil, so the class is optional.
   %a{bc2cpp:hint}
   def leader: () -> Game::Actor?
@@ -7932,6 +7931,12 @@ class RPG2k::Scene::Battle
                            ?desc: String?, ?scroll_key: Symbol?) -> untyped
 end
 
+# ---- param_types.rbs
+# Parameter types, checked on entry (DECLARED_PARAM_GUARD); the record trace reads them (TRACED_PARAM).
+class Game::Actor
+  def skills=: (Array[Integer]?) -> untyped
+end
+
 # ---- record_types.rbs
 # Record types: checked at every write of the ivar name in the closed world, so a
 # wrong field is a TC1009 build error at the offending write, never a silent hint.
@@ -7943,15 +7948,15 @@ module RPG2k
       # (`troop = Game::Troop.new(...)`), :events (Game::Interpreter.new), :allies/:foes (block `map`s) and
       # :pages_run (`{}`, also reset by `@ui[:pages_run] = {}`); `@ui[:enemy_sprites]`/`[:actor_sprites]` are nil or
       # `Array.new(n) { }`; :pending is nil or a Hash literal. :allies (`party.actors.map { }`), :items
-      # (Party#battle_items) and :foes (`troop.members.map { }` on the exact Game::Troop.new) are traced through the
-      # calls (RECORD_FIELD_TRACE). :skills stays untyped (Actor#skills= stores a method result of its argument). The
-      # other keys hold method results or arithmetic the checker cannot trace: untyped.
+      # (Party#battle_items), :foes (`troop.members.map { }` on the exact Game::Troop.new) and :skills
+      # (Party#battle_skills through its declared `actor`, see param_types.rbs) are traced through the calls
+      # (RECORD_FIELD_TRACE). The other keys hold method results or arithmetic the checker cannot trace: untyped.
       @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: Array,
              ?foes: Array, ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
              ?actor_sprites: Array[untyped]?,
              ?phase: untyped, ?options_shown: untyped, ?opt: untyped, ?actor_i: untyped, ?cmd: untyped,
              ?target_i: untyped, ?skill_i: untyped, ?item_i: untyped, ?ally_i: untyped,
-             ?pending: Hash[untyped, untyped]?, ?skills: untyped, ?items: Array, ?status_win: untyped,
+             ?pending: Hash[untyped, untyped]?, ?skills: Array, ?items: Array, ?status_win: untyped,
              ?cmd_win: untyped, ?target_win: untyped,
              ?skill_win: untyped, ?item_win: untyped, ?ally_win: untyped, ?action_win: untyped,
              ?anim_timer: untyped, ?back_sprite: untyped, ?result_win: untyped, ?result: untyped,
