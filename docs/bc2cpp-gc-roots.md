@@ -64,8 +64,11 @@ before the call and uses the local after it holds the only reference, and a coll
   predicates, the element reads, and the compiled Array stores and removals (`bc2cpp_keep_old`, `bc2cpp_ary_set`,
   `bc2cpp_mrb_ary_pop`, ...), which already root the value they replace or unlink. Everything else is a call:
   `mrb_funcall`, a direct `_impl` call, every Hash function (a key is hashed by its `hash` method, which can run Ruby
-  code, so `mrb_hash_get`, `mrb_hash_fetch`, `mrb_hash_set` and the Hash store and delete wrappers are calls), and an
-  allocator not in the list.
+  code, so `mrb_hash_get`, `mrb_hash_fetch`, `mrb_hash_set` and the Hash store and delete wrappers are calls), and
+  any function that may raise.
+- `PURE_CALLS` are not calls either: macros, symbol interning, ivar and class reads, identity tests, write barriers
+  and the plain Array/String/Hash allocators. An allocation may run the GC, but an element no code has unlinked is
+  still reachable from its container. `BC2CPP_ELEMENT_READ_PURE=0` counts them as calls again.
 - A method that RegisterFlow refuses, and a method compiled without the flow pass (`REGISTER_FLOW=0`, a resumable
   body, a method with a prefix), roots every element read: there is no liveness to narrow it.
 - The inlined loops over a live Array root their element register each iteration when the body contains a call
@@ -129,3 +132,7 @@ the element to a compiled method that clears the Array and then reads its argume
 only root, and the caller no longer uses the element after the call). On master these fail, and so does the static
 check (`bc2cpp_keep` after an element read); with the argument term of the call test removed, `arg_clear_by_name`
 fails.
+
+`BC2CPP_HOST_GC_STRESS=1000 scripts/bc2cpp/host_sweep.bash BUILD_DIR` runs the whole sweep with a GC cycle starting
+as soon as the last one ends, about 20 times slower per map. A missing root then shows up: a
+`BC2CPP_GC_KEEP_OVERWRITTEN=0` build passes the plain sweep but aborts in `mrb_gc_mark` under this mode.
