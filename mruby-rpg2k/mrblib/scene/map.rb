@@ -7429,7 +7429,9 @@ class RPG2k
       NAME_CHARS = (%w[A B C D E F G H I J K L M N O P Q R S T U V W X Y Z] +
                     %w[a b c d e f g h i j k l m n o p q r s t u v w x y z] +
                     %w[0 1 2 3 4 5 6 7 8 9] + [' ', '-', "'", '.']).freeze
-      NAME_CELLS = (NAME_CHARS + %w[BS OK]).freeze
+      # A splat into a literal, not `NAME_CHARS + ...`: the closed world proves a literal's freeze harmless, not a
+      # constant's (user_objects_unfrozen?).
+      NAME_CELLS = [*NAME_CHARS, *%w[BS OK]].freeze
       NAME_COLS = 13          # cells per row
       NAME_MAX = 12           # longest name the widget accepts
       NAME_CELL_W = 14
