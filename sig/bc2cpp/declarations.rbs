@@ -6316,8 +6316,8 @@ module Game
     # read as `@vehicles[k]`, so this is a Vehicle, or nil for a type it lacks. The
     # callers' NIL_NARROWING (draw_vehicles' `v.placed?`) proves the non-nil arguments they pass on.
     # One return path, `state` = `Game::State.new(party, ...)` (a missing hero/inventory record raises instead).
-    # RPG2k#load_save_state passes its @db, an LCF::Database.
-    def self.from_lsd: (LCF::Database db, untyped save) -> Game::State
+    # RPG2k#load_save_state passes its @db, an LCF::Database, and `LCF::SaveData.new(f)` read from the slot's file.
+    def self.from_lsd: (LCF::Database db, LCF::SaveData save) -> Game::State
   end
   class ChipSet
     def initialize: (untyped, Integer) -> untyped

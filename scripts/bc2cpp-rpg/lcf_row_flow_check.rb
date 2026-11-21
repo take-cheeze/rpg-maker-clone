@@ -10,7 +10,8 @@
 # 2. Generated code: the real mruby-lcf mrblib plus fixtures, compiled under the closed world.
 #    Each positive shape gets an exact-class call and each refusal (subclass, reflection, singleton
 #    maker, dup, a mixed-class parameter, a block parameter, a Hash that looks like a row) keeps its
-#    guard or fallback.
+#    guard or fallback. A read inside a `rescue` body and a parameter only the exact-class pool types
+#    are proven too.
 # 3. With BC2CPP_MRUBY_FULL and g++: the fixtures run on real mruby, interpreted and compiled, and
 #    must answer alike, nil holes, absent chunks and foreign rows included. The run repeats on a
 #    32-bit-`mrb_int` build (BC2CPP_MRUBY_FULL32, BC2CPP_MRBC32; scripts/bc2cpp/width_build.rb int32).
@@ -367,6 +368,24 @@ HOST = <<~'RUBY'
       @db[:player][4] = LCF::Array1D.new('', LCF::Schema::DATABASE[:elements][12])
       @db[:player][4][:initial_level]
     end
+    def rescued_blank?(i)
+      @db[:player][i][:name].empty?
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] #{e.message}"
+      false
+    end
+    def ai_level
+      @ai ||= LrAi.new(@db)
+      row = @ai && @ai.row(1)
+      return 0 unless row
+
+      ai_row_level(row)
+    end
+    def ai_row_level(row); row[:initial_level].to_i; end
+  end
+  class LrAi
+    def initialize(db); @db = db; nil; end
+    def row(i); @db[:player][i]; end
   end
 RUBY
 
@@ -387,8 +406,13 @@ end
 flow_lines = ->(code) { code.lines.grep(%r{// LCF_ROW_FLOW :}) }
 dispatches = ->(code) { code.gsub(%r{//[^\n]*}, '').scan(/mrb_funcall|bc2cpp_send|bc2cpp_getidx/).size }
 
+# The protected body of a method with `rescue`, compiled apart (RESCUE_SUPPORT).
+rescue_body = lambda do |cpp, owner, name|
+  cpp[/^static mrb_value #{owner}_#{Regexp.escape(name)}_impl_rescue_try\(mrb_state\* M.*?^}$/m].to_s
+end
+
 Dir.mktmpdir do |dir|
-  cpp, err = compile.call(HOST, %w[LrHost], dir)
+  cpp, err = compile.call(HOST, %w[LrHost LrAi], dir)
   check.call('the proof is on for the real mruby-lcf', err.include?("== LCF row flow (LCF_ROW_FLOW) ==\n  on ("))
   code = ->(name) { method_code.call(cpp, 'LrHost', name) }
 
@@ -434,6 +458,26 @@ Dir.mktmpdir do |dir|
   put_foreign = code.call('put_foreign')
   check.call('a row replaced through `[]=` does not widen what a read is proven to be',
              flow_lines.call(put_foreign).any? { |l| l.include?('LCF::Array1D#[]') })
+  rescued = rescue_body.call(cpp, 'LrHost', 'rescued_blank?'.sub('?', '$3f'))
+  check.call('LCF_KEY_HANDLERS: a row read inside a rescue-protected body keeps its key (three exact calls)',
+             flow_lines.call(rescued).size == 3 && !rescued.include?('bc2cpp_getidx('))
+  ai = code.call('ai_row_level')
+  check.call('EXACT_LCF_ENTRY: a parameter the numeric flow cannot pool reads its exact-class ' \
+             'pool (a row from another object\'s method)',
+             flow_lines.call(ai).one? && ai.include?('NUMERIC_NATIVE_EXACT :to_i') && !ai.include?('owner-call: to_i'))
+end
+
+Dir.mktmpdir do |dir|
+  saved = ENV.values_at('BC2CPP_LCF_KEY_HANDLERS', 'BC2CPP_EXACT_LCF_ENTRY')
+  ENV['BC2CPP_LCF_KEY_HANDLERS'] = ENV['BC2CPP_EXACT_LCF_ENTRY'] = '0'
+  begin
+    cpp, = compile.call(HOST, %w[LrHost LrAi], dir)
+  ensure
+    %w[BC2CPP_LCF_KEY_HANDLERS BC2CPP_EXACT_LCF_ENTRY].zip(saved).each { |k, v| ENV[k] = v }
+  end
+  check.call('both switches off leave the rescued read and the unpooled parameter untyped',
+             rescue_body.call(cpp, 'LrHost', 'rescued_blank$3f').include?('bc2cpp_getidx(') &&
+             method_code.call(cpp, 'LrHost', 'ai_row_level').include?('bc2cpp_getidx('))
 end
 
 refusal = lambda do |extra_source, why, reason|
