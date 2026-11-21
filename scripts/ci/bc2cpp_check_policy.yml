@@ -1660,6 +1660,14 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/declared_keyword_param_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/helper_owner_call_check.rb:
     tier: runtime
     capabilities:
