@@ -1969,7 +1969,8 @@ class RPG2k
       # entirely, with the requested variable left holding 0 rather than a
       # genuine key code.
       def event_busy?
-        @message || @number_input || @interpreter.running? || @interpreter.waiting? ||
+        # A truth value, not @number_input itself: handing the Hash out would void its record type.
+        @message || !@number_input.nil? || @interpreter.running? || @interpreter.waiting? ||
           # A battle a Parallel Process opened (#drive_parallel_wait's :battle
           # case) is exactly as busy as one the foreground itself opened --
           # before that fix existed only @interpreter could ever hold

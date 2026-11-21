@@ -7931,6 +7931,15 @@ module RPG2k
       @name_ui: { name: untyped, sel: untyped, kana: bool, actor_id: untyped, background: untyped,
                   interp: untyped, ?win: untyped, ?page: untyped, ?face_win: untyped, ?name_win: untyped,
                   ?grid_win: untyped }?
+      # The Input Number widget: the two literals in #open_number_input (embedded: :x/:y; standalone: :window,
+      # :contents) and `= nil` in #close_number_input. :model is the one `Game::NumberInput.new`.
+      @number_input: { model: Game::NumberInput, interp: untyped, ?embedded: untyped, ?x: untyped, ?y: untyped,
+                       ?window: untyped, ?contents: RGSS::Bitmap }?
+    end
+
+    class DebugMenu
+      # The variable editor: the literal in #open_editor and `= nil`; :digits is #digits_of's `Array.new(n, 0)`.
+      @editor: { id: untyped, negative: untyped, digits: Array, cursor: untyped }?
     end
   end
 end
