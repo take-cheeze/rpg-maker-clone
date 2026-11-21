@@ -13621,18 +13621,22 @@ end
 # ---- record_param_types.rbs
 # Record parameters, checked where a literal-key field is read (DECLARED_RECORD_READ): a field of another class raises
 # BC2cppDeclarationViolation at the read, whoever wrote the Hash. Kept last so it fills the untyped stubs above.
-class RPG2k::Scene::Battle < RPG2k::Scene::Base
-  # Game::Battle's action log entries: every writer stores `attacker:`/`actor:`/`target:` as a Combatant#name (the
-  # Actor's or Enemy's String name), `source:` as the command's skill or item name, `state_message:` as
-  # Combatant#turn_state_message (a String or nil). Each key is absent from some entries.
-  def battle_absorb_lines: (untyped t, { ?target: String? } e) -> Array
-  def battle_action_lines: ({ ?state_message: String? } entry) -> Array
-  def battle_item_body: ({ ?actor: String?, ?source: String? } e) -> Array
-  def battle_recovery_lines: (untyped t, { ?target: String? } e) -> Array?
-  def battle_result_line: (untyped t, { ?target: String? } e) -> untyped
-  def battle_result_wanted?: ({ ?target: String? } e) -> bool
-  def battle_skill_body: ({ ?attacker: String?, ?actor: String? } e) -> Array
-  def battle_skill_result: (untyped t, untyped row, { ?target: String? } e) -> Array?
-  def battle_start_line: (untyped t, { ?attacker: String? } e, untyped field) -> untyped
-  def battle_state_lines: ({ ?target: String? } entry) -> Array
+class RPG2k
+  module Scene
+    class Battle
+      # Game::Battle's action log entries: every writer stores `attacker:`/`actor:`/`target:` as a Combatant#name (the
+      # Actor's or Enemy's String name), `source:` as the command's skill or item name, `state_message:` as
+      # Combatant#turn_state_message (a String or nil). Each key is absent from some entries.
+      def battle_absorb_lines: (untyped t, { ?target: String? } e) -> Array
+      def battle_action_lines: ({ ?state_message: String? } entry) -> Array
+      def battle_item_body: ({ ?actor: String?, ?source: String? } e) -> Array
+      def battle_recovery_lines: (untyped t, { ?target: String? } e) -> Array?
+      def battle_result_line: (untyped t, { ?target: String? } e) -> untyped
+      def battle_result_wanted?: ({ ?target: String? } e) -> bool
+      def battle_skill_body: ({ ?attacker: String?, ?actor: String? } e) -> Array
+      def battle_skill_result: (untyped t, untyped row, { ?target: String? } e) -> Array?
+      def battle_start_line: (untyped t, { ?attacker: String? } e, untyped field) -> untyped
+      def battle_state_lines: ({ ?target: String? } entry) -> Array
+    end
+  end
 end
