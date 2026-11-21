@@ -589,7 +589,7 @@ mrb_value prof_section(mrb_state* M, mrb_value) {
   mrb_value name, blk;
   mrb_get_args(M, "o&", &name, &blk);
   if (!mrb_symbol_p(name) && !mrb_string_p(name))
-    mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(TypeError)),
+    mrb_raisef(M, mrb_exc_get_id(M, mrb_intern_lit(M, "TypeError")),
                "section name must be a Symbol or String, not %C",
                mrb_obj_class(M, name));
   if (mrb_nil_p(blk))
