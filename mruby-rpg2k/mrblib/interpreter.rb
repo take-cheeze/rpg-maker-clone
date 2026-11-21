@@ -2014,45 +2014,39 @@ module Game
 
     # -- state commands -------------------------------------------------------
 
-    # Returns a Range rather than the [a, b] pair the name might suggest: both
-    # callers immediately turn a/b right back into (a..b) to iterate it, so
-    # building the Range once here and handing it straight to them skips both
-    # that redundant reconstruction and the throwaway 2-element Array a plain
-    # `a, b = range(cmd)` destructure would otherwise cost on every single
-    # Control Switches/Variables command -- confirmed the dominant single
-    # source of interpreter-side per-command Array churn by a section-level
-    # RGSS::Profiler.stats[:object_types] pass. #begin/#end on the result give
-    # back the same two scalars for a caller that still needs them separately
-    # (#do_control_vars, for its own `a < b` check and the range-variable
-    # split).
-    def range(cmd)
-      mode = cmd.param(0)
-      a = cmd.param(1)
-      b = mode == 0 ? a : cmd.param(2)
-      if mode == 2 # indirect: id held in a variable
+    # The first and last id a Control Switches/Variables command targets, as two
+    # scalars so a single-id command (nearly all of them) builds no Range or
+    # Array. A mode-2 (indirect) id resolving to <= 0 is the empty range 1..0:
+    # RPG_RT's indirect target addressing is a no-op there, not a write to slot
+    # 0 or a negative one.
+    def range_first(cmd)
+      return cmd.param(1) unless cmd.param(0) == 2
+
+      a = variables[cmd.param(1)]
+      a <= 0 ? 1 : a
+    end
+
+    def range_last(cmd)
+      case cmd.param(0)
+      when 0 then cmd.param(1)
+      when 2
         a = variables[cmd.param(1)]
-        # RPG_RT's indirect *target* addressing (as opposed to an indirect
-        # operand read, which resolves a missing/out-of-range id to 0) is a
-        # no-op when the resolved id is <= 0, rather than writing switch/
-        # variable slot 0 or a negative one. An already-empty range gets the
-        # same "does nothing" result do_control_switches/do_control_vars
-        # already produce for a descending batch range.
-        return 1..0 if a <= 0
-        b = a
+        a <= 0 ? 0 : a
+      else cmd.param(2)
       end
-      a..b
     end
 
     def do_control_switches(cmd)
       op = cmd.param(3) # 0 on, 1 off, 2 toggle
-      r = range(cmd)
+      a = range_first(cmd)
+      b = range_last(cmd)
       # The overwhelmingly common case (a single-switch target, mode 0 or a
       # resolved-to-one-id mode 2) needs no iteration at all -- skip straight
       # to #set_switch instead of paying a block's Proc+env for a one-element
       # Range every single time. A genuine multi-id batch (mode 1) still
       # walks the whole range.
-      return set_switch(r.begin, op) if r.begin == r.end
-      r.each { |id| set_switch(id, op) }
+      return set_switch(a, op) if a == b
+      (a..b).each { |id| set_switch(id, op) }
     end
 
     def set_switch(id, op)
@@ -2064,9 +2058,8 @@ module Game
     end
 
     def do_control_vars(cmd)
-      r = range(cmd)
-      a = r.begin
-      b = r.end
+      a = range_first(cmd)
+      b = range_last(cmd)
       op = cmd.param(3)  # 0 =, 1 +, 2 -, 3 *, 4 /, 5 %
       # A random operand (type 3) rolls independently for each variable in the
       # range, matching RPG_RT -- a batch "Var[1..5] = random 1~6" is five
@@ -2096,7 +2089,7 @@ module Game
       # multi-id batch still walks the whole range.
       return variables[a] = apply(op, variables[a], operand_value(cmd)) if a == b
       val = operand_value(cmd) unless live
-      r.each { |id| variables[id] = apply(op, variables[id], live ? operand_value(cmd) : val) }
+      (a..b).each { |id| variables[id] = apply(op, variables[id], live ? operand_value(cmd) : val) }
     end
 
     # A batch (range) Control Variables write whose operand is itself a plain

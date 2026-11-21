@@ -7,7 +7,7 @@
 # frozen constants; Scene::Map#events_dirty?/#record_map_event_positions
 # reusing Arrays instead of rebuilding them every frame; #step_parallels and
 # four other @events.each loops rewritten as block-free while loops;
-# Game::Interpreter#range returning a Range instead of a throwaway Array;
+# Game::Interpreter#range_first/#range_last instead of a throwaway Array;
 # Array#include? given a native-equivalent override because mruby's own falls
 # through to a block-allocating Enumerable#include?) cut this scene's
 # per-frame Array/Proc/env allocation by well over half over several rounds,
@@ -59,7 +59,7 @@ game_dir = ARGV[0] || 'data/Nepheshel206beta/Nepheshel206Rbeta'
 # applied (docs/profiling.md's own baseline run: Array ~4000/s, Proc ~1650/s,
 # env ~985/s, stable within 1% run to run). Checked against reverting just
 # the Array#include? fix (Array 4496/s, Proc 2008/s, env 1347/s) and against
-# reverting this whole round -- #range's Array fix included (Array 4692/s,
+# reverting this whole round -- the range Array fix included (Array 4692/s,
 # Proc 2228/s, env 1574/s): margins this tight catch either, with enough
 # slack above the measured baseline's own <1% run-to-run variance that a
 # clean tree does not flap. Only the three types this investigation was
