@@ -7937,6 +7937,12 @@ class Game::Shop
   %a{bc2cpp:hint}
   def sellable_items: () -> Array
 end
+class RGSS::Bitmap
+  # `@font ||= Font.new`. Nothing in the closed world calls #font=, and the one native store (#initialize_copy) is a dup
+  # of the source's @font.
+  %a{bc2cpp:hint}
+  def font: () -> RGSS::Font
+end
 
 # ---- combatant_types.rbs
 # Battler facts of Game::Battle's action chain. The battlers are Combatant.new values only: Battle.from_actor /
