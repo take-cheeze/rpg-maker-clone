@@ -33,6 +33,7 @@ COPS = {
   'Dynamic/IvarReflection' => 'instance_variable_get/set/defined?/remove_instance_variable',
   'Dynamic/MethodDefinition' => 'define_method/alias/undef/remove_method installed at runtime',
   'Dynamic/GlobalVariableReassignment' => 'a global variable may be written more than once in the closed world',
+  'Dynamic/ConstantReassignment' => 'a constant written at more than one site, in a repeatable context, or by ||=/&&=/op=',
   'Dynamic/Eval' => 'eval family, instance_exec/class_exec, binding, method objects',
   'Dynamic/Extend' => 'extend on an object other than self',
   'Dynamic/RescueModifier' => '`expr rescue value` turns any StandardError into control flow',
@@ -52,7 +53,7 @@ Offence = Struct.new(:cop, :file, :line, :snippet) do
 end
 
 class Linter < Prism::Visitor
-  attr_reader :offences, :global_writes
+  attr_reader :offences, :global_writes, :constant_writes
 
   def initialize(file, allowed)
     super()
@@ -60,6 +61,8 @@ class Linter < Prism::Visitor
     @allowed = allowed
     @offences = []
     @global_writes = []
+    @constant_writes = []
+    @nesting = []
     @repeatable_write_depth = 0
   end
 
@@ -110,12 +113,31 @@ class Linter < Prism::Visitor
 
   def visit_class_node(node)
     add('Dynamic/CoreReopen', node) if core_path?(node.constant_path)
-    super
+    nested(node) { super }
   end
 
   def visit_module_node(node)
     add('Dynamic/CoreReopen', node) if core_path?(node.constant_path)
-    super
+    nested(node) { super }
+  end
+
+  # CONSTANT_ONCE: bc2cpp may resolve a constant read to its one definition, which holds only when each constant
+  # has one write site that runs once. Keyed by the lexical nesting the write sits in.
+  %i[constant_write constant_path_write constant_target constant_path_target].each do |kind|
+    define_method("visit_#{kind}_node") do |node|
+      name = constant_written(node)
+      @constant_writes << [(@nesting + [name]).join('::'), @file, node.location.start_line,
+                           node.slice.lines.first.strip, @repeatable_write_depth.positive?]
+      super(node)
+    end
+  end
+
+  %i[constant_or_write constant_and_write constant_operator_write
+     constant_path_or_write constant_path_and_write constant_path_operator_write].each do |kind|
+    define_method("visit_#{kind}_node") do |node|
+      add('Dynamic/ConstantReassignment', node)
+      super(node)
+    end
   end
 
   def visit_alias_method_node(node)
@@ -134,6 +156,21 @@ class Linter < Prism::Visitor
   end
 
   private
+
+  def constant_written(node)
+    case node
+    when Prism::ConstantPathWriteNode then node.target.slice
+    when Prism::ConstantPathTargetNode then node.slice
+    else node.name.to_s
+    end
+  end
+
+  def nested(node)
+    @nesting.push(node.constant_path.slice)
+    yield
+  ensure
+    @nesting.pop
+  end
 
   # Top-level only: `class RPG2k::Array` names the engine's own class.
   def core_path?(path)
@@ -159,7 +196,7 @@ end
 
 ALLOW = /#\s*rpg2k-lint:allow\s+(\S+)\s+--\s+\S/
 
-def lint_file(path, source: nil, root: ROOT)
+def lint_file(path, source: nil, root: ROOT, constant_writes: nil)
   rel = path.delete_prefix("#{root}/")
   result = source ? RubyParseCache.parse(source, path) : RubyParseCache.parse_file(path)
   raise "#{rel}: #{result.errors.map(&:message).join('; ')}" unless result.errors.empty?
@@ -182,6 +219,9 @@ def lint_file(path, source: nil, root: ROOT)
   end
   linter = Linter.new(rel, allowed)
   result.value.accept(linter)
+  linter.constant_writes.each do |write|
+    constant_writes&.push(write) unless allowed[write[2]].include?('Dynamic/ConstantReassignment')
+  end
   [linter.offences, bad, linter.global_writes, allowed]
 end
 
@@ -205,6 +245,14 @@ def global_reassignment_offences(global_writes)
   end
 end
 
+# A constant written at two sites, or at one site that may run more than once.
+def constant_reassignment_offences(constant_writes)
+  constant_writes.group_by(&:first).flat_map do |_name, writes|
+    conflicting = writes.size > 1 ? writes : writes.select(&:last)
+    conflicting.map { |_n, file, line, snippet, _repeatable| Offence.new('Dynamic/ConstantReassignment', file, line, snippet) }
+  end
+end
+
 # Lints every closed-world gem file and compares the offences with the baseline.
 # Shared by the CLI below and by bc2cpp's closed-world cross-check.
 def closed_world_lint_run(root: ROOT)
@@ -212,8 +260,9 @@ def closed_world_lint_run(root: ROOT)
   offences = []
   malformed = []
   global_writes = Hash.new { |h, k| h[k] = [] }
+  constant_writes = []
   files.each do |f|
-    o, bad, writes, allowed = lint_file(f, root: root)
+    o, bad, writes, allowed = lint_file(f, root: root, constant_writes: constant_writes)
     offences.concat(o)
     malformed.concat(bad)
     writes.each do |name, file, line, snippet, repeatable|
@@ -222,6 +271,7 @@ def closed_world_lint_run(root: ROOT)
     end
   end
   offences.concat(global_reassignment_offences(global_writes))
+  offences.concat(constant_reassignment_offences(constant_writes))
   # Defaults to 0: a baseline entry whose offences are all fixed is simply absent.
   counts = Hash.new(0).merge(offences.group_by(&:key).transform_values(&:size))
   baseline = load_baseline
