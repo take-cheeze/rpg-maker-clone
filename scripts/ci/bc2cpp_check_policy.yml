@@ -1039,13 +1039,6 @@ checks:
     - native_sources
     - full_library
     - cxx
-  scripts/bc2cpp/ensure_yield_raise_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    - full_library
-    - cxx
   scripts/bc2cpp/gc_stress_roots_check.rb:
     tier: runtime
     capabilities:
