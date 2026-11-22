@@ -4,8 +4,8 @@
 # Generates mrblib/save_typed_accessors.rb: one typed reader per field of the
 # save schema (LCF::Schema::SAVE_DATA and every SAVE_* table it reaches), so
 # each saved field has a declared Ruby class (see SaveTyped.fits? in
-# mrblib/save_typed.rb for the mapping) and LCF::SaveData's reader can check
-# every field against it when a save is read.
+# mrblib/save_typed.rb for the mapping). The load-time check walks the schema
+# itself (SaveTyped::Record#check!), not these readers.
 #
 # Usage:
 #   ruby mruby-lcf/gen_save_typed_accessors.rb [OUT]        # write (default: mrblib/save_typed_accessors.rb and save_typed_setters.rb)
@@ -19,14 +19,6 @@
 MRBLIB = File.expand_path('mrblib', __dir__)
 OUT = File.join(MRBLIB, 'save_typed_accessors.rb')
 SETTERS_OUT = File.join(MRBLIB, 'save_typed_setters.rb')
-
-# Fields the reader deliberately does not check on load. Chunk 113/114's
-# execution-state stack (SAVE_EVENT_EXEC_STATE field 1) has been tolerated
-# since before this check existed: a genuine EasyRPG F9-debug save carries a
-# stack whose bytes do not decode as this schema, and it must keep loading
-# with that event simply restarting (see Game::State.read_event_exec_frames).
-# Those frames are still read, typed, through EventExecState#frames.
-UNCHECKED = { 'SAVE_EVENT_EXEC_STATE' => [1] }.freeze
 
 module GenSaveTyped
   module_function
@@ -115,7 +107,6 @@ module GenSaveTyped
       cls = class_name(const)
       out << "\n    class #{cls} < Record\n"
       names = []
-      checked = []
       fields[const].each do |id, f, child|
         # Every reader carries the save_ prefix, so a field named like a game method
         # (zoom, font, level, type) cannot add a candidate to that method's dispatch.
@@ -133,13 +124,7 @@ module GenSaveTyped
             "read #{id}, :#{f[:type]}, :#{field}"
           end
         out << "      def #{name}; #{body} end\n"
-        checked << name unless (UNCHECKED[const.to_s] || []).include?(id)
       end
-      out << "\n      # Reads every declared field, so a field whose bytes do not decode as its\n"
-      out << "      # schema type raises LCF::SaveTypeError here, not at a later lookup.\n"
-      out << "      def check!\n"
-      checked.each { |n| out << "        #{n}\n" }
-      out << "        self\n      end\n"
       out << "    end\n"
     end
     out << "  end\nend\n"
