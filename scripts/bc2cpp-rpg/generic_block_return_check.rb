@@ -15,6 +15,7 @@
 #            definition, an optional block) prove nothing; false block declarations, Ruby and native, are TC1010
 #            errors and are not trusted; a false `-> C` on a block-taking method is trusted and raises
 #            BC2cppDeclarationViolation when the compiled method returns (the interpreter returns the value).
+#            A String- and a Symbol-named section are both inlined (PROFILER_SECTION_INLINE, PROFILER_SYMBOL_NAME).
 #
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp-rpg/generic_block_return_check.rb   (without MRBC only the host half runs)
 
@@ -215,6 +216,7 @@ WORLD = <<~'RUBY'
   class GbUser
     def gb_flag; true; end
     def gb_section; RGSS::Profiler.section('a') { GbPoint.new(1) }; end
+    def gb_section_sym; RGSS::Profiler.section(:"gb.sym") { GbPoint.new(16) }; end
     def gb_frame; RGSS::Profiler.frame { GbPoint.new(2) }; end
     def gb_nested; RGSS::Profiler.section('o') { RGSS::Profiler.frame { GbPoint.new(3).tap { |p| p.gb_x } } }; end
     def gb_nested_call; RGSS::Profiler.section('o') { 1.then { |n| gb_section } }; end
@@ -322,8 +324,11 @@ generate = lambda do |world, sigs, native_sigs: nil, native: nil|
   end
 end
 
-_out, err, status = generate.call(WORLD, SIGS)
+out, err, status = generate.call(WORLD, SIGS)
 check.call('the fixture generates', status.success?)
+# PROFILER_SYMBOL_NAME: profiler.cxx takes a Symbol name, so a Symbol-named section is inlined as a String one is.
+check.call('PROFILER_SECTION_INLINE: a String-named section is inlined', out.include?('PROFILER_SECTION_INLINE :a '))
+check.call('PROFILER_SYMBOL_NAME: a Symbol-named section is inlined', out.include?('PROFILER_SECTION_INLINE :gb.sym '))
 unless status.success?
   puts err.lines.last(15).map { |l| "    #{l}" }.join
 end
@@ -336,7 +341,7 @@ block_ret = err.scan(/^  BLOCK_RET (\S+) .*: (.*)$/).to_h
   check.call("#{key}: #{status_text}", block_ret[key] == status_text)
 end
 check.call('GbWrap#gb_opt (an optional block) is listed as not checked', block_ret['GbWrap#gb_opt'].to_s.start_with?('not checked'))
-{ 'gb_section' => 'native section', 'gb_frame' => 'native frame', 'gb_nested' => 'nested section/frame/tap',
+{ 'gb_section' => 'native section', 'gb_section_sym' => 'native section, Symbol name', 'gb_frame' => 'native frame', 'gb_nested' => 'nested section/frame/tap',
   'gb_nested_call' => 'a call inside nested blocks', 'gb_tapped' => 'Kernel#tap', 'gb_thened' => 'Kernel#then',
   'gb_yield_selfed' => 'Kernel#yield_self', 'gb_wrapped' => 'a program [T] method', 'gb_passed' => 'a [T] method with an argument' }.each do |name, what|
   check.call("#{what}: #{name} returns GbPoint", retclass[name] == 'GbPoint')
