@@ -2355,7 +2355,7 @@ module RGSS
         return yield unless @enabled
         start = now_ns
         ret = yield
-        record_section(name, start)
+        record_section(name.to_s, start)
         ret
       end
 

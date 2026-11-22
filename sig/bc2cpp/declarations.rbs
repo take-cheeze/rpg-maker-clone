@@ -8408,7 +8408,7 @@ end
 # bc2cpp-native: rgss_block_returns
 module RGSS
   module Profiler
-    def self.section: [T] (String name) { () -> T } -> T
+    def self.section: [T] (Symbol | String name) { () -> T } -> T
     def self.frame: [T] () { () -> T } -> T
   end
 end
