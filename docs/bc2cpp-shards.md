@@ -33,9 +33,11 @@ tables whose address `DATA_PTR` checks compare. So `ShardOutput` (`tools/bc2cpp/
 * every file-scope variable, every function holding a mutable function-local static or whose address is taken, and
   every static function such a function calls becomes `inline`: a C++17 inline function or variable has one
   definition in the program, and an inline function's local statics one instance (`shared_prelude_items`);
-* every other `static` function stays `static` (marked `[[maybe_unused]]`, as a shard need not call it): it is
-  stateless, so each shard's own copy is the same function. Making these `inline` too costs GCC the freedom to drop
-  their out-of-line bodies, and moved its inlining decisions enough to cost 2.4 % per frame on the probe;
+* every other `static` function is stateless, so each shard's own copy is the same function. In a size-optimized
+  build (`__OPTIMIZE_SIZE__`: Wio, Maix) it is `inline` too and the link keeps one body per gem, about 50 KB less
+  flash on Wio (SHARED_HELPERS, `BC2CPP_SHARED_HELPERS=0` turns it off). Elsewhere it stays `static` (marked
+  `[[maybe_unused]]`, as a shard need not call it): `inline` there costs GCC the freedom to drop out-of-line bodies,
+  and moved its inlining decisions enough to cost 2.4 % per frame on the probe. Function templates stay `static`;
 * `#include` lines stay at global scope (an `#include` inside an `#if` region goes first, with the region's
   directives, and the region follows in the namespace);
 * the declarations of method-section functions (`Foo_impl`, the registered `Foo` entries) stay global, as their
