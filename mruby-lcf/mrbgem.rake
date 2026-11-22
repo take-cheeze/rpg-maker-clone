@@ -192,12 +192,39 @@ end
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
 
+  compiled_build = spec.build.gems.any? { |g| g.name.end_with?('-compiled') }
+
+  # ROM_SCHEMA: a build with compiled gems reads LCF::Schema from constant tables (gen_schema_rom.rb,
+  # src/schema_rom.hxx), so none of its ~1,030 Hashes is built on the heap. bc2cpp compiles mrblib_rom/schema.rb, the
+  # handles, in place of schema.rb (tools/bc2cpp/compiled_gems.rb, lcf_mrblib_srcs); a build with the VM loads the
+  # same file. The tables are generated here, and the build stops if the checked-in handles are not the ones
+  # schema.rb gives today. BC2CPP_ROM_SCHEMA=0 keeps the Hashes (and SCHEMA_TABLES below).
+  if compiled_build && ENV['BC2CPP_ROM_SCHEMA'] != '0'
+    schema = "#{dir}/mrblib/schema.rb"
+    lcf_rb = "#{dir}/mrblib/lcf.rb"
+    gen = "#{dir}/gen_schema_rom.rb"
+    handles = "#{dir}/mrblib_rom/schema.rb"
+    tables = "#{build_dir}/schema_rom.cc"
+    file tables => [gen, schema, lcf_rb, handles] do
+      FileUtils.mkdir_p build_dir, verbose: true
+      fresh = "#{build_dir}/schema_rom_handles.rb"
+      ruby gen, schema, lcf_rb, '--rb', fresh
+      unless File.binread(fresh) == File.binread(handles)
+        raise "#{handles} is stale: regenerate it (#{File.basename(gen)} --rb, see its header)"
+      end
+      ruby gen, schema, lcf_rb, '--cc', tables
+    end
+    file "#{dir}/src/lcf.cxx" => "#{dir}/src/schema_rom.hxx"
+    spec.rbfiles = spec.rbfiles.map { |f| f == schema ? handles : f }
+    objs << objfile("#{build_dir}/schema_rom")
+    cxx.include_paths << "#{dir}/src"
+    cxx.defines << 'LCF_ROM_SCHEMA'
   # SCHEMA_TABLES: in a build with compiled gems (not wio, which has the blob above) the 18 `elements:` lambdas of
   # schema.rb become byte tables in .rodata and one native decoder (gen_schema_tables.rb, src/schema_tables.hxx).
   # As bytecode schema.rb is 38 KB of ireps, the lambdas running through the VM on first use of each record type; compiled to C++
   # they would be ~245 KB of text. The tables stay lazy: LCF.elements_of builds a type's Hash on its first read.
   # schema.rb itself is untouched; the build's copy replaces it in place (load order unchanged).
-  if spec.build.name != 'wio' && spec.build.gems.any? { |g| g.name.end_with?('-compiled') }
+  elsif spec.build.name != 'wio' && compiled_build
     schema = "#{dir}/mrblib/schema.rb"
     folded = "#{build_dir}/schema_folded.rb"
     gen = "#{dir}/gen_schema_tables.rb"

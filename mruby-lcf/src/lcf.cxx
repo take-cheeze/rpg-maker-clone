@@ -7,6 +7,9 @@
 
 #include <uni_algo/conv.h>
 
+#ifdef LCF_ROM_SCHEMA
+#include "schema_rom.hxx"
+#endif
 #ifdef LCF_SCHEMA_TABLES
 #include "schema_tables.hxx"
 #endif
@@ -102,6 +105,43 @@ mrb_value schema_table(mrb_state* M, mrb_value) {
 }
 #endif
 
+// LCF.rom_get(node, key) / LCF.rom_keys(node): Hash#[] / Hash#keys of a ROM
+// schema node (src/schema_rom.hxx). Registered in every build, so the closed
+// world names the same methods with ROM_SCHEMA on or off; a build without the
+// tables has no node to read. The bodies return through a call so the native
+// base RBS reads no return class off a branch (base_rbs_native.rb).
+#ifdef LCF_ROM_SCHEMA
+mrb_value rom_get_of(mrb_state* M, mrb_value h, mrb_value key) {
+  return lcf_rom::get(M, h, key);
+}
+mrb_value rom_keys_of(mrb_state* M, mrb_value h) {
+  return lcf_rom::keys(M, h);
+}
+#else
+[[noreturn]] void no_rom_schema(mrb_state* M) {
+  mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
+            "this build has no ROM schema");
+}
+mrb_value rom_get_of(mrb_state* M, mrb_value, mrb_value) {
+  no_rom_schema(M);
+}
+mrb_value rom_keys_of(mrb_state* M, mrb_value) {
+  no_rom_schema(M);
+}
+#endif
+
+mrb_value rom_get(mrb_state* M, mrb_value) {
+  mrb_value h, key;
+  mrb_get_args(M, "oo", &h, &key);
+  return rom_get_of(M, h, key);
+}
+
+mrb_value rom_keys(mrb_state* M, mrb_value) {
+  mrb_value h;
+  mrb_get_args(M, "o", &h);
+  return rom_keys_of(M, h);
+}
+
 }  // namespace
 
 // OWNER_CALL_DIRECT rows (NATIVE_ROWS in tools/bc2cpp/owner_call_direct.rb):
@@ -122,6 +162,8 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
   static const mrb_mt_entry mod_module_functions[] = {
       MRB_MT_ENTRY(cp932_to_utf8, MRB_SYM(cp932_to_utf8), MRB_ARGS_REQ(1))  //
       MRB_MT_ENTRY(utf8_to_cp932, MRB_SYM(utf8_to_cp932), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(rom_get, MRB_SYM(rom_get), MRB_ARGS_REQ(2))              //
+      MRB_MT_ENTRY(rom_keys, MRB_SYM(rom_keys), MRB_ARGS_REQ(1))            //
 #ifdef LCF_SCHEMA_TABLES
       MRB_MT_ENTRY(schema_table, MRB_SYM(schema_table), MRB_ARGS_REQ(1))  //
 #endif
@@ -134,6 +176,10 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(cp932_to_utf8, MRB_SYM(cp932_to_utf8),
                    MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
       MRB_MT_ENTRY(utf8_to_cp932, MRB_SYM(utf8_to_cp932),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(rom_get, MRB_SYM(rom_get),
+                   MRB_ARGS_REQ(2) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(rom_keys, MRB_SYM(rom_keys),
                    MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
 #ifdef LCF_SCHEMA_TABLES
       MRB_MT_ENTRY(schema_table, MRB_SYM(schema_table),

@@ -29,7 +29,7 @@ module LCF
         i = 0
         while i < schema.size
           s = schema[i]
-          sections.add s[:name], LCF.read_section(io, s)
+          sections.add LCF.sget(s, :name), LCF.read_section(io, s)
           i += 1
         end
         @root = sections
@@ -42,10 +42,10 @@ module LCF
     def schema; raise end
 
     def build_root(io, root_schema)
-      case root_schema[:type]
+      case LCF.sget(root_schema, :type)
       when :Array1D then Array1D.new(io, root_schema)
       when :Array2D then Array2D.new(io, root_schema)
-      else raise NameError, "uninitialized constant LCF::#{root_schema[:type]}"
+      else raise NameError, "uninitialized constant LCF::#{LCF.sget(root_schema, :type)}"
       end
     end
 
