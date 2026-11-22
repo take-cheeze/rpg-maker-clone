@@ -1023,6 +1023,11 @@ if wio
            USB_CONFIG_POWER=100]
     end
 
+    # IMPLICIT_STATE (bc2cpp implicit_state.rb): the firmware opens one
+    # mrb_state, so the compiled code reads it from a global instead of
+    # passing it to every call. BC2CPP_IMPLICIT_STATE=0 turns it off.
+    conf.cxx.defines << 'BC2CPP_IMPLICIT_STATE=1'
+
     # Not gated behind RGSS_WIO_ARDUINO_INCLUDES above: this is a real,
     # always-applicable fix, found the same way (a real `pio run -e
     # wio_rgss_boot` link). GCC's C++11 thread-safe static-local-variable
