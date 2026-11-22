@@ -95,6 +95,32 @@ module LCF
       arr.each { |i, row| klass.new(row, "#{@path}.#{name}[#{i}]").check! }
       arr
     end
+
+    # Reads every field the record's schema declares, in id order, so a field whose
+    # bytes do not decode as its schema type raises SaveTypeError here, not at a later
+    # lookup. Nested tables are checked in turn; a field marked `unchecked:` is not.
+    def check!
+      elements = LCF.elements_of(@rec.schema)
+      ids = LCF.skeys(elements).sort
+      i = 0
+      while i < ids.size
+        id = ids[i]
+        i += 1
+        elem = LCF.sget(elements, id)
+        next if LCF.sget(elem, :unchecked)
+        type = LCF.sget(elem, :type)
+        name = LCF.sget(elem, :name)
+        nested = !LCF.sget(elem, :elements).nil?
+        if nested && type == :Array1D
+          table(id, Record, name)
+        elsif nested && type == :Array2D
+          rows(id, Record, name)
+        else
+          read(id, type, name)
+        end
+      end
+      self
+    end
   end
   end
 end

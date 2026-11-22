@@ -476,7 +476,7 @@ Dir.mktmpdir('lcf-schema-rom') do |dir|
   end
 
   # --- closure -------------------------------------------------------------------------------------------
-  # The readers (lcf.rb, lcf_file.rb, save_typed_put.rb): the only code that holds a schema value. Each pin is the
+  # The readers (lcf.rb, lcf_file.rb, save_typed.rb, save_typed_put.rb): the only code that holds a schema value. Each pin is the
   # SHA256 of the method's source; a change to one is checked against what the readers may do with a handle (pass it
   # to sget/skeys/elements_of/Array1D.new/Array2D.new, compare it with equal?, test it with is_a?/nil) and re-pinned.
   readers = {
@@ -488,7 +488,7 @@ Dir.mktmpdir('lcf-schema-rom') do |dir|
     'LCF::Array2D#same_schema?' => nil,
     'LCF::File#initialize' => nil, 'LCF::File#schema' => nil, 'LCF::File#build_root' => nil, 'LCF::File#to_lcf' => nil,
     'LCF::Database#schema' => nil, 'LCF::MapTree#schema' => nil, 'LCF::MapUnit#schema' => nil,
-    'LCF::SaveData#schema' => nil, 'LCF::SaveTyped::Record#save_put' => nil
+    'LCF::SaveData#schema' => nil, 'LCF::SaveTyped::Record#save_put' => nil, 'LCF::SaveTyped::Record#check!' => nil
   }
   pins = File.read(__FILE__)[/^# READER PINS\n(.*?)^# END READER PINS/m, 1].to_s.lines.to_h do |l|
     name, sha = l.delete_prefix('#').split
@@ -610,4 +610,5 @@ suite.finish!
 # LCF::MapUnit#schema 613a882d7dd4339d
 # LCF::SaveData#schema 8b872a23be8560fd
 # LCF::SaveTyped::Record#save_put 1a444d4700f096a3
+# LCF::SaveTyped::Record#check! f7d373d7020cad0d
 # END READER PINS
