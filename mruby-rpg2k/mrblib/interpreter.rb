@@ -497,13 +497,16 @@ module Game
       @list = list
       @index = 0
       @running = true
-      @call_stack = []
+      # REUSE_QUEUES: a looping parallel event restarts every frame, so the run's
+      # queues are emptied in place. Only the take_* drains hand one out: a
+      # non-empty queue is swapped for a fresh one, an empty one is dropped at once.
+      @call_stack.clear
       # A fresh run starts back at depth 0, same reasoning as #event_id's own
       # reset just below.
       @call_frame_event_id = nil
-      @move_route_requests = []
-      @location_requests = []
-      @sprite_flash_requests = []
+      @move_route_requests.clear
+      @location_requests.clear
+      @sprite_flash_requests.clear
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
@@ -513,9 +516,9 @@ module Game
       @tiles_changed = false
       @vehicle_toggle_requested = false
       @movie_request = nil
-      @revealed_monsters = []
-      @fled_monsters = []
-      @monster_kills = []
+      @revealed_monsters.clear
+      @fled_monsters.clear
+      @monster_kills.clear
       @battle_background = nil
       # Cleared per run so a reused interpreter (the shared foreground one, or a
       # looping parallel process) never inherits the previous event's trigger;
@@ -530,7 +533,7 @@ module Game
       # "show message" flag set) and shown one after another before the event
       # continues. Drained by #resume, so it survives the reset_waits between
       # messages; abandoned by #stop.
-      @pending_messages = []
+      @pending_messages.clear
       # A fresh run starts with no claim on the shared face state -- see
       # #do_change_face / #update.
       @face_owner = false
@@ -545,6 +548,9 @@ module Game
     # the target characters.
     def take_move_route_requests
       reqs = @move_route_requests
+      # An empty queue is handed out as is (REUSE_QUEUES): every caller returns on empty.
+      return reqs if reqs.empty?
+
       @move_route_requests = []
       reqs
     end
@@ -556,6 +562,9 @@ module Game
     # the owning scene polls this after #update and moves the characters.
     def take_location_requests
       reqs = @location_requests
+      # An empty queue is handed out as is (REUSE_QUEUES): every caller returns on empty.
+      return reqs if reqs.empty?
+
       @location_requests = []
       reqs
     end
@@ -655,6 +664,9 @@ module Game
     # reports the flash done.
     def take_sprite_flash_requests
       reqs = @sprite_flash_requests
+      # An empty queue is handed out as is (REUSE_QUEUES): every caller returns on empty.
+      return reqs if reqs.empty?
+
       @sprite_flash_requests = []
       reqs
     end
