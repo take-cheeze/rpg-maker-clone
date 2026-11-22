@@ -4133,7 +4133,9 @@ class RPG2k
         party_moved = rev(@state.party) != @swept_party_revision
         timer_moved = @state.timer_seconds != @swept_timer_seconds ||
                       @state.timer2_seconds != @swept_timer2_seconds
-        if sw_dirty.nil? && var_dirty.nil? && !party_moved && !timer_moved
+        # An empty set moved nothing; nil is unknown (a bulk replace) and sweeps.
+        if sw_dirty && sw_dirty.empty? && var_dirty && var_dirty.empty? &&
+           !party_moved && !timer_moved
           return false
         end
         live = {}

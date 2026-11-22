@@ -1411,6 +1411,24 @@ check "an unrelated event's page change does not reset another event's " \
   eq 5, ch.transparency, 'and Transparency Up/Down'
 end
 
+check 'a switch flipped after a bulk switch/variable replace (a save load) still flips a page' do
+  # A replace leaves the changed-id sets unknown (nil); the next page sweep has to
+  # treat every page as possibly flipped, not skip the sweep.
+  p1 = page(trigger: 0, charset_name: 'Villager')
+  p2 = page(trigger: 4, charset_name: 'Ghost')
+  scene = new_scene({ 2 => two_page_event(2, 2, 3, p1, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  st.switches.replace(st.switches.to_h.dup)
+  st.variables.replace(st.variables.to_h.dup)
+  scene.update
+  eq 0, event_hashes(scene)[2].trigger, 'page 1 still runs right after the replace'
+
+  st.switches[3] = true
+  5.times { scene.update }
+  eq 4, event_hashes(scene)[2].trigger, 'switch 3 flipped the page after the replace'
+end
+
 check "an unrelated event's page change does not reset another event's Move " \
       "Route Change Graphic override, but the event's own page change still wins" do
   # Event 1 is the bystander (own page never changes) and carries a Move
