@@ -5591,7 +5591,6 @@ end
 class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def ui: () -> untyped
   def owner: () -> untyped
-  def map: () -> untyped
   def actor_battlecharset_bitmap: (untyped) -> untyped
   def actor_placeholder_battler: () -> untyped
   def actor_sprite_z: (untyped) -> untyped
@@ -5698,6 +5697,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def living_allies: () -> untyped
   def living_foes: () -> untyped
   def log_round: (untyped) -> untyped
+  def map: () -> untyped
   def move_battle_item_cursor: (untyped) -> untyped
   def move_battle_list_index: (untyped, untyped, untyped) -> untyped
   def move_battle_skill_cursor: (untyped) -> untyped
@@ -5823,7 +5823,6 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def build_inn_gold_window: (untyped) -> untyped
   def build_shop_gold_window: () -> untyped
   def build_timer_sprite: () -> untyped
-  def char_can_land?: (untyped, untyped, untyped) -> untyped
   def char_location: (untyped, untyped) -> untyped
   def character_screen_position: (untyped) -> untyped
   def check_random_encounter: () -> untyped
@@ -5874,7 +5873,6 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def drive_shop_list: () -> untyped
   def drive_shop_quantity: () -> untyped
   def drive_wait_key_enter: () -> untyped
-  def erase_event: (untyped) -> untyped
   def event_at: (untyped, untyped) -> untyped
   def event_id_at: (untyped, untyped) -> untyped
   def event_position: (untyped) -> untyped
@@ -5975,7 +5973,6 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def shop_status_item_id: (untyped) -> untyped
   def shop_switch: (untyped) -> untyped
   def shop_terms: (untyped) -> untyped
-  def start_event: (untyped, ?untyped) -> untyped
   def start_inn_bgm_wait: (untyped) -> untyped
   def start_inn_fade_out: (?untyped) -> untyped
   def start_map_animation: (untyped) -> untyped
@@ -5997,8 +5994,6 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def try_board_vehicle: () -> untyped
   def try_open_menu: () -> untyped
   def vehicle_bgm: (untyped) -> untyped
-  def vehicle_char_can_land?: (untyped, untyped, untyped, untyped) -> untyped
-  def vehicle_char_passable?: (untyped, untyped, untyped) -> untyped
   def vehicle_passable?: (untyped, untyped, untyped, untyped) -> untyped
   def vehicle_pixel: (untyped) -> untyped
   def victory_bgm: () -> untyped
@@ -6664,8 +6659,8 @@ class Game::Battle
   @result: (nil | Symbol)
   def initialize: (Array[Game::Battle::Combatant], Array[Game::Battle::Combatant]) -> untyped
   def apply_stat_mods: (untyped, Array, untyped) -> untyped
-  def self.from_actor: (untyped) -> Game::Battle::Combatant
-  def self.from_enemy: (untyped) -> Game::Battle::Combatant
+  def self.from_actor: (Game::Actor) -> Game::Battle::Combatant
+  def self.from_enemy: (Game::Enemy) -> Game::Battle::Combatant
 end
 
 class Game::EnemyAction
@@ -6991,7 +6986,7 @@ class RPG2k::Scene::Map
   def bush_depth_at: (untyped, untyped) -> Integer
   %a{bc2cpp:hint}
   def bush_pixels_at: (untyped, untyped) -> Integer
-  def char_passable?: (untyped, untyped) -> untyped
+  def char_passable?: (Game::Character?, untyped) -> untyped
   %a{bc2cpp:hint}
   def choice_row_indent: (untyped) -> Integer
   %a{bc2cpp:hint}
@@ -7000,7 +6995,7 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def constrained_scale: (untyped) -> Integer
   def dispose_parallax: () -> untyped
-  def draw_event_charset: (untyped, RGSS::Bitmap, untyped, untyped, untyped) -> untyped
+  def draw_event_charset: (RPG2k::Scene::Map::MapEventState?, RGSS::Bitmap, untyped, untyped, untyped) -> untyped
   def draw_event_tile: (untyped, RGSS::Bitmap, untyped, untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def draw_events: (untyped, untyped) -> Array
@@ -7088,7 +7083,7 @@ class RPG2k::Scene::Map
   def setup_sprites: () -> untyped
   def speak_message: (untyped) -> untyped
   def start_autostart: () -> untyped
-  def start_event_slide: (untyped, untyped, untyped) -> untyped
+  def start_event_slide: (RPG2k::Scene::Map::MapEventState?, untyped, untyped) -> untyped
   def step_battle_owner_parallel: () -> untyped
   def step_forced_event: (untyped) -> untyped
   def step_forced_movement: () -> untyped
@@ -7113,7 +7108,7 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def walk_slide_step: (untyped) -> Integer
   %a{bc2cpp:hint}
-  def animate_event: (untyped) -> (Integer | nil)
+  def animate_event: (RPG2k::Scene::Map::MapEventState?) -> (Integer | nil)
   %a{bc2cpp:hint}
   def apply_erase_request: (untyped, untyped) -> nil
   %a{bc2cpp:hint}
@@ -7155,7 +7150,7 @@ class RPG2k::Scene::Map
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def area_contains?: (untyped, untyped, untyped) -> bool
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
-  def char_in_sight?: (untyped) -> bool
+  def char_in_sight?: (Game::Character?) -> bool
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def sprite_flashing?: () -> bool
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
@@ -7704,43 +7699,17 @@ class RPG2k
       @parent: RPG2k?
       @db: LCF::Database?
       @map_tree: LCF::MapTree?
-    end
-    class Map
+      # Declared once for the family (DECLARED_IVAR_PROOF needs one declaring class): every writer is a subclass's
+      # #initialize, `@state = state` (each construction site passes RPG2k's or another scene's Game::State, or nil),
+      # or Scene::Battle's `map.state`, Scene::Map's attr_reader of that same slot.
       @state: Game::State?
-    end
-    class Menu
-      @state: Game::State?
-    end
-    class SaveLoad
-      @state: Game::State?
-    end
-    class MapViewer
-      @state: Game::State?
-    end
-    class StatusMenu
-      @state: Game::State?
-    end
-    class SkillMenu
-      @state: Game::State?
-    end
-    class DebugMenu
-      @state: Game::State?
-    end
-    class ItemMenu
-      @state: Game::State?
-    end
-    class Order
-      @state: Game::State?
-    end
-    class EquipMenu
-      @state: Game::State?
-    end
-    class ChipsetEditor
-      @state: Game::State?
+      # Scene::Map's and MapViewer's map: Scene::Map stores `state.map` (Game::State#@map) or RPG2k#load_map's
+      # `Game::Map.new`; MapViewer its `map:` keyword (#load_map's result or `@state.map`) or `state.map`.
+      @map: Game::Map?
     end
     class Battle
       # One writer; both construction sites (Scene::Map#drive_battle) pass the Scene::Map `self`.
-      @map: RPG2k::Scene::Map?
+      @map_scene: RPG2k::Scene::Map?
     end
     # One writer each, in #initialize; the only construction sites are in Scene::Map#initialize:
     # `MapWorld.new(self, @rng)` / `VehicleWorld.new(self, @rng, type)`, Scene::Map's one @rng writer being
@@ -9439,7 +9408,6 @@ end
 
 # candidate: cand-emit-f4/RPG2k/Scene/Base.rbs
 class RPG2k::Scene::Base
-  @state: nil | Game::State
   FIELD_BACKDROP_X: Integer
   FIELD_BACKDROP_Y: Integer
   LIST_DOWN_ARROW_SRC_Y: Integer
@@ -9464,7 +9432,6 @@ class RPG2k::Scene::Battle
   @disposed: bool
   @owner: Game::Interpreter | nil
   @rng: Game::Rng | nil
-  @state: nil | Game::State
   ACTOR_BAD_STATUS_POSE: Integer
   ACTOR_CHARSET_CELL: Integer
   ACTOR_DEAD_POSE: Integer
@@ -10073,11 +10040,6 @@ class RPG2k::Window
   CURSOR_Z: Integer
   DEFAULT_Z: Integer
   SKIN_Z: Integer
-end
-
-# candidate: cand-emit-f4/RPG2k3/Scene/Battle.rbs
-class RPG2k3::Scene::Battle
-  @state: nil | Game::State
 end
 
 # Typed returns for base stubs. The base-stub generator (scripts/bc2cpp/base_rbs.rb, base_rbs_native.rb) writes these
@@ -13621,4 +13583,53 @@ class RPG2k
       def battle_state_lines: ({ ?target: String? } entry) -> Array
     end
   end
+end
+
+# ---- owner-guard declarations: receiver classes read from every writer, checked where the value is stored or read
+# (DECLARED_IVAR_GUARD, DECLARED_ELEMENT_GUARD, DECLARED_PARAM_GUARD).
+class Game::State
+  # `nil` in #initialize; #map= is called only with RPG2k#load_map's `Game::Map.new` (#start_new_game, the
+  # transition reload) or Scene::Map's own @map.
+  @map: Game::Map?
+  # The one writer, #initialize's two-element literal.
+  @timers: Array[Game::Timer]
+end
+class Game::Interpreter
+  # #start / #enter_called_list / #return_from_call store an event's, common event's or saved frame's command list:
+  # LCF.parse_event_commands' `EventCommand.new` values (and a synthesized LCF::EventCommand), `[]` when absent.
+  @list: Array[LCF::EventCommand]
+end
+class Game::Troop
+  # `[]` in #initialize, then only `<<` of #build_member's `Enemy.new`.
+  @members: Array[Game::Enemy]
+end
+class Game::Party
+  # `[]` then `<<` of non-nil Actors#[] results (#initialize, #add_actor), #reorder's `old[i]` over Scene::Order's
+  # compacted permutation of the old indices, and #promote_to_leader's actor (an Actors#all element).
+  @actors: Array[Game::Actor]
+end
+class RPG2k::Scene::Map
+  # `[]`, then only `push` of #build_event's `MapEventState.new`.
+  @events: Array[RPG2k::Scene::Map::MapEventState]
+  # A moving character: MapWorld / VehicleWorld forward Game::MoveRoute's and Game::MoveType's `character`, and
+  # Game::Character.new (an event's char, @player_char, a @vehicle_chars entry) is the only kind there is.
+  # (#char_passable? and #char_in_sight? are declared with their other facts above.)
+  def char_can_land?: (Game::Character?, untyped, untyped) -> untyped
+  def vehicle_char_passable?: (Game::Character?, untyped, untyped) -> untyped
+  def vehicle_char_can_land?: (Game::Character?, untyped, untyped, untyped) -> untyped
+  # A map event: an @events element, or one #event_at / @event_tiles found (#rebuild_event_tiles indexes @events).
+  # (#draw_event_charset, #start_event_slide and #animate_event are declared with their other facts above.)
+  def start_event: (RPG2k::Scene::Map::MapEventState?, ?untyped) -> untyped
+  def erase_event: (RPG2k::Scene::Map::MapEventState?) -> untyped
+end
+class Game::Battle::Combatant
+  # Combatant.new's `actor` (nil by default): Battle.from_actor passes its Game::Actor, from_enemy nil; nothing calls
+  # #actor=.
+  @actor: Game::Actor?
+end
+class Game::MoveRoute
+  # Scene::Map#run_route_step's character (an event's char, @player_char or a vehicle's char), passed down unchanged.
+  def execute: (untyped, Game::Character? character, untyped) -> untyped
+  def do_move: (Game::Character? character, untyped, untyped) -> untyped
+  def land_jump: (Game::Character? character, untyped, untyped, untyped, untyped) -> untyped
 end
