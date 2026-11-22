@@ -67,15 +67,12 @@ module LCF::SaveTyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Bgm < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::CommonEvent < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::EventExecFrame < LCF::SaveTyped::Record
-  def check!: () -> untyped
   def frame: () -> untyped
   def save_command_size=: (untyped) -> untyped
   def save_commands: () -> untyped
@@ -88,41 +85,34 @@ class LCF::SaveTyped::EventExecFrame < LCF::SaveTyped::Record
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::EventExecState < LCF::SaveTyped::Record
-  def check!: () -> untyped
   def frames: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Inventory < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::MapEvent < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Movable < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::MoveRoute < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::PartyActor < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::PartyLocation < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Picture < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Record
   def rec: () -> untyped
   def path: () -> untyped
+  def check!: () -> untyped
   def initialize: (untyped, untyped) -> untyped
   def read: (untyped, untyped, untyped) -> untyped
   def rows: (untyped, untyped, untyped) -> untyped
@@ -132,27 +122,21 @@ class LCF::SaveTyped::Record
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Save < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Screen < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Se < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::System < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Target < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Title < LCF::SaveTyped::Record
-  def check!: () -> untyped
 end
 # bc2cpp-native: base_lcf
 module LCF::Schema
@@ -5323,6 +5307,7 @@ class Game::State
   def self.build_event_exec_state: (untyped) -> untyped
   def self.from_lsd: (untyped, untyped) -> untyped
   def self.ole_now: () -> untyped
+  def self.put_fields: (untyped, untyped) -> untyped
   def self.read_event_exec_frames: (untyped) -> untyped
   def self.read_foreground_frames: (untyped) -> untyped
   def self.restore_pictures: (untyped, untyped) -> untyped

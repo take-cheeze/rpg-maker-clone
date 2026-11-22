@@ -52,7 +52,8 @@
 #                    [u16 nested_section_idx if flags&2]
 #                  flags: bit0 has_order, bit1 has_nested, bit2 nested_lazy,
 #                  bit3 has_format (a String, e.g. 'S<*'), bit4 has_enums
-#                  (Integer => Symbol; the table strings are the Symbol names).
+#                  (Integer => Symbol; the table strings are the Symbol names),
+#                  bit5 `unchecked: true` (SaveTyped::Record#check! skips it).
 #                  A section keeps schema.rb's own key order, so the decoded
 #                  Hash iterates exactly as the source Hash does.
 #
@@ -180,8 +181,11 @@ class Generator
     nested_lazy = has_nested && nested.respond_to?(:call)
     has_format = field.key?(:format)
     has_enums = field.key?(:enums)
+    unchecked = field[:unchecked]
+    raise "unchecked: must be true when present: #{unchecked.inspect}" unless unchecked.nil? || unchecked == true
+
     flags = (has_order ? 1 : 0) | (has_nested ? 2 : 0) | (nested_lazy ? 4 : 0) |
-            (has_format ? 8 : 0) | (has_enums ? 16 : 0)
+            (has_format ? 8 : 0) | (has_enums ? 16 : 0) | (unchecked ? 32 : 0)
     dtag, dval = default_tag_and_value(field[:default])
 
     w.u16(name_idx).u8(type_tag).u8(flags).u8(dtag)
@@ -424,6 +428,7 @@ DECODER = <<~'RUBY'
             end
             h[:enums] = enums
           end
+          h[:unchecked] = true if (flags & 32) != 0
           if (flags & 2) != 0
             idx = r.u16
             h[:elements] = (flags & 4) != 0 ? -> { section(idx) } : section(idx)
