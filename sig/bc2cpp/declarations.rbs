@@ -1327,7 +1327,8 @@ class Game::Interpreter
   def picture_name: (untyped) -> untyped
   def query_position: (untyped) -> untyped
   def queue_level_up_messages: (untyped, untyped, untyped, untyped) -> untyped
-  def range: (untyped) -> untyped
+  def range_first: (untyped) -> untyped
+  def range_last: (untyped) -> untyped
   def restore_call_stack: (untyped) -> untyped
   def resume_battle: (untyped) -> untyped
   def resume_inn: (untyped) -> untyped
@@ -6518,7 +6519,6 @@ module Game
     def do_call_event: (LCF::EventCommand cmd) -> untyped
     def do_enemy_encounter: (LCF::EventCommand cmd) -> untyped
     def eval_condition: (untyped cmd) -> untyped
-    def range: (LCF::EventCommand cmd) -> Range[untyped]
     def do_control_vars: (LCF::EventCommand cmd) -> untyped
     def do_erase_screen: (LCF::EventCommand cmd) -> (TrueClass | nil)
     def do_move_event: (LCF::EventCommand cmd) -> untyped
@@ -11070,7 +11070,6 @@ class Game::Interpreter
   def map_event_call: (untyped, untyped) -> Array?
   def picture_name: (untyped) -> String
   def query_position: (untyped) -> Array
-  def range: (untyped) -> Range
   def resume_battle: (untyped) -> (bool | nil)
   def resume_inn: (untyped) -> bool
   def resume_key_input: (untyped) -> bool
