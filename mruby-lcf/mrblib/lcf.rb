@@ -94,16 +94,27 @@ module LCF
   # writes it. Non-negative numbers use the shortest encoding (RPG_RT's own),
   # so a value read from a real file re-encodes to the identical bytes.
   def self.write_ber(n)
+    append_ber(String.new, n)
+  end
+
+  # The byte append_ber grows a String by before setbyte writes the real value.
+  BER_GROW_BYTE = "\0".freeze
+
+  # Appends write_ber(n)'s bytes to +out+ in place and returns +out+: no
+  # temporary Array or String per call, which matters on the load path
+  # (Array2D#read_row_bytes re-encodes every chunk header it copies).
+  def self.append_ber(out, n)
     n &= INT32_MASK
-    groups = [n & 0x7f]
-    while n > 0x7f
-      n >>= 7
-      groups.unshift(n & 0x7f)
+    shift = 0
+    shift += 7 while (n >> shift) > 0x7f
+    while shift > 0
+      out << BER_GROW_BYTE
+      out.setbyte(-1, ((n >> shift) & 0x7f) | 0x80)
+      shift -= 7
     end
-    last = groups.size - 1
-    bytes = []
-    groups.each_with_index { |g, i| bytes << (i < last ? (g | 0x80) : g) }
-    bytes.pack('C*')
+    out << BER_GROW_BYTE
+    out.setbyte(-1, n & 0x7f)
+    out
   end
 
   class Tree
@@ -187,9 +198,11 @@ module LCF
       indent = c.respond_to?(:indent) ? c.indent : c[:indent]
       str = binstr(utf8_to_cp932((c.respond_to?(:string) ? c.string : c[:string]) || ''))
       params = c.respond_to?(:parameters) ? c.parameters : c[:parameters]
-      out = out + write_ber(code) + write_ber(indent) +
-            write_ber(str.bytesize) + str + write_ber(params.size)
-      params.each { |p| out = out + write_ber(p) }
+      append_ber(out, code)
+      append_ber(out, indent)
+      append_ber(out, str.bytesize) << str
+      append_ber(out, params.size)
+      params.each { |p| append_ber(out, p) }
     end
     out
   end
@@ -238,16 +251,20 @@ module LCF
       a = (c.respond_to?(:parameter_a) ? c.parameter_a : c[:parameter_a]) || 0
       b = (c.respond_to?(:parameter_b) ? c.parameter_b : c[:parameter_b]) || 0
       cc = (c.respond_to?(:parameter_c) ? c.parameter_c : c[:parameter_c]) || 0
-      out = out + write_ber(id)
+      append_ber(out, id)
       case id
       when MOVE_SWITCH_ON, MOVE_SWITCH_OFF
-        out = out + write_ber(a)
+        append_ber(out, a)
       when MOVE_CHANGE_GRAPHIC
         str = binstr(utf8_to_cp932(str_field || ''))
-        out = out + write_ber(str.bytesize) + str + write_ber(a)
+        append_ber(out, str.bytesize) << str
+        append_ber(out, a)
       when MOVE_PLAY_SOUND
         str = binstr(utf8_to_cp932(str_field || ''))
-        out = out + write_ber(str.bytesize) + str + write_ber(a) + write_ber(b) + write_ber(cc)
+        append_ber(out, str.bytesize) << str
+        append_ber(out, a)
+        append_ber(out, b)
+        append_ber(out, cc)
       end
     end
     out
@@ -815,9 +832,10 @@ module LCF
       @data.each_with_index do |v, idx|
         next if idx == 0 || v.nil?
         bytes = LCF.binstr(v.is_a?(String) ? v : v.to_lcf)
-        out = out + LCF.write_ber(idx) + LCF.write_ber(bytes.bytesize) + bytes
+        LCF.append_ber(out, idx)
+        LCF.append_ber(out, bytes.bytesize) << bytes
       end
-      out = out + LCF.write_ber(0) if terminate
+      LCF.append_ber(out, 0) if terminate
       out
     end
 
@@ -938,7 +956,7 @@ module LCF
       ids.each do |i|
         entry = @data[i]
         bytes = LCF.binstr(entry.is_a?(String) ? entry : entry.to_lcf)
-        out = out + LCF.write_ber(i) + bytes
+        LCF.append_ber(out, i) << bytes
       end
       out
     end
@@ -975,12 +993,12 @@ module LCF
       begin
         until s.eof?
           idx = LCF.read_ber s
-          out << LCF.write_ber(idx)
+          LCF.append_ber(out, idx)
           break if idx == 0
           len = LCF.read_ber s
           d = len > 0 ? s.read(len) : ''
           raise "truncated chunk #{idx}: #{len} bytes declared" if len < 0 || d.nil? || d.bytesize != len
-          out << LCF.write_ber(len) << d
+          LCF.append_ber(out, len) << d
         end
       rescue StopIteration => e
         e.result
