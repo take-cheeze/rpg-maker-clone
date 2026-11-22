@@ -11145,8 +11145,12 @@ class RPG2k
       # bitmap whatever the camera does).
       def draw_pictures(cam_x, cam_y)
         pics = @state.pictures
-        sig = pictures_signature pics, cam_x, cam_y
+        # PICTURES_SIG_SPARE: this frame's signature is built into the array the
+        # previous one replaced, and the two swap only when they differ; nothing
+        # else holds either array.
+        sig = fill_pictures_signature(@pictures_sig_spare ||= [], pics, cam_x, cam_y)
         return if sig == @pictures_sig
+        @pictures_sig_spare = @pictures_sig || []
         @pictures_sig = sig
         return if pics.empty? && @picture_bmp.nil?
         unless @picture_bmp
@@ -11170,19 +11174,20 @@ class RPG2k
         end
       end
 
-      # One array describing the whole picture layer's drawn output: the shown
-      # pictures' every draw input, plus the camera/shake the map-fixed and
-      # shake-affected pictures hang off. Comparing arrays compares values, so
-      # a picture mid-Move-Picture (interpolated per frame) reads dirty until
-      # it arrives.
-      def pictures_signature(pics, cam_x, cam_y)
-        return [].freeze if pics.empty?
-        sig = [cam_x, cam_y, @state.screen.shake_offset]
-        pics.keys.sort.each do |id|
+      # Fills +sig+ with one array describing the whole picture layer's drawn
+      # output: the shown pictures' every draw input, plus the camera/shake the
+      # map-fixed and shake-affected pictures hang off. Comparing arrays
+      # compares values, so a picture mid-Move-Picture (interpolated per frame)
+      # reads dirty until it arrives.
+      def fill_pictures_signature(sig, pics, cam_x, cam_y)
+        sig.clear
+        return sig if pics.empty?
+        sig.push(cam_x, cam_y, @state.screen.shake_offset)
+        pics.keys.sort!.each do |id|
           p = pics[id]
-          sig.concat [id, p.name, p.use_transparent_color, p.x, p.y, p.zoom,
-                      p.opacity, p.red, p.green, p.blue, p.saturation,
-                      p.fixed_to_map]
+          sig.push(id, p.name, p.use_transparent_color, p.x, p.y, p.zoom,
+                   p.opacity, p.red, p.green, p.blue, p.saturation,
+                   p.fixed_to_map)
         end
         sig
       end
