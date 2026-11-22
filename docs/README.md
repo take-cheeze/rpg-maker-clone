@@ -73,7 +73,8 @@
   `main_loop`, and the `gfx.*` phases (z-ordering, bitmap invalidation, LVGL
   handling) are wrapped inside `gfx_update` with the `ProfilerScope` RAII
   helper. Any Ruby code can add its own with
-  `RGSS::Profiler.section("name") { ... }`
+  `RGSS::Profiler.section(:"name") { ... }` (a Symbol name costs no
+  allocation per call; a String works too)
 - Memory sampling: process RSS (from `/proc/self/statm` on Linux), the LVGL
   heap pool via `lv_mem_monitor` (guarded by `lv_is_initialized`), and mruby
   allocation activity — the native build routes mruby's allocator through

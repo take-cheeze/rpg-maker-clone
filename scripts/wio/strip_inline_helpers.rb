@@ -380,9 +380,9 @@ REWRITES = {
 ',
         new: '        (@fade_sprite = Sprite.new; @fade_sprite.z = 500; @fade_bmp = Bitmap.new(SCREEN_W, SCREEN_H); @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255); @fade_sprite.bitmap = @fade_bmp; @fade_sprite.opacity = 0; @fade_masked = false; @transition_capture = nil; @captured_transition = nil; @random_blocks_transition = nil; @flash_sprite = Sprite.new; @flash_sprite.z = 450; @flash_sprite.opacity = 0; @flash_rgb = nil; @weather_sprite = Sprite.new; @weather_sprite.z = 430; @weather_sprite.visible = false)
 ' }, # setup_screen_overlay
-      { old: '        RGSS::Profiler.section("map.overlay") { update_screen_overlay }
+      { old: '        RGSS::Profiler.section(:"map.overlay") { update_screen_overlay }
 ',
-        new: '        RGSS::Profiler.section("map.overlay") { (screen = @state.screen; draw_transition_mask screen; update_map_tone screen.tint; r, g, b, strength = screen.flash_color; if strength <= 0
+        new: '        RGSS::Profiler.section(:"map.overlay") { (screen = @state.screen; draw_transition_mask screen; update_map_tone screen.tint; r, g, b, strength = screen.flash_color; if strength <= 0
           @flash_sprite.opacity = 0
         else
           rgb = [r, g, b]
