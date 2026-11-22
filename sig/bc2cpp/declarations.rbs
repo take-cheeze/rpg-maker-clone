@@ -178,8 +178,12 @@ end
 # bc2cpp-native: base_lcf
 module LCF
   def cp932_to_utf8: (String) -> String
+  def rom_get: (untyped, untyped) -> untyped
+  def rom_keys: (untyped) -> untyped
   def utf8_to_cp932: (String) -> String
   def self.cp932_to_utf8: (String) -> String
+  def self.rom_get: (untyped, untyped) -> untyped
+  def self.rom_keys: (untyped) -> untyped
   def self.utf8_to_cp932: (String) -> String
 end
 
@@ -5154,6 +5158,8 @@ module LCF
   def self.pc_hp_max: () -> untyped
   def self.read_ber: (untyped) -> untyped
   def self.read_section: (untyped, untyped) -> untyped
+  def self.sget: (untyped, untyped) -> untyped
+  def self.skeys: (untyped) -> untyped
   def self.to_rb: (untyped, untyped) -> untyped
   def self.var_max: () -> untyped
   def self.var_min: () -> untyped
@@ -7525,7 +7531,7 @@ class Game::Troop
   def drops: (untyped) -> Array
 end
 class LCF::Array1D
-  def initialize: (untyped, Hash) -> untyped
+  def initialize: (untyped, Hash | Integer) -> untyped
   def sym2idx: () -> untyped
   def to_lcf: () -> untyped
   %a{bc2cpp:hint}
@@ -8043,10 +8049,11 @@ module LCF
 end
 module LCF
   class Array2D
-    def initialize: ((String | File | StringIO) s, Hash schema) -> untyped
+    # A schema is a Hash or, with the ROM schema (mruby-lcf/gen_schema_rom.rb), a node's Integer handle.
+    def initialize: ((String | File | StringIO) s, (Hash | Integer) schema) -> untyped
     # The body stores nil, bytes or an Array1D (lcf.rb `[]=`), so the entry is declared as that union.
     def []=: (Integer idx, (LCF::Array1D | String | nil) entry) -> (LCF::Array1D | String | nil)
-    def same_schema?: (Hash) -> bool
+    def same_schema?: (Hash | Integer) -> bool
     def []: (Integer idx) -> untyped
   end
 end
@@ -8225,7 +8232,7 @@ class LCF::File
   def terminate_root?: () -> untyped
   def to_lcf: () -> untyped
   %a{bc2cpp:hint}
-  def build_root: (untyped, Hash) -> LCF::Array1D
+  def build_root: (untyped, Hash | Integer) -> LCF::Array1D
   def field?: (Symbol) -> bool
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def key?: (untyped) -> bool
@@ -10290,7 +10297,7 @@ end
 
 # bc2cpp-native: typed_returns
 class LCF::Array1D
-  def schema: () -> Hash?
+  def schema: () -> (Hash | Integer)?
   def field?: (untyped) -> bool
   def key?: (untyped) -> bool
 end

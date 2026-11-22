@@ -305,7 +305,7 @@ module LCF
 
   # Read one section of a file sequentially from the stream +io+.
   def self.read_section io, s
-    case s[:type]
+    case sget(s, :type)
     when :Array2D ; Array2D.new io, s
     when :Array1D ; Array1D.new io, s
     when :Tree
@@ -313,7 +313,7 @@ module LCF
       maps = Array.new(map_count) { read_ber io }
       Tree.new read_ber(io), maps
     else
-      raise "Unsupported section type: #{s[:type]}"
+      raise "Unsupported section type: #{sget(s, :type)}"
     end
   end
 
@@ -323,13 +323,13 @@ module LCF
     # edition_default -- and a callable (`-> { ... }`) default is lazy:
     # evaluate it, so the value resolves, not the Proc itself.
     unless d
-      dv = s[:default]
+      dv = sget(s, :default)
       return edition_default(dv) if dv.is_a?(Symbol)
       return dv.respond_to?(:call) ? dv.call : dv
     end
     raise TypeError, "LCF field bytes are #{d.class}, not String" unless d.is_a?(String)
 
-    case s[:type]
+    case sget(s, :type)
     when :Array1D ; return Array1D.new d, s
     when :Array2D ; return Array2D.new d, s
     when :int ; return read_ber StringIO.new(d)
@@ -338,9 +338,10 @@ module LCF
       return d.bytes[0] != 0
     when :int16_array
       vals = d.unpack(int16_format(s))
-      return vals unless s[:order]
+      order = sget(s, :order)
+      return vals unless order
       h = {}
-      s[:order].each_with_index { |name, i| h[name] = vals[i] }
+      order.each_with_index { |name, i| h[name] = vals[i] }
       return h
     when :int8_array ; return d.bytes
     when :uint8 ; return d.bytes[0]
@@ -359,7 +360,7 @@ module LCF
       return Tree.new(selected_id, maps)
     end
 
-    raise "Unsupported type: #{s[:type]}"
+    raise "Unsupported type: #{sget(s, :type)}"
   end
 
   # Decode a packed sequence of little-endian signed 32bit integers.
@@ -404,8 +405,21 @@ module LCF
   # String#unpack template, e.g. 'S<*' for unsigned), else signed little-endian.
   # The schema is the source; every reader of these fields goes through here.
   def self.int16_format s
-    (s && s[:format]) || 's<*'
+    (s && sget(s, :format)) || 's<*'
   end
+
+  # A schema node is a Hash or, in a build with the ROM schema (gen_schema_rom.rb), a node's handle, a negative
+  # Integer. These are the only reads of one (scripts/bc2cpp-rpg/lcf_schema_rom_check.rb holds the world to them).
+  def self.sget s, key
+    s.is_a?(Integer) ? LCF.rom_get(s, key) : s[key]
+  end
+
+  def self.skeys s
+    s.is_a?(Integer) ? LCF.rom_keys(s) : s.keys
+  end
+
+  # Array1D#sym2idx's per-schema lookup for a ROM node, which cannot hold it as a Hash does under :sym2idx.
+  ROM_SYM2IDX = {}
 
   # Encode an array of 16bit integers as packed little-endian bytes -- the
   # inverse of the schema's :int16_array unpack format. Each value is masked to
@@ -639,8 +653,9 @@ module LCF
   # reference an existing shared constant like `elements: COMMON_EVENT`) is
   # returned as-is.
   def self.elements_of schema
-    e = schema[:elements]
-    return e if e.is_a?(Hash)
+    e = sget(schema, :elements)
+    # A ROM node, or a caller's Hash around one (`{ elements: LCF::Schema::SE }`), holds the table as its handle.
+    return e if e.is_a?(Hash) || (e.is_a?(Integer) && e < 0)
     # A bc2cpp build folds each lambda into a byte table (gen_schema_tables.rb): `elements:` is the table's number
     # and the native LCF.schema_table builds the Hash, so no bytecode runs for it.
     return schema[:elements] = LCF.schema_table(e) if e.is_a?(Integer)
@@ -749,10 +764,10 @@ module LCF
       idx = sym2idx[idx] if idx.is_a? Symbol
       cached = @decoded && @decoded[idx]
       return cached if cached
-      elem = LCF.elements_of(@schema)[idx]
+      elem = LCF.sget(LCF.elements_of(@schema), idx)
       value = LCF.to_rb @data[idx], elem
       if value.is_a?(Array1D) || value.is_a?(Array2D) ||
-         elem[:type] == :event || elem[:type] == :move_commands
+         LCF.sget(elem, :type) == :event || LCF.sget(elem, :type) == :move_commands
         @decoded ||= {}
         @decoded[idx] = value
       end
@@ -779,7 +794,7 @@ module LCF
     # surfaces the first row. Returns nil when the chunk is absent.
     def int16_values idx
       d = @data[idx]
-      d && d.unpack(LCF.int16_format(LCF.elements_of(@schema)[idx]))
+      d && d.unpack(LCF.int16_format(LCF.sget(LCF.elements_of(@schema), idx)))
     end
 
     # Drop a chunk entirely, so #to_lcf omits it rather than writing an empty
@@ -803,9 +818,9 @@ module LCF
     # with #[] and #key?.
     def []= idx, value
       idx = sym2idx[idx] if idx.is_a? Symbol
-      elem = @schema && LCF.elements_of(@schema)[idx]
+      elem = @schema && LCF.sget(LCF.elements_of(@schema), idx)
       if elem
-        @data[idx] = LCF.encode(value, elem[:type])
+        @data[idx] = LCF.encode(value, LCF.sget(elem, :type))
       elsif value.is_a? String
         @data[idx] = LCF.binstr(value)
       else
@@ -867,19 +882,24 @@ module LCF
     def sym2idx
       return @sym2idx if @sym2idx
       return nil unless @schema
-      @sym2idx = @schema[:sym2idx]
+      node = @schema.is_a?(Integer)
+      @sym2idx = node ? LCF::ROM_SYM2IDX[@schema] : @schema[:sym2idx]
       return @sym2idx if @sym2idx
       @sym2idx = {}
       elements = LCF.elements_of(@schema)
-      keys = elements.keys
+      keys = LCF.skeys(elements)
       i = 0
       while i < keys.size
         k = keys[i]
-        e = elements[k]
-        @sym2idx[e[:name]] = k
+        e = LCF.sget(elements, k)
+        @sym2idx[LCF.sget(e, :name)] = k
         i += 1
       end
-      @schema[:sym2idx] = @sym2idx
+      if node
+        LCF::ROM_SYM2IDX[@schema] = @sym2idx
+      else
+        @schema[:sym2idx] = @sym2idx
+      end
     end
   end
 

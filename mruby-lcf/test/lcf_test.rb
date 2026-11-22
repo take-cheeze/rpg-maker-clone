@@ -277,9 +277,9 @@ assert "LCF.edition_default resolves a schema Symbol default to the edition's va
   assert_equal LCF.exp_default, LCF.edition_default(:exp_default)
   assert_raise(ArgumentError) { LCF.edition_default(:nope) }
   # An absent field of the real schema yields the edition's value through the reader.
-  player = LCF.elements_of(LCF::Schema::DATABASE[:elements][11])
-  assert_equal LCF.level_max, LCF.to_rb(nil, player[8])
-  assert_equal LCF.exp_default, LCF.to_rb(nil, player[41])
+  player = LCF.elements_of(LCF.sget(LCF.sget(LCF::Schema::DATABASE, :elements), 11))
+  assert_equal LCF.level_max, LCF.to_rb(nil, LCF.sget(player, 8))
+  assert_equal LCF.exp_default, LCF.to_rb(nil, LCF.sget(player, 41))
 end
 
 assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" do
@@ -733,7 +733,7 @@ assert 'Array1D hands out one decoded nested table, and re-decodes after a write
   # times to build a party), so a container decode is kept. It must still be
   # dropped when the chunk underneath is rewritten or removed.
   learning = lcf_array2d([[1, lcf_array1d([lcf_int_field(1, 3)])]])
-  schema = { elements: LCF::Schema::DATABASE[:elements][11][:elements] }
+  schema = { elements: LCF.sget(LCF.sget(LCF.sget(LCF::Schema::DATABASE, :elements), 11), :elements) }
   a = LCF::Array1D.new(lcf_array1d([lcf_field(63, learning)]), schema)
   first = a[63]
   assert_true first.is_a?(LCF::Array2D)

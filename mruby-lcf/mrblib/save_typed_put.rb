@@ -37,15 +37,15 @@ module LCF
           @owner.save_put(@owner_id, @rec) if @owner
           return nil
         end
-        elem = LCF.elements_of(@rec.schema)[id]
-        type = elem[:type]
+        elem = LCF.sget(LCF.elements_of(@rec.schema), id)
+        type = LCF.sget(elem, :type)
         unless SaveTyped.save_writable?(type, v)
-          raise SaveTypeError, "#{@path}.#{elem[:name]}: expected #{type}, got #{v.class}"
+          raise SaveTypeError, "#{@path}.#{LCF.sget(elem, :name)}: expected #{type}, got #{v.class}"
         end
         stored = v
         stored = v.rec if v.is_a?(Record)
         if stored.is_a?(Hash)
-          order = elem[:order]
+          order = LCF.sget(elem, :order)
           stored = order.map { |n| stored[n] || 0 }
         end
         @rec[id] = stored
