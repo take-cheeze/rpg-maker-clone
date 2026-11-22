@@ -2623,6 +2623,7 @@ jobs:
     # job needs seconds, so ten minutes is a stall, not a slow deploy.
     timeout-minutes: 10
     permissions:
+      actions: read
       contents: read
       pages: write
       id-token: write
@@ -2659,6 +2660,19 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+      # deploy-pages looks the artifact up once in the run's artifact list, which can lag the upload by seconds
+      # while other jobs are still uploading; it then fails with "No artifacts named github-pages".
+      - name: Wait for the Pages artifact to be listed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in $(seq 30); do
+            n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=github-pages" --jq .total_count)
+            [ "$n" -gt 0 ] && exit 0
+            sleep 2
+          done
+          echo "::error::the github-pages artifact is not listed 60 s after its upload"
+          exit 1
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
