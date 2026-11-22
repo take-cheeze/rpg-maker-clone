@@ -113,8 +113,8 @@ check.call('a declared block arity the yields do not pass is refused',
            BlockReturns.native_function_why(profiler, 'prof_section', 1).to_s.include?('yields 0'))
 mutants = {
   'a return of something else' => ['return ret;', 'return mrb_nil_value();'],
-  'the yield result written again' => ['profiler_section_end(mrb_string_value_cstr(M, &name), start);',
-                                       'profiler_section_end(mrb_string_value_cstr(M, &name), start); ret = name;'],
+  'the yield result written again' => ['profiler_section_end(label, start);',
+                                       'profiler_section_end(label, start); ret = name;'],
   'a yield that changes self' => ['return mrb_yield_argv(M, blk, 0, nullptr);',
                                   'return mrb_yield_with_class(M, blk, 0, nullptr, name, nullptr);'],
   'the block stored away' => ['const uint64_t start = profiler_section_begin();',

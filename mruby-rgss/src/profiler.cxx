@@ -601,9 +601,9 @@ mrb_value prof_section(mrb_state* M, mrb_value) {
   const mrb_value ret = mrb_yield_argv(M, blk, 0, nullptr);
   // section_end copies the name into a stable std::string map key immediately,
   // so a transient c-string is fine here.
-  profiler_section_end(mrb_symbol_p(name) ? mrb_sym_name(M, mrb_symbol(name))
-                                          : mrb_string_value_cstr(M, &name),
-                       start);
+  const char* label = mrb_symbol_p(name) ? mrb_sym_name(M, mrb_symbol(name))
+                                         : mrb_string_value_cstr(M, &name);
+  profiler_section_end(label, start);
   return ret;
 }
 
