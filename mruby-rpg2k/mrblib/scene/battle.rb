@@ -24,7 +24,7 @@ class RPG2k
     # in the first place -- so it constructs this scene, hands it every frame
     # for as long as the fight is open (see Scene::Map#drive_battle) and tears
     # it down again (Scene::Map#close_battle). What stays the map's, and is
-    # reached back into through `@map`, is listed under the "Services
+    # reached back into through `@map_scene`, is listed under the "Services
     # Scene::Battle calls back into" heading at the end of scene/map.rb: the
     # graphic caches shared across encounters, the BGM stack that has to bring
     # the field track back afterwards, the battle-animation player a round's
@@ -50,7 +50,7 @@ class RPG2k
       # reach back through the map.
       def initialize(map, req, owner)
         super map.parent
-        @map = map
+        @map_scene = map
         @state = map.state
         @rng = map.rng
         @req = req
@@ -73,19 +73,23 @@ class RPG2k
       # Scene::Map for the handful of things a running fight changes about the
       # map's own frame (a timer without the "run in battle" flag pauses, the
       # message window skips its open animation, the map layers are hidden).
-      attr_reader :ui, :owner, :map
+      attr_reader :ui, :owner
+
+      # The owning Scene::Map. Not `@map`: Scene::Map and MapViewer keep their Game::Map there, and one declaration on
+      # Scene::Base types the slot for the whole family.
+      def map; @map_scene; end
 
       # The map's windowskin rather than a copy taken at construction: a
       # Change System Graphic (10680) run from a battle event page reloads it
       # mid-fight (Scene::Map#reload_windowskin), and every window opened from
       # here on has to pick the new one up.
       def windowskin
-        @map.windowskin
+        @map_scene.windowskin
       end
 
       # Memoize a named graphic load, exactly like Scene::Map's own
       # #cached_bitmap (see there) -- duplicated rather than reached through
-      # `@map.` since it touches nothing Map-specific, only the cache hash
+      # `@map_scene.` since it touches nothing Map-specific, only the cache hash
       # (one of @monster_cache, @backdrop_cache, @battlecharset_cache,
       # @system2_cache, all shared with Scene::Map -- see #initialize) and
       # the key its own caller already resolved.
@@ -129,7 +133,7 @@ class RPG2k
         # site only ever runs once #event_busy? is fully clear, which a battle
         # never is, so this is the one place that reaches the check while a
         # fight is open.
-        @map.try_open_debug_menu
+        @map_scene.try_open_debug_menu
       end
 
       def start
@@ -149,7 +153,7 @@ class RPG2k
         # random/wandering-monster encounter -- since #start is their one
         # shared entry point.
         play_system_se(SFX_BATTLE)
-        @map.play_battle_bgm
+        @map_scene.play_battle_bgm
         troop = Game::Troop.new(db, @req.troop_id, @rng)
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
@@ -827,7 +831,7 @@ class RPG2k
       # The encounter terrain's grid fields (database terrain chunks 46-48), or
       # the reference implementation's no-terrain defaults when the party's tile names no terrain.
       def battle_grid_params
-        tid = @map.respond_to?(:terrain_id) ? @map.terrain_id(@state.x, @state.y) : 0
+        tid = @map_scene.respond_to?(:terrain_id) ? @map_scene.terrain_id(@state.x, @state.y) : 0
         row = tid && tid > 0 && LCF.field?(db, :terrain) && db[:terrain] ? db[:terrain][tid] : nil
         return { top_y: GRID_TOP_Y_DEFAULT, elongation: GRID_ELONGATION_DEFAULT,
                  inclination: GRID_INCLINATION_DEFAULT } unless row
@@ -1009,11 +1013,11 @@ class RPG2k
       # value is dropped on a map change.
       def encounter_backdrop
         return @req.background.to_s unless @req.background.nil?
-        return @map.backdrop_for_terrain_id(@req.terrain_id) unless @req.terrain_id.nil?
+        return @map_scene.backdrop_for_terrain_id(@req.terrain_id) unless @req.terrain_id.nil?
         carried = @state.respond_to?(:battle_background) ? @state.battle_background : nil
         return carried unless carried.nil?
-        Game::Backdrop.name_for(@state.map_id, @map.map_properties,
-                                @map.terrain_backdrop(@state.x, @state.y))
+        Game::Backdrop.name_for(@state.map_id, @map_scene.map_properties,
+                                @map_scene.terrain_backdrop(@state.x, @state.y))
       end
 
       # One static sprite at the screen origin, under everything else.
@@ -1039,7 +1043,7 @@ class RPG2k
         # already active when the encounter opened would reach the (hidden)
         # map and not the one element on screen until the tint next changes.
         # #update_map_tone keeps it in lockstep thereafter.
-        spr.tone = @map.current_map_tone if @map.respond_to?(:current_map_tone)
+        spr.tone = @map_scene.current_map_tone if @map_scene.respond_to?(:current_map_tone)
         @ui[:back_sprite] = spr
       end
 
@@ -2572,7 +2576,7 @@ class RPG2k
         # before the round moves on, so the round is paced by the animation
         # rather than by the fixed banner timer.
         if battle_animation_playing?
-          @map.step_map_animation
+          @map_scene.step_map_animation
           return
         end
         if @ui[:anim_timer] > 0
@@ -2623,7 +2627,7 @@ class RPG2k
       end
 
       def battle_animation_playing?
-        !@map.map_animation.nil? && @map.map_animation[:battle]
+        !@map_scene.map_animation.nil? && @map_scene.map_animation[:battle]
       end
 
       # Play the animation this action names, over its target. RPG2000 keeps the
@@ -2640,12 +2644,12 @@ class RPG2k
         id = battle_animation_id(entry)
         return false unless id && id > 0
         tx, ty, height = battle_animation_pixel(entry)
-        target = @map.anim_target(tx, ty, height: height, index: entry[:target_index],
+        target = @map_scene.anim_target(tx, ty, height: height, index: entry[:target_index],
                                   flash_target: nil)
-        anim = @map.build_animation(id, [target], true)
+        anim = @map_scene.build_animation(id, [target], true)
         return false unless anim
-        @map.map_animation = anim
-        @map.fire_animation_flashes(anim) # frame 0 flashes, as the map path does
+        @map_scene.map_animation = anim
+        @map_scene.fire_animation_flashes(anim) # frame 0 flashes, as the map path does
         true
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle animation failed: #{e.message}"
@@ -2745,14 +2749,14 @@ class RPG2k
           if req[:target] && req[:target] < 0
             whole_side_anim_targets(req[:allies])
           elsif req[:allies]
-            [@map.anim_target(SCREEN_W / 2, SCREEN_H / 2, height: nil, index: nil,
+            [@map_scene.anim_target(SCREEN_W / 2, SCREEN_H / 2, height: nil, index: nil,
                               flash_target: nil)]
           else
             tx, ty, height = battle_animation_pixel(target_index: req[:target])
-            [@map.anim_target(tx, ty, height: height, index: req[:target],
+            [@map_scene.anim_target(tx, ty, height: height, index: req[:target],
                               flash_target: nil)]
           end
-        @map.build_animation(req[:animation], targets, true)
+        @map_scene.build_animation(req[:animation], targets, true)
       end
 
       # The target descriptors for a whole-side Show Battle Animation: one per
@@ -2765,7 +2769,7 @@ class RPG2k
       # animations get no on-screen sprite in RPG2000's front view, so the
       # whole side collapses to the single screen-centre fallback.
       def whole_side_anim_targets(allies)
-        return [@map.anim_target(SCREEN_W / 2, SCREEN_H / 2, height: nil, index: nil,
+        return [@map_scene.anim_target(SCREEN_W / 2, SCREEN_H / 2, height: nil, index: nil,
                                  flash_target: nil)] if allies
         sprites = @ui[:enemy_sprites] || []
         foes = @ui[:foes] || []
@@ -2775,7 +2779,7 @@ class RPG2k
           next if spr.nil? || (foe && foe.out_of_play?)
           bmp = spr.bitmap
           next unless bmp
-          out << @map.anim_target(spr.x + bmp.width / 2, spr.y + bmp.height / 2,
+          out << @map_scene.anim_target(spr.x + bmp.width / 2, spr.y + bmp.height / 2,
                                   height: bmp.height, index: i, flash_target: nil)
         end
         out
@@ -2872,9 +2876,9 @@ class RPG2k
       def drive_battle_event_wait(it)
         case it.wait_kind
         when :message, :choice then drive_battle_event_message(it)
-        when :animation then @map.drive_map_animation(it)
+        when :animation then @map_scene.drive_map_animation(it)
         when :wait
-          @ui[:event_timer] ||= @map.frames_from_tenths(it.wait_frames)
+          @ui[:event_timer] ||= @map_scene.frames_from_tenths(it.wait_frames)
           if @ui[:event_timer] <= 0
             @ui[:event_timer] = nil
             it.resume
@@ -3021,7 +3025,7 @@ class RPG2k
 
       def enter_battle_result(result)
         @ui[:result] = result
-        @map.play_victory_bgm if result == :victory
+        @map_scene.play_victory_bgm if result == :victory
         lines = battle_result_lines(result, @ui[:troop])
         [@ui[:status_win], @ui[:cmd_win]].each { |w| w.dispose if w }
         @ui[:status_win] = nil
@@ -3094,11 +3098,11 @@ class RPG2k
         death_handler = result == :defeat && @req.random &&
                         !@req.defeat_game_over && @state.party.all_dead?
         owner = @owner
-        @map.close_battle
+        @map_scene.close_battle
         if game_over
-          @map.perform_game_over(owner)
+          @map_scene.perform_game_over(owner)
         else
-          @map.restore_pre_battle_bgm
+          @map_scene.restore_pre_battle_bgm
           owner.resume_battle(result)
           owner.start_death_handler if death_handler
         end
@@ -3854,7 +3858,7 @@ class RPG2k
 
       def draw_battle_gauge_face(c, actor, i)
         return unless actor && actor.respond_to?(:faceset_name)
-        face = @map.load_face_bitmap(actor.faceset_name)
+        face = @map_scene.load_face_bitmap(actor.faceset_name)
         return unless face
         index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
         src = Rect.new((index % 4) * Map::FACE_SIZE,

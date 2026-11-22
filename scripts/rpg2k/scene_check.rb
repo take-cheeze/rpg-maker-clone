@@ -371,7 +371,7 @@ end
 # entirely -- `ui` only needs to carry whatever keys the check itself reads.
 def fake_battle(scene, ui)
   battle = RPG2k::Scene::Battle.allocate
-  battle.instance_variable_set(:@map, scene)
+  battle.instance_variable_set(:@map_scene, scene)
   battle.instance_variable_set(:@ui, ui)
   scene.instance_variable_set(:@battle, battle)
   battle
