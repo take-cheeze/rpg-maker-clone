@@ -133,7 +133,9 @@ class RPG2k
         @focus = :command       # :command (command list) or :actors (party-status panel)
         @actor_index = 0
         @pending_key = nil      # which command actor selection is for (:skill/:equip/:status)
-        @message = nil
+        # The `{ window: }` popup of #show_message. Not `@message`: bc2cpp pools an ivar per class family and name, so
+        # sharing Scene::Map's MessageState slot name would leave every Map read a Hash-or-MessageState union.
+        @popup = nil
         @skin = make_windowskin
         @background = build_field_background(@skin)
         @commands = build_commands
@@ -203,7 +205,7 @@ class RPG2k
         @gold.update if @gold
         @confirm_help.update if @confirm_help
         @confirm_command.update if @confirm_command
-        return drive_message if @message
+        return drive_message if @popup
         case @focus
         when :actors then update_actor_selection
         when :end_game_confirm then update_end_game_confirm
@@ -948,7 +950,7 @@ class RPG2k
       end
 
       def show_message(text)
-        return if @message
+        return if @popup
         w = SCREEN_W - 40
         win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
         win.z = 500
@@ -957,13 +959,13 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, 14, text
         win.contents = c
-        @message = { window: win }
+        @popup = { window: win }
       end
 
       def close_message
-        return unless @message
-        @message[:window].dispose
-        @message = nil
+        return unless @popup
+        @popup[:window].dispose
+        @popup = nil
       end
     end
 

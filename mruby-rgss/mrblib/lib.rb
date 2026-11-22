@@ -1494,7 +1494,7 @@ module RGSS
       # (each also in its NFD spelling), so the cost is a burst of File.file?
       # syscalls on the game-loop thread rather than anything audio-related.
       def resolve(filename, dirs)
-        RGSS::Profiler.section("audio.resolve") { search_for(filename, dirs) }
+        RGSS::Profiler.section(:"audio.resolve") { search_for(filename, dirs) }
       end
 
       def search_for(filename, dirs)
