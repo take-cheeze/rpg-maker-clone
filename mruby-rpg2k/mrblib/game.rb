@@ -1512,7 +1512,10 @@ module Game
     # id; #clear_dirty closes the sweep.
     attr_reader :dirty
 
-    def clear_dirty; @dirty = {}; end
+    # Emptied in place: the page sweep, the only reader, is done with the set.
+    def clear_dirty
+      @dirty ? @dirty.clear : @dirty = {}
+    end
   end
 
   # Game variables: a 1-indexed set of integers, defaulting to 0.
@@ -1571,7 +1574,10 @@ module Game
     # them, or nil after a bulk `replace`.
     attr_reader :dirty
 
-    def clear_dirty; @dirty = {}; end
+    # Emptied in place: the page sweep, the only reader, is done with the set.
+    def clear_dirty
+      @dirty ? @dirty.clear : @dirty = {}
+    end
   end
 
   # A digit-entry model backing the Input Number event command: `digits` cells,
