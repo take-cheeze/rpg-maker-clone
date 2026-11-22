@@ -581,12 +581,17 @@ mrb_value prof_set_enabled(mrb_state* M, mrb_value) {
   return mrb_bool_value(v);
 }
 
-// RGSS::Profiler.section("name") { ... } -- time the block under `name`. When
-// profiling is off it just yields, so instrumentation can be left in place with
-// no measurable cost.
+// RGSS::Profiler.section(:"name") { ... } -- time the block under `name` (a
+// Symbol, or a String). When profiling is off it just yields, so
+// instrumentation can be left in place with no measurable cost; a Symbol name
+// keeps the call from allocating a String every frame.
 mrb_value prof_section(mrb_state* M, mrb_value) {
   mrb_value name, blk;
-  mrb_get_args(M, "S&", &name, &blk);
+  mrb_get_args(M, "o&", &name, &blk);
+  if (!mrb_symbol_p(name) && !mrb_string_p(name))
+    mrb_raisef(M, mrb_exc_get_id(M, mrb_intern_lit(M, "TypeError")),
+               "section name must be a Symbol or String, not %C",
+               mrb_obj_class(M, name));
   if (mrb_nil_p(blk))
     return mrb_nil_value();
   if (!g_enabled)
@@ -596,7 +601,9 @@ mrb_value prof_section(mrb_state* M, mrb_value) {
   const mrb_value ret = mrb_yield_argv(M, blk, 0, nullptr);
   // section_end copies the name into a stable std::string map key immediately,
   // so a transient c-string is fine here.
-  profiler_section_end(mrb_string_value_cstr(M, &name), start);
+  const char* label = mrb_symbol_p(name) ? mrb_sym_name(M, mrb_symbol(name))
+                                         : mrb_string_value_cstr(M, &name);
+  profiler_section_end(label, start);
   return ret;
 }
 
@@ -869,7 +876,7 @@ bool profiler_tracing() {
 // profiling off.
 mrb_value prof_stub_yield(mrb_state* M, mrb_value) {
   mrb_value name, blk;
-  mrb_get_args(M, "|S&", &name, &blk);
+  mrb_get_args(M, "|o&", &name, &blk);
   if (mrb_nil_p(blk))
     return mrb_nil_value();
   return mrb_yield_argv(M, blk, 0, nullptr);

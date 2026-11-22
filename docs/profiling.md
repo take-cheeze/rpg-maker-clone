@@ -686,8 +686,8 @@ each frame, tracked because a string of fixes (skip_to's terminator arrays
 hoisted to frozen constants; `Scene::Map#events_dirty?`/
 `#record_map_event_positions` reusing Arrays instead of rebuilding them every
 frame; `#step_parallels` and four other `@events.each` loops rewritten as
-block-free `while` loops; `Game::Interpreter#range` returning a `Range`
-instead of a throwaway Array; `Array#include?` given a native-equivalent
+block-free `while` loops; `Game::Interpreter#range_first`/`#range_last`
+returning two ids instead of a throwaway Array or Range; `Array#include?` given a native-equivalent
 override because mruby's own falls through to a block-allocating
 `Enumerable#include?`) cut it by well over half across several rounds — see
 `changelog.d/` for each one's own measurement.
