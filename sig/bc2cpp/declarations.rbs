@@ -1078,23 +1078,12 @@ class Game::ChipSet
   def initialize: (untyped, untyped) -> untyped
   def landable_tile?: (untyped, untyped) -> untyped
   def upper_flags: (untyped) -> untyped
-  def self.lower_index: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 module Game::ChipsetLayout
   def self.anim_ab: (untyped, untyped, untyped) -> untyped
   def self.anim_c: (untyped) -> untyped
-  def self.anim_input: (untyped) -> untyped
-  def self.block: (untyped) -> untyped
-  def self.event_tile_rect: (untyped) -> untyped
-  def self.full: (untyped, untyped) -> untyped
-  def self.lower_quad: (untyped) -> untyped
-  def self.quads: (untyped, ?untyped, ?untyped) -> untyped
   def self.quads_from_quarters: (untyped) -> untyped
-  def self.terrain_quads: (untyped) -> untyped
-  def self.uncached_quads: (untyped, untyped, untyped, untyped) -> untyped
-  def self.upper_quad: (untyped) -> untyped
-  def self.water_quads: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 module Game::CommonEvent
@@ -1700,7 +1689,6 @@ class Game::Transition
   def half: (untyped) -> untyped
   def horizontal_split_ops: (untyped) -> untyped
   def horizontal_stripe_rects: () -> untyped
-  def initialize: (untyped, untyped, untyped, untyped, untyped) -> untyped
   def mosaic_block_size: () -> untyped
   def mosaic_wave_progress: () -> untyped
   def new_block_rects: () -> untyped
@@ -2141,7 +2129,6 @@ class RPG2k::Window
   def cursor_rect=: (untyped) -> untyped
   def draw_arrow_fallback: () -> untyped
   def draw_cursor_fallback: (untyped, untyped, untyped, untyped) -> untyped
-  def draw_cursor_skin: (untyped, untyped, untyped, untyped) -> untyped
   def draw_frame: (untyped, untyped) -> untyped
   def draw_skin: () -> untyped
   def height=: (untyped) -> untyped
@@ -5910,7 +5897,6 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def inn_bgm: () -> untyped
   def inn_terms: (untyped) -> untyped
   def invalidate_tile_cache: () -> untyped
-  def jump_offset_for: (untyped) -> untyped
   def jump_slide_step: (untyped) -> untyped
   def kana_cell_label: (untyped, untyped) -> untyped
   def kana_cell_rect: (untyped, untyped, untyped) -> untyped
@@ -5944,7 +5930,6 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def page_field: (untyped, untyped) -> untyped
   def page_move_route: (untyped) -> untyped
   def page_to_choice: () -> untyped
-  def parallax_tiles: (untyped, untyped, untyped, untyped) -> untyped
   def parallel_interpreter_for: (untyped) -> untyped
   def party_leader: () -> untyped
   def passable?: (untyped, untyped, untyped) -> untyped
@@ -13536,6 +13521,45 @@ class Game::MoveRoute
   def do_diagonal_dir: (untyped, RPG2k::Scene::MapWorld | RPG2k::Scene::VehicleWorld, untyped, untyped) -> untyped
   def toward_hero: (untyped, RPG2k::Scene::MapWorld | RPG2k::Scene::VehicleWorld) -> untyped
   def away_hero: (untyped, RPG2k::Scene::MapWorld | RPG2k::Scene::VehicleWorld) -> untyped
+end
+
+# ---- numeric parameters: every caller passes an Integer (call sites read by hand; the traced host run saw nothing
+# else), `Integer?` where a map cell outside the layer reaches as nil. Checked on entry (DECLARED_PARAM_GUARD); the body
+# reads them as Integer operands (DECLARED_NUMERIC_ENTRY).
+class Game::ChipSet
+  # A lower-layer cell (Game::Map#lower), nil outside the map.
+  def self.lower_index: (Integer?) -> untyped
+end
+# Tile ids are Game::Map#lower/#upper cells (nil outside the map) or ids derived from one; abf/cf come from .anim_ab
+# and .anim_c, a graphic index from Game::Character#graphic_index.
+module Game::ChipsetLayout
+  def self.anim_input: (Integer?) -> untyped
+  def self.block: (Integer?) -> untyped
+  def self.upper_blank?: (Integer?) -> untyped
+  def self.quads: (Integer?, ?Integer, ?Integer) -> untyped
+  def self.uncached_quads: (Symbol, Integer, Integer, Integer) -> untyped
+  def self.full: (Integer, Integer) -> untyped
+  def self.water_quads: (Integer, Integer) -> untyped
+  def self.terrain_quads: (Integer) -> untyped
+  def self.lower_quad: (Integer) -> untyped
+  def self.upper_quad: (Integer) -> untyped
+  def self.event_tile_rect: (Integer) -> untyped
+end
+class Game::Transition
+  # Game::Screen#fade_to: a style constant, a positive frame count, Game::SCREEN_W / SCREEN_H.
+  def initialize: (Integer, Integer, Integer, Integer, untyped) -> untyped
+end
+class RPG2k::Window
+  # Game::WindowCursor.dest_rect of the cursor Rect's fields.
+  def draw_cursor_skin: (Integer, Integer, Integer, Integer) -> untyped
+end
+class RPG2k::Scene::Map
+  # #store_event_draw_sigs passes `i * EVENT_DRAW_SIG_FIELDS`.
+  def store_event_draw_sig: (untyped, Array, Integer) -> untyped
+  # A move count (0..TILE).
+  def jump_offset_for: (Integer) -> untyped
+  # Game::Parallax.axis_offset, the image's width / height and SCREEN_W / SCREEN_H.
+  def parallax_tiles: (Integer, Integer, Integer, untyped) -> untyped
 end
 
 # ---- record_param_types.rbs
