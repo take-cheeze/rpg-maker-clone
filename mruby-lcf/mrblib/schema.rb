@@ -1264,7 +1264,9 @@ module LCF
     # preserve today -- the call-stack position survives, the UI-facing wait
     # itself does not.
     SAVE_EVENT_EXEC_STATE = {
-      1  => { name: :stack, type: :Array2D, elements: SAVE_EVENT_EXEC_FRAME },
+      # Not checked on load (Record#check!): a genuine EasyRPG F9-debug save carries a stack that does not
+      # decode as this schema and must still load, the event restarting (Game::State.read_event_exec_frames).
+      1  => { name: :stack, type: :Array2D, elements: SAVE_EVENT_EXEC_FRAME, unchecked: true },
       4  => { name: :show_message, type: :bool, default: false },
       11 => { name: :abort_on_escape, type: :bool, default: false },
       13 => { name: :wait_movement, type: :bool, default: false },

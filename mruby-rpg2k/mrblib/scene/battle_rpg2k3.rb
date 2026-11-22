@@ -88,7 +88,7 @@ module RPG2k3
           when :result      then drive_battle_result
           when :event       then drive_battle_event
           end
-          @map.try_open_debug_menu
+          @map_scene.try_open_debug_menu
         else
           super
         end

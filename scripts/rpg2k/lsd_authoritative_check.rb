@@ -5,13 +5,15 @@
 #
 # New saves use native fields without chunk 200. Checks cover
 # representable state, documented precision limits, native field mutations,
-# legacy extension migration, foreground execution layout and save-slot policy.
+# legacy extension migration, foreground execution layout, save-slot policy and
+# the pinned bytes of every section.
 #
 # Usage: ruby scripts/rpg2k/lsd_authoritative_check.rb   (exits non-zero on failure)
 
 require 'stringio'
 require 'tmpdir'
 require 'fileutils'
+require 'digest'
 
 # The native LCF string codec (cp932) and the RGSS audio/warn hooks are not
 # touched by the state model; shim them with Ruby's own transcoder, as
@@ -652,6 +654,38 @@ check 'an unreadable .lsd loads as an empty slot, and says so' do
   end
 end
 
+# -- 5. byte-identical sections ---------------------------------------------------
+
+# The writer and the load check are table-driven (Game::State.put_fields, SaveTyped::Record#check!), so each
+# scenario's .lsd is pinned chunk by chunk to the bytes the field-by-field code wrote: a table entry with a wrong id,
+# default or value changes a pin. `ruby scripts/rpg2k/lsd_authoritative_check.rb --pin` prints the current pins.
+LSD_SECTIONS = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 113, 114].freeze
+
+def section_digests(st, ids = LSD_SECTIONS)
+  save = st.to_lsd(st.save_count, 44_000.5, 2, rich_party_db)
+  ids.filter_map { |id| (v = save[id]) && "#{id}:#{Digest::SHA256.hexdigest(v.to_lcf)[0, 12]}" }.join(' ')
+end
+
+lsd_pins = File.read(__FILE__)[/^# LSD SECTION PINS\n(.*?)^# END LSD SECTION PINS/m, 1].to_s.lines.to_h do |l|
+  label, digests = l.delete_prefix('# ').chomp.split(' = ', 2)
+  [label, digests]
+end
+if ARGV.include?('--pin')
+  SCENARIOS.each { |label, build| puts "# #{label} = #{section_digests(build.call)}" }
+  exit 0
+end
+SCENARIOS.each do |label, build|
+  check "every LSD section is the pinned bytes: #{label}" do
+    st = build.call
+    eq lsd_pins[label], section_digests(st)
+    # Reading the save back and writing it again gives the same sections, but for the pictures' documented
+    # precision losses (see native_snapshot).
+    db = rich_party_db
+    again = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(st.to_lsd(st.save_count, 44_000.5, 2, db).to_lcf)))
+    eq section_digests(st, LSD_SECTIONS - [103]), section_digests(again, LSD_SECTIONS - [103]), 'after a load'
+  end
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
@@ -661,3 +695,11 @@ else
   warn "rpg2k lsd authoritative check: #{$failures} of #{$checks} checks FAILED"
   exit 1
 end
+
+# LSD SECTION PINS
+# rich state (every field) = 100:7fb66f3c7830 101:2e9b1c28c343 102:cff29ee14d34 103:e7a1bcf959ca 104:e600fb919435 105:69b9444412c7 106:d2cab57c460a 107:c3175ccfef74 108:87aa0ea70e4f 109:6fde676e73e8 110:bff10d898426 111:1bf1e231a40b 114:8bd34b4cc198
+# default new party = 100:26412bed622e 101:df110ac63e2c 102:6e340b9cffb3 103:d4dba6883206 104:77ddc1fb4236 105:d176a7426269 106:d2cab57c460a 107:90f4256011a7 108:3b3b6828d3da 109:58c870685097 110:fb50dc0717ff
+# live moving picture and flash = 100:26412bed622e 101:df110ac63e2c 102:6e340b9cffb3 103:db77635b1048 104:51761e305d4c 105:d176a7426269 106:d2cab57c460a 107:90f4256011a7 108:3b3b6828d3da 109:58c870685097 110:fb50dc0717ff
+# boat boarded = 100:26412bed622e 101:df110ac63e2c 102:6e340b9cffb3 103:d4dba6883206 104:f37da8eb87d4 105:d176a7426269 106:d2cab57c460a 107:90f4256011a7 108:3b3b6828d3da 109:58c870685097 110:fb50dc0717ff
+# ship boarded, weather rain = 100:26412bed622e 101:df110ac63e2c 102:cd84436b4a0a 103:d4dba6883206 104:fbc5994b8d58 105:d176a7426269 106:d2cab57c460a 107:90f4256011a7 108:3b3b6828d3da 109:58c870685097 110:fb50dc0717ff
+# END LSD SECTION PINS

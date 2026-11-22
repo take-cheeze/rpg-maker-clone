@@ -220,8 +220,7 @@ module Game
       hero[113] = 1792 - py if py != 0
       hero[114] = 2304 - tx if tx != 0
       hero[115] = 1792 - ty if ty != 0
-      hero[121] = step if step != 16
-      hero[124] = @encounter_total if @encounter_total != 0
+      State.put_fields(hero, [121, step, 16, 124, @encounter_total, 0])
       if @boarded
         hero[102] = true
         hero[103] = Vehicle::TYPE_ID[@boarded]
@@ -323,10 +322,10 @@ module Game
       # field 41 alone as cycle #152's own single-value spot check left
       # open.
       mc = @message_config
-      sys[41] = 1 if mc.transparent
-      sys[42] = mc.position if mc.position != MessageConfig::POS_BOTTOM
-      sys[43] = false if mc.position_fixed
-      sys[44] = true if mc.continue_events
+      State.put_fields(sys, [41, mc.transparent ? 1 : 0, 0,
+                             42, mc.position, MessageConfig::POS_BOTTOM,
+                             43, mc.position_fixed ? false : true, true,
+                             44, mc.continue_events, false])
       # Change Face Graphic (10130) state (SAVE_SYSTEM fields 51-54) follows
       # the exact same per-field "omit at default" convention as 41-44 above,
       # confirmed against a genuine RPG_RT.exe save under wine (cycle #160):
@@ -344,16 +343,16 @@ module Game
       # 52-54 absent, confirming the four fields are gated *independently*,
       # not as one all-or-nothing group keyed on "is a face shown at all".
       sys[51] = mc.face_name if mc.face?
-      sys[52] = mc.face_index if mc.face_index != 0
-      sys[53] = 1 if mc.face_right
-      sys[54] = true if mc.face_flipped
+      State.put_fields(sys, [52, mc.face_index, 0,
+                             53, mc.face_right ? 1 : 0, 0,
+                             54, mc.face_flipped, false,
+                             61, @bgm_stopping, false])
       # liblcf's `music_stopping` (field 61) -- written only when true,
       # confirmed against a genuine RPG_RT.exe save under wine (see
       # SAVE_SYSTEM's own comment in schema.rb): a fresh Fade Out BGM
       # produces a save with this field present as a single 0x01 byte, while
       # both a save taken with no fade ever issued and one taken after a
       # later Play BGM cleared the flag back to false both omit it entirely.
-      sys[61] = true if @bgm_stopping
       # Field 71 (title_bgm) has no live tracking of its own in this
       # codebase -- RPG_RT never lets Change System BGM touch it (see
       # SYSTEM_BGM_SAVE_FIELD's own comment) -- but a genuine save still
@@ -428,10 +427,10 @@ module Game
       # RPG_RT.exe save never does, the same species of over-writing bug
       # cycles #152/#153/#160 already fixed elsewhere in this schema, now
       # shown to cover this whole cluster.
-      sys[121] = false unless @teleport_access
-      sys[122] = false unless @escape_access
-      sys[123] = false unless @save_access
-      sys[124] = false unless @menu_access
+      State.put_fields(sys, [121, @teleport_access, true,
+                             122, @escape_access, true,
+                             123, @save_access, true,
+                             124, @menu_access, true])
       # Field 125 ("background" in liblcf's own generator/csv/fields.csv --
       # this schema's own :battle_background name was a disproven guess, see
       # SAVE_SYSTEM's own comment for the full history): the current map's
@@ -470,12 +469,11 @@ module Game
       # genuine kk1.12 save under wine, whose party never touched Change
       # System Graphics' font option, omitting field 23 entirely rather than
       # writing an explicit 0 the way this codebase's own writer always did.
-      sys[21] = @system_graphic if @system_graphic
-      sys[23] = @font_id if @font_id != 0
+      State.put_fields(sys, [21, @system_graphic, nil, 23, @font_id, 0])
       # RPG2003's wait/active toggle (chunk 140). Written only when it leaves
       # the default 0 (wait) -- the chunk is 2003-only, so an RPG2000 save
       # must not gain a stray 0 here.
-      sys[140] = @atb_mode if @atb_mode && @atb_mode != 0
+      State.put_fields(sys, [140, @atb_mode || 0, 0])
       sys[131] = save_count
       # The file slot this save is being written to (SAVE_SYSTEM field 132).
       # Confirmed against genuine RPG_RT.exe under wine (cycle #161): field
@@ -563,19 +561,19 @@ module Game
         # own flag of the same name),
         # the actual "was this ever overridden" signal `.from_lsd` reads.
         e[80] = a.battle_commands_changed? ? a.battle_commands : BATTLE_COMMANDS_DEFAULT
-        e[83] = true if a.battle_commands_changed?
         # RPG2003 battle row (0x5B/91, liblcf's `ChunkSaveActor::row`) --
         # only written off the front-row default, the same eliding-writer
         # convention `class_id`/`battle_commands` follow above, so an
         # RPG2000 save (or a 2003 save whose party never touched Row) never
         # gains the field.
-        e[91] = a.battle_row if a.battle_row != Actor::ROW_FRONT
-        # A live mirror of the actor's own current class/database-derived
-        # combat toggles -- see SAVE_PARTY_ACTOR's own schema.rb comment.
-        e[92] = true if a.double_hand?
-        e[93] = true if a.equipment_fixed?
-        e[94] = true if a.force_ai?
-        e[95] = true if a.strong_defence?
+        # 92-95 mirror the actor's current class/database-derived combat toggles -- see
+        # SAVE_PARTY_ACTOR's own schema.rb comment.
+        State.put_fields(e, [83, a.battle_commands_changed?, false,
+                             91, a.battle_row, Actor::ROW_FRONT,
+                             92, a.double_hand?, false,
+                             93, a.equipment_fixed?, false,
+                             94, a.force_ai?, false,
+                             95, a.strong_defence?, false])
         # A live Change Parameters edit (#change_param) survives Save/
         # Continue too -- see SAVE_PARTY_ACTOR's own comment for the
         # genuine-RPG_RT verification. `@base_raw` is the curve plus this
@@ -625,17 +623,10 @@ module Game
       # SavePartyLocation rather than these screen translation fields.
       scr = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SCREEN })
       finish, current, frames = @screen.tint_save_data
-      scr[1] = finish[0] if finish[0] != Screen::NEUTRAL
-      scr[2] = finish[1] if finish[1] != Screen::NEUTRAL
-      scr[3] = finish[2] if finish[2] != Screen::NEUTRAL
-      scr[4] = finish[3] if finish[3] != Screen::NEUTRAL
-      scr[11] = current[0] if current[0] != Screen::NEUTRAL
-      scr[12] = current[1] if current[1] != Screen::NEUTRAL
-      scr[13] = current[2] if current[2] != Screen::NEUTRAL
-      scr[14] = current[3] if current[3] != Screen::NEUTRAL
-      scr[15] = frames if frames != 0
-      scr[48] = @weather.type if @weather.type != 0
-      scr[49] = @weather.strength if @weather.strength != 0
+      n = Screen::NEUTRAL
+      State.put_fields(scr, [1, finish[0], n, 2, finish[1], n, 3, finish[2], n, 4, finish[3], n,
+                             11, current[0], n, 12, current[1], n, 13, current[2], n, 14, current[3], n,
+                             15, frames, 0, 48, @weather.type, 0, 49, @weather.strength, 0])
       save[102] = scr
 
       # Chunk 103 is every picture slot RPG2000 offers (Show Picture, 11110)
@@ -703,8 +694,8 @@ module Game
           # as a fully field-less placeholder, `p` nil, matching cycle #154's
           # own finding unchanged).
           e[1] = p.name if p.shown?
-          e[6] = true if p.fixed_to_map
-          e[9] = true if p.use_transparent_color
+          State.put_fields(e, [6, p.fixed_to_map, false,
+                               9, p.use_transparent_color, false])
           raw = p.save_fixed
           e[2] = LCF.double_from_fixed(raw[:show_x])
           e[3] = LCF.double_from_fixed(raw[:show_y])
@@ -734,9 +725,8 @@ module Game
           e[33] = Picture.unfix(fzoom) if fzoom != 102_400
           # Rounded to a whole percent, as the finish transparency always was.
           fin_trans = (102_400 - Game.clamp(fopacity, 0, 261_120) * 100 / 255 + 512) / 1024
-          e[34] = fin_trans if fin_trans != 0
           # Field 35 (finish_bot_trans, RPG2003-only) mirrors field 34.
-          e[35] = fin_trans if fin_trans != 0
+          State.put_fields(e, [34, fin_trans, 0, 35, fin_trans, 0])
           e[41] = Picture.unfix(fred) if fred != 102_400
           e[42] = Picture.unfix(fgreen) if fgreen != 102_400
           e[43] = Picture.unfix(fblue) if fblue != 102_400
@@ -778,22 +768,14 @@ module Game
       # only at the literal never-touched value (not "close enough to
       # start") matches. #to_lsd previously wrote every one unconditionally.
       t1, t2 = @timers[0], @timers[1]
-      inv[23] = t1.frames if t1.frames != 0
-      inv[24] = true if t1.running
-      inv[25] = true if t1.visible
-      inv[26] = true if t1.in_battle
-      inv[27] = t2.frames if t2.frames != 0
-      inv[28] = true if t2.running
-      inv[29] = true if t2.visible
-      inv[30] = true if t2.in_battle
-      inv[32] = @battle_count if @battle_count != 0
-      inv[33] = @defeat_count if @defeat_count != 0
-      inv[34] = @escape_count if @escape_count != 0
-      inv[35] = @win_count if @win_count != 0
-      inv[42] = @steps if @steps != 0
-      # Undefaulted, like the other counters -- absent until a battle has ever
+      # 41 has no default, like the other counters -- absent until a battle has ever
       # finished (see #last_battle_turns).
-      inv[41] = @last_battle_turns if @last_battle_turns
+      State.put_fields(inv, [23, t1.frames, 0, 24, t1.running, false,
+                             25, t1.visible, false, 26, t1.in_battle, false,
+                             27, t2.frames, 0, 28, t2.running, false,
+                             29, t2.visible, false, 30, t2.in_battle, false,
+                             32, @battle_count, 0, 33, @defeat_count, 0, 34, @escape_count, 0,
+                             35, @win_count, 0, 42, @steps, 0, 41, @last_battle_turns, nil])
       save[109] = inv
 
       # Chunk 110 is every Set Teleport Target (11810) / Set Escape Target
@@ -1096,11 +1078,7 @@ module Game
       vol = bgm[:volume] || 100
       tempo = bgm[:tempo] || 100
       bal = bgm[:balance] || 50
-      b[2] = fadein if fadein != 0
-      b[3] = vol if vol != 100
-      b[4] = tempo if tempo != 100
-      b[5] = bal if bal != 50
-      b
+      State.put_fields(b, [2, fadein, 0, 3, vol, 100, 4, tempo, 100, 5, bal, 50])
     end
 
     # Build an SE chunk (an LCF::Array1D over the SE schema) from our stored
@@ -1119,10 +1097,7 @@ module Game
       vol = se[:volume] || 100
       tempo = se[:tempo] || 100
       bal = se[:balance] || 50
-      s[3] = vol if vol != 100
-      s[4] = tempo if tempo != 100
-      s[5] = bal if bal != 50
-      s
+      State.put_fields(s, [3, vol, 100, 4, tempo, 100, 5, bal, 50])
     end
 
     # Change System BGM (10660) slot -> LCF::Schema::SAVE_SYSTEM field id,
@@ -1135,6 +1110,26 @@ module Game
     # gameover_bgm(82) fields. Field 71 (title_bgm) has no Change System BGM
     # slot -- RPG_RT never lets that command override the title screen's own
     # music -- so it is intentionally absent here.
+    # Writes each [id, value, default] triple of +fields+ into +rec+, leaving out a value at
+    # its default: the per-field "omit at default" convention as one loop, not one guarded
+    # store per field. A true/false default makes a flag (stored as !default when the value's
+    # truthiness differs); a nil default leaves out a falsy value. Returns +rec+.
+    def self.put_fields(rec, fields)
+      i = 0
+      n = fields.size
+      while i < n
+        v = fields[i + 1]
+        d = fields[i + 2]
+        if d == true || d == false
+          rec[fields[i]] = !d if (v ? true : false) != d
+        elsif d.nil? ? v : v != d
+          rec[fields[i]] = v
+        end
+        i += 3
+      end
+      rec
+    end
+
     SYSTEM_BGM_SAVE_FIELD = {
       0 => 72, 1 => 73, 2 => 74, 3 => 79, 4 => 80, 5 => 81, 6 => 82
     }.freeze
@@ -1405,13 +1400,19 @@ module Game
       state.system_sfx = system_sfx
       # Access flags: only an explicitly-stored value overrides the constructor
       # default (so a foreign save that omits them keeps our defaults).
-      state.teleport_access = sys[:teleport_allowed] unless sys[:teleport_allowed].nil?
-      state.escape_access = sys[:escape_allowed] unless sys[:escape_allowed].nil?
-      state.save_access = sys[:save_allowed] unless sys[:save_allowed].nil?
-      state.menu_access = sys[:menu_allowed] unless sys[:menu_allowed].nil?
+      # Each field is read once: a second read is a second decode.
+      v = sys[:teleport_allowed]
+      state.teleport_access = v unless v.nil?
+      v = sys[:escape_allowed]
+      state.escape_access = v unless v.nil?
+      v = sys[:save_allowed]
+      state.save_access = v unless v.nil?
+      v = sys[:menu_allowed]
+      state.menu_access = v unless v.nil?
       # How many times the menu's Save command has been used (RPG_RT increments
       # this on every save; see #to_lsd's sys[131] write above).
-      state.save_count = sys[:save_count] unless sys[:save_count].nil?
+      v = sys[:save_count]
+      state.save_count = v unless v.nil?
       # The carried battle background (field 125). Read unconditionally, an
       # absent chunk included: an absent field is RPG_RT's own empty default,
       # which draws the flat black field rather than falling back to a
@@ -1483,8 +1484,10 @@ module Game
         # chunk-108 entry happens to agree in every genuine save this codebase
         # has seen, but RPG_RT itself never reads that entry for this screen
         # at all, so this build should not either.
-        state.preview_level = title[:hero_level] unless title[:hero_level].nil?
-        state.preview_hp = title[:hero_hp] unless title[:hero_hp].nil?
+        v = title[:hero_level]
+        state.preview_level = v unless v.nil?
+        v = title[:hero_hp]
+        state.preview_hp = v unless v.nil?
       end
       # Chunk 102 is the screen tint transition; only #restore_tint's tint
       # sub-fields are modelled here (see #to_lsd's own comment on chunk 102
@@ -1524,25 +1527,41 @@ module Game
       # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a
       # save written before this landed simply omits them, leaving the fresh
       # `Timer.new` defaults #initialize already seeded in place.
-      state.timer(0).frames = inv[:timer1_frames] unless inv[:timer1_frames].nil?
-      state.timer(0).running = inv[:timer1_active] unless inv[:timer1_active].nil?
-      state.timer(0).visible = inv[:timer1_visible] unless inv[:timer1_visible].nil?
-      state.timer(0).in_battle = inv[:timer1_battle] unless inv[:timer1_battle].nil?
-      state.timer(1).frames = inv[:timer2_frames] unless inv[:timer2_frames].nil?
-      state.timer(1).running = inv[:timer2_active] unless inv[:timer2_active].nil?
-      state.timer(1).visible = inv[:timer2_visible] unless inv[:timer2_visible].nil?
-      state.timer(1).in_battle = inv[:timer2_battle] unless inv[:timer2_battle].nil?
+      timer = state.timer(0)
+      v = inv[:timer1_frames]
+      timer.frames = v unless v.nil?
+      v = inv[:timer1_active]
+      timer.running = v unless v.nil?
+      v = inv[:timer1_visible]
+      timer.visible = v unless v.nil?
+      v = inv[:timer1_battle]
+      timer.in_battle = v unless v.nil?
+      timer = state.timer(1)
+      v = inv[:timer2_frames]
+      timer.frames = v unless v.nil?
+      v = inv[:timer2_active]
+      timer.running = v unless v.nil?
+      v = inv[:timer2_visible]
+      timer.visible = v unless v.nil?
+      v = inv[:timer2_battle]
+      timer.in_battle = v unless v.nil?
       # Step counter and battle win/defeat/escape/victory tallies (inventory
       # chunk 109 fields 32-35/42); a save written before this landed simply
       # omits them, leaving the fresh State's zeroed defaults in place.
-      state.battle_count = inv[:battles] unless inv[:battles].nil?
-      state.defeat_count = inv[:defeats] unless inv[:defeats].nil?
-      state.escape_count = inv[:escapes] unless inv[:escapes].nil?
-      state.win_count = inv[:victories] unless inv[:victories].nil?
-      state.steps = inv[:steps] unless inv[:steps].nil?
+      v = inv[:battles]
+      state.battle_count = v unless v.nil?
+      v = inv[:defeats]
+      state.defeat_count = v unless v.nil?
+      v = inv[:escapes]
+      state.escape_count = v unless v.nil?
+      v = inv[:victories]
+      state.win_count = v unless v.nil?
+      v = inv[:steps]
+      state.steps = v unless v.nil?
       # "Turns passed in latest battle" (field 41); absent on a save written
       # before this landed, or one taken before any battle ever finished.
-      state.last_battle_turns = inv[:turns] unless inv[:turns].nil?
+      v = inv[:turns]
+      state.last_battle_turns = v unless v.nil?
       # The currently-loaded map's own live event table (chunk 111,
       # #to_lsd's write above): position/facing into #map_event_positions, a
       # page's custom-route cursor (field 43) into #map_event_route_index,
