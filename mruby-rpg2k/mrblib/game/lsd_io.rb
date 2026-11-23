@@ -895,8 +895,8 @@ module Game
       # mid-execution there at save time -- see #foreground_event_exec's own
       # comment for when that is genuinely reachable. Absent otherwise,
       # matching every other "nothing to restore" chunk in this method.
-      if @foreground_event_exec && @foreground_event_exec[:frames]
-        save[113] = self.class.build_event_exec_state(@foreground_event_exec[:frames])
+      if @foreground_event_exec && @foreground_event_exec.frames
+        save[113] = self.class.build_event_exec_state(@foreground_event_exec.frames)
       end
 
       # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
@@ -914,7 +914,7 @@ module Game
         events = db && db[:common_event]
         event = events && events[id]
         raise "common event #{id} needs its database command list to save a cursor" unless event
-        running_common[id] = [{ commands: event[:event] || [], current_command: index, event_id: 0 }]
+        running_common[id] = [Interpreter::Frame.new(event[:event] || [], index, 0, false)]
       end
       unless running_common.empty?
         ce = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_COMMON_EVENT })
@@ -978,15 +978,15 @@ module Game
       stack = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_EVENT_EXEC_FRAME })
       frames.each_with_index do |f, i|
         frame = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_EVENT_EXEC_FRAME })
-        cmds = f[:commands] || []
+        cmds = f.commands || []
         # Mirrors field 2's own encoded byte length exactly, the same
         # size-field convention MAP_EVENT_PAGE's own event_command_size
         # (field 51) already established -- see that field's own comment.
         frame[1] = LCF.encode_event_commands(cmds).bytesize
         frame[2] = cmds
-        frame[11] = f[:current_command] || 0
-        frame[12] = f[:event_id] || 0
-        frame[13] = !!f[:triggered_by_decision_key]
+        frame[11] = f.current_command || 0
+        frame[12] = f.event_id || 0
+        frame[13] = !!f.triggered_by_decision_key
         stack[i + 1] = frame
       end
       state[1] = stack
@@ -1031,12 +1031,8 @@ module Game
       return nil unless stack
       frames = []
       stack.each do |_, frame|
-        frames << {
-          commands: frame[:commands] || [],
-          current_command: frame[:current_command] || 0,
-          event_id: frame[:event_id] || 0,
-          triggered_by_decision_key: !!frame[:triggered_by_decision_key],
-        }
+        frames << Interpreter::Frame.new(frame[:commands] || [], frame[:current_command] || 0,
+                                         frame[:event_id] || 0, !!frame[:triggered_by_decision_key])
       end
       frames.empty? ? nil : frames
     rescue StandardError => e
@@ -1643,7 +1639,7 @@ module Game
       # itself only decodes the chunk onto Game::State, it does not touch a
       # live interpreter (there is none to touch here).
       fg_frames = read_foreground_frames(save)
-      state.foreground_event_exec = fg_frames && { event_id: fg_frames.first[:event_id], frames: fg_frames }
+      state.foreground_event_exec = fg_frames && ForegroundExec.new(fg_frames.first.event_id, fg_frames)
       # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
       # Event Parallel Process -- see #common_event_exec's own comment.
       # Absent, or missing individual ids, on a save written before cycle
@@ -1655,7 +1651,7 @@ module Game
           frames = read_event_exec_frames(entry[:execution_state])
           if frames
             state.common_event_exec[id] = frames
-            state.common_event_progress[id] = frames.first[:current_command]
+            state.common_event_progress[id] = frames.first.current_command
           end
         end
       end
