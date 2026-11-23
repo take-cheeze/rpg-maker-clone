@@ -76,6 +76,12 @@ check.call('a path write to a constant defined in its body is rejected',
 # A write inside a def is already a syntax error (dynamic constant assignment).
 check.call('a constant written in a block or loop is rejected',
            ["[1].each { X = 1 }", "while c\n  X = 1\nend", "loop do\n  X = 1\nend"].all? { |src| const_cops.call(src) == [reassign] })
+check.call('a constant written under a condition or a rescue is rejected',
+           ["X = 1 if c", "c ? (X = 1) : nil", "case c\nwhen 1 then X = 1\nend", "c && (X = 1)",
+            "begin\n  X = 1\nrescue StandardError\n  nil\nend", "if c\n  class K\n    X = 1\n  end\nend"]
+             .all? { |src| const_cops.call(src) == [reassign] })
+check.call('a begin with no rescue and a value with a condition are not conditional writes',
+           const_cops.call("begin\n  X = 1\nend\nY = c ? 1 : 2").empty?)
 check.call('||=, &&= and operator writes to a constant are rejected',
            ['X ||= 1', 'X &&= 1', 'X += 1', 'M::X ||= 1'].all? { |src| const_cops.call(src).include?(reassign) })
 check.call('constants in multiple assignment are collected',
