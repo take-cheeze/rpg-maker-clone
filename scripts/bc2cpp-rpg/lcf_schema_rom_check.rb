@@ -485,7 +485,7 @@ Dir.mktmpdir('lcf-schema-rom') do |dir|
     'LCF::Array1D#initialize' => nil, 'LCF::Array1D#[]' => nil, 'LCF::Array1D#int16_values' => nil,
     'LCF::Array1D#[]=' => nil, 'LCF::Array1D#field?' => nil, 'LCF::Array1D#sym2idx' => nil,
     'LCF::Array2D#initialize' => nil, 'LCF::Array2D#[]' => nil, 'LCF::Array2D#[]=' => nil,
-    'LCF::Array2D#same_schema?' => nil,
+    'LCF::Array2D#same_schema?' => nil, 'LCF::Array1D.blank_record' => nil, 'LCF::Array2D.blank_table' => nil,
     'LCF::File#initialize' => nil, 'LCF::File#schema' => nil, 'LCF::File#build_root' => nil, 'LCF::File#to_lcf' => nil,
     'LCF::Database#schema' => nil, 'LCF::MapTree#schema' => nil, 'LCF::MapUnit#schema' => nil,
     'LCF::SaveData#schema' => nil, 'LCF::SaveTyped::Record#save_put' => nil, 'LCF::SaveTyped::Record#check!' => nil
@@ -528,6 +528,11 @@ Dir.mktmpdir('lcf-schema-rom') do |dir|
            node.arguments&.arguments&.map(&:slice) == [':schema']
           seen['LCF::Array1D#schema'] = 'attr_reader'
           return
+        end
+        # blank_record/blank_table (readers) only wrap their argument the same way.
+        if %i[blank_record blank_table].include?(node.name) && node.receiver&.slice&.match?(/\A(LCF::)?Array[12]D\z/)
+          arg = node.arguments&.arguments&.first
+          (seen[:wrapped] ||= Set.new) << arg.object_id if arg
         end
         if %i[new].include?(node.name) && node.receiver&.slice&.match?(/\A(LCF::)?Array[12]D\z/)
           node.arguments&.arguments&.each do |arg|
@@ -601,6 +606,8 @@ suite.finish!
 # LCF::Array2D#[] e3236a526aa38f20
 # LCF::Array2D#[]= 8f62693a42874353
 # LCF::Array2D#same_schema? 46dfcbb99268bcd5
+# LCF::Array1D.blank_record 67a22e0df0d5c2c1
+# LCF::Array2D.blank_table b85106192df023c6
 # LCF::File#initialize 6c1546237906faad
 # LCF::File#schema 417816763ff50949
 # LCF::File#build_root dbcded0a4a80f450

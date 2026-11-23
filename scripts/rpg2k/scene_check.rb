@@ -2785,14 +2785,14 @@ check "Transfer Player reuses a common event's Parallel Process interpreter " \
 
   scene.update
   parallels_before = scene.instance_variable_get(:@parallels)
-  common_before = parallels_before.find { |p| p[:common_event_id] == 7 }[:interp]
-  map_before = parallels_before.find { |p| p[:event] }[:interp]
+  common_before = parallels_before.find { |p| p.common_event_id == 7 }.interp
+  map_before = parallels_before.find { |p| p.event }.interp
 
   scene.send(:perform_teleport, [1, 0, 0, 0]) # leave and return to the same map
 
   parallels_after = scene.instance_variable_get(:@parallels)
-  common_after = parallels_after.find { |p| p[:common_event_id] == 7 }[:interp]
-  map_after = parallels_after.find { |p| p[:event] }[:interp]
+  common_after = parallels_after.find { |p| p.common_event_id == 7 }.interp
+  map_after = parallels_after.find { |p| p.event }.interp
   ok common_before.equal?(common_after),
      "a common event's parallel process keeps its own interpreter across a teleport"
   ok !map_before.equal?(map_after),
@@ -2835,8 +2835,8 @@ check "a fresh Scene::Map genuinely resumes a saved map event's own Parallel " \
   eq 0, st.variables[4], 'has not returned from the call yet'
   eq 0, st.variables[6], "hasn't reached the Wait's own follow-up yet"
 
-  p = scene.instance_variable_get(:@parallels).find { |pp| pp[:event] && pp[:event].id == 5 }
-  frames = p[:interp].call_stack_snapshot
+  p = scene.instance_variable_get(:@parallels).find { |pp| pp.event && pp.event.id == 5 }
+  frames = p.interp.call_stack_snapshot
   ok frames && frames.size == 2, 'sanity: genuinely captured mid a nested Call Event'
 
   # A brand new Game::State/Scene::Map, standing in for Continue: no live
@@ -2852,8 +2852,8 @@ check "a fresh Scene::Map genuinely resumes a saved map event's own Parallel " \
   fresh_scene = RPG2k::Scene::Map.new(parent, fresh_state)
 
   new_p = fresh_scene.instance_variable_get(:@parallels)
-                      .find { |pp| pp[:event] && pp[:event].id == 5 }
-  restored_it = new_p[:interp]
+                      .find { |pp| pp.event && pp.event.id == 5 }
+  restored_it = new_p.interp
   ok !restored_it.instance_variable_get(:@call_stack).empty?,
      'restored with the caller frame still on the call stack, not a fresh empty one'
   eq 0, fresh_state.variables[3],
@@ -3965,15 +3965,15 @@ check "a Common Event Parallel Process's own waiting Key Input Proc leaves " \
   scene = new_scene({}, common: { 7 => ce })
   parent = scene.instance_variable_get(:@parent)
   scene.update # the Parallel Process arms the wait -- genuinely parked, no message window up
-  p = scene.instance_variable_get(:@parallels).find { |pp| pp[:common_event_id] == 7 }
-  eq :key_input, p[:interp].wait_kind,
+  p = scene.instance_variable_get(:@parallels).find { |pp| pp.common_event_id == 7 }
+  eq :key_input, p.interp.wait_kind,
      'genuinely parked on Key Input (no message window to block-and-retry against)'
   ok !scene.send(:event_busy?),
      "#event_busy? never looks at a parallel process's own wait_kind at all"
 
   RGSS::Input.triggered = [RGSS::Input::B] # the field map's own Cancel-key menu shortcut
   scene.update
-  eq :key_input, p[:interp].wait_kind,
+  eq :key_input, p.interp.wait_kind,
      "the proc's own wait is unaffected -- Cancel is not among its accepted keys"
   eq 1, parent.pushed.length,
      "yet the menu opened anyway -- a real Save is reachable while this " \
