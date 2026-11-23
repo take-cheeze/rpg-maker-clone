@@ -90,7 +90,7 @@ module Game
       # field that fix actually pinned -- is now written unconditionally;
       # only the leader-specific name/level/hp fields, which have nothing to
       # read from an empty party, stay conditional.
-      title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+      title = LCF::Array1D.blank_record(LCF::Schema::SAVE_TITLE)
 # FLOAT-BEGIN timestamp
       title[1] = timestamp.to_f
 # FLOAT-END timestamp
@@ -117,7 +117,7 @@ module Game
       end
       save[100] = title
 
-      hero = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PARTY_LOCATION })
+      hero = LCF::Array1D.blank_record(LCF::Schema::SAVE_PARTY_LOCATION)
       hero[11] = @map_id
       hero[12] = @x
       hero[13] = @y
@@ -170,7 +170,7 @@ module Game
       if pr
         hero[32] = pr[:frequency] if pr[:frequency]
         cmds = pr[:commands] || []
-        route = LCF::Array1D.new('', { elements: LCF::Schema::MOVE_ROUTE })
+        route = LCF::Array1D.blank_record(LCF::Schema::MOVE_ROUTE)
         # Confirmed against the same genuine kk1.12 save: field 11
         # (command_size) is present alongside field 12, matching the real
         # command count -- redundant for #parse_move_commands' own
@@ -247,38 +247,10 @@ module Game
       # caller with no `db` (tests, tools) keeps the prior absent-when-
       # uncustomized behavior.
       { 105 => :boat, 106 => :ship, 107 => :airship }.each do |chunk, type|
-        v = @vehicles[type]
-        mv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
-        mv[11] = v.map_id
-        mv[12] = v.x
-        mv[13] = v.y
-        dir_row = CharSet::DIR_ROW[v.direction] || 2
-        mv[21] = dir_row
-        mv[22] = dir_row
-        # Field 33 (layer): a true constant, see the hero's own field-33
-        # citation just above.
-        mv[33] = 1
-        mv[35] = 0
-        mv[37] = Vehicle::DEFAULT_MOVE_SPEED[type]
-        if v.charset_name && !v.charset_name.empty?
-          mv[73] = v.charset_name
-          idx = v.charset_index || 0
-          mv[74] = idx if idx != 0
-        elsif db && LCF.field?(db, :system) && db[:system]
-          name_field = Vehicle::SYSTEM_NAME_FIELD[type]
-          index_field = Vehicle::SYSTEM_INDEX_FIELD[type]
-          name = LCF.field?(db[:system], name_field) ? db[:system][name_field] : nil
-          if name && !name.to_s.empty?
-            mv[73] = name.to_s
-            idx = LCF.field?(db[:system], index_field) ? (db[:system][index_field] || 0) : 0
-            mv[74] = idx if idx != 0
-          end
-        end
-        mv[101] = Vehicle::TYPE_ID[type]
-        save[chunk] = mv
+        save[chunk] = @vehicles[type].lsd_movable(type, db)
       end
 
-      sys = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SYSTEM })
+      sys = LCF::Array1D.blank_record(LCF::Schema::SAVE_SYSTEM)
       # liblcf's own `scene` field (0x01/1): a legacy field RPG_RT itself
       # always writes as 5 (its own "file menu" scene id) for any save file
       # and other reference tooling never reads back -- confirmed present with
@@ -446,22 +418,7 @@ module Game
       # (Scene::Map#apply_tileset_request's own `@tileset_id`), which this
       # codebase does not persist anywhere yet -- a separate, pre-existing
       # gap.
-      if db && map_tree && self.map
-        begin
-          props = LCF.field?(map_tree, :map_properties) ? map_tree[:map_properties] : nil
-          terrain_name = ''
-          if LCF.field?(db, :chipset) && LCF.field?(db, :terrain) && self.map.in_bounds?(@x, @y)
-            chipset = ChipSet.new(db, self.map.chipset_id)
-            tid = chipset.terrain(self.map.lower(@x, @y))
-            row = db[:terrain][tid]
-            terrain_name = row[:background_name].to_s if row && LCF.field?(row, :background_name)
-          end
-          name = Backdrop.name_for(map_id, props, terrain_name)
-          sys[125] = name unless name.nil? || name.empty?
-        rescue StandardError => e
-          $stderr.puts "[RPG2k] battle background lookup failed: #{e.message}"
-        end
-      end
+      put_battle_background(sys, db, map_tree) if db && map_tree && self.map
       # Screen-transition slots 0..5 map to chunks 111..116 in order.
       @screen_transitions.each_with_index { |style, i| sys[111 + i] = style || 0 }
       # System windowskin / font override (Change System Graphics). Font id
@@ -491,111 +448,8 @@ module Game
       # Chunk 108 is the whole roster, one entry per actor the party has ever
       # held — that is what a genuine RPG_RT save carries, and it is what lets an
       # actor who is currently out of the party come back as they left.
-      actors = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
-      @party.roster.each do |a|
-        e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
-        # Field 1 is the actor's current name, but ONLY while it actually
-        # differs from the database row (#name_changed?) -- an untouched
-        # actor writes the "\x01" placeholder instead, confirmed
-        # against a genuine kk1.12 save under wine (see #name_changed?'s own
-        # citation); a prior version of this line wrote the current name
-        # unconditionally, which happens to equal the database default for
-        # any actor never hit by Change Actor Name, so it looked correct
-        # against a save whose leader/party actually had been renamed
-        # (Nepheshel Save01) while silently diverging from genuine RPG_RT
-        # for every other, untouched roster entry.
-        e[1] = a.name_changed? ? a.name : "\x01"
-        # Field 2 is the actor's current title, gated on #title_changed? the
-        # same way -- confirmed against liblcf's SaveActor field table (see
-        # SAVE_PARTY_ACTOR's comment in schema.rb) for the field id, and
-        # against the same genuine kk1.12 save for the placeholder gating.
-        e[2] = a.title_changed? ? a.title : "\x01"
-        # A live Change Sprite Association (10630) override -- fields 11
-        # (sprite_name) / 12 (sprite_id) / 13 (sprite_transparent), gated on
-        # #sprite_changed? (the command actually having run), not merely a
-        # non-blank current graphic -- see SAVE_PARTY_ACTOR's own schema.rb
-        # comment for the genuine-RPG_RT wine verification this cycle (#170)
-        # that pinned these fields down, and for why chunk 104's own hero-
-        # record mirror (fields 73/74) is *not* what a genuine Continue
-        # restores the sprite from.
-        if a.sprite_changed?
-          e[11] = a.charset_name || ''
-          e[12] = a.charset_index || 0
-          e[13] = 3 if a.transparent
-        end
-        e[31] = a.level
-        e[32] = a.exp
-        e[51] = a.skills.size
-        e[52] = a.skills
-        e[61] = a.equipment
-        e[71] = a.hp
-        e[72] = a.mp
-        # Field 82 is a dense array, one slot per database state id
-        # (`total_state_count` long), not a sparse list of only the
-        # currently-afflicted ids -- see Actor#total_state_count's own
-        # citation. Written unconditionally (even all-zero) to match a
-        # genuine save, the same "container present, contents sparse"
-        # convention chunk 103's own 50-slot picture range already
-        # established.
-        n = a.total_state_count
-        dense = Array.new(n, 0)
-        a.states.each { |sid| dense[sid - 1] = 1 if sid >= 1 && sid <= n }
-        e[81] = n
-        e[82] = dense
-        # A live Change Class survives Save/Continue too, not just the name/
-        # title/sprite overrides above -- only once #change_class (or a
-        # restored one) has actually run, matching the reference sentinel
-        # value liblcf's own field default declares: `class_id != -1`
-        # "changed at all", not merely "class_id > 0" -- Change Class to "no class"
-        # (id 0) is itself a real, persisted change.
-        e[90] = a.class_id if a.class_changed?
-        # Field 80 (battle_commands) is written unconditionally -- liblcf's
-        # own generator/csv/fields.csv declares its default as the literal
-        # sentinel array `[-1]*7` (seven "defer to class/database" slots),
-        # and a genuine kk1.12 save under wine carries field 80 present with
-        # exactly that default on every actor whose commands were never
-        # touched (field 83, `changed_battle_commands`, absent alongside
-        # it) -- not omitted the way this codebase's own writer used to
-        # treat "untouched" fields. Field 83 stays gated on
-        # #battle_commands_changed? (matching a reference implementation's
-        # own flag of the same name),
-        # the actual "was this ever overridden" signal `.from_lsd` reads.
-        e[80] = a.battle_commands_changed? ? a.battle_commands : BATTLE_COMMANDS_DEFAULT
-        # RPG2003 battle row (0x5B/91, liblcf's `ChunkSaveActor::row`) --
-        # only written off the front-row default, the same eliding-writer
-        # convention `class_id`/`battle_commands` follow above, so an
-        # RPG2000 save (or a 2003 save whose party never touched Row) never
-        # gains the field.
-        # 92-95 mirror the actor's current class/database-derived combat toggles -- see
-        # SAVE_PARTY_ACTOR's own schema.rb comment.
-        State.put_fields(e, [83, a.battle_commands_changed?, false,
-                             91, a.battle_row, Actor::ROW_FRONT,
-                             92, a.double_hand?, false,
-                             93, a.equipment_fixed?, false,
-                             94, a.force_ai?, false,
-                             95, a.strong_defence?, false])
-        # A live Change Parameters edit (#change_param) survives Save/
-        # Continue too -- see SAVE_PARTY_ACTOR's own comment for the
-        # genuine-RPG_RT verification. `@base_raw` is the curve plus this
-        # modifier with no equipment folded in, so subtracting the curve
-        # back out isolates the same delta #change_param itself computes.
-        raw = a.base_raw
-        curve = a.base_stats(a.level)
-        # hp_mod/sp_mod (33/34) are written unconditionally, delta 0
-        # included -- confirmed against a genuine kk1.12 save under wine,
-        # every actor's own untouched hp_mod/sp_mod present as an explicit
-        # 0, distinct from liblcf's own declared -1 ("never touched")
-        # default (see schema.rb's own comment on these two fields).
-        # attack_mod/defense_mod/spirit_mod/agility_mod (41-44) keep the
-        # opposite, "omit at zero" convention the same save confirms.
-        e[33] = raw[0] - curve[0]
-        e[34] = raw[1] - curve[1]
-        [41, 42, 43, 44].each_with_index do |field, i|
-          delta = raw[i + 2] - curve[i + 2]
-          e[field] = delta if delta != 0
-        end
-        actors[a.id] = e
-      end
+      actors = LCF::Array2D.blank_table(LCF::Schema::SAVE_PARTY_ACTOR)
+      @party.roster.each { |a| actors[a.id] = a.lsd_actor }
       save[108] = actors
 
       # Chunk 102 is the screen tint transition (Tint Screen, 11030) -- its
@@ -621,7 +475,7 @@ module Game
       # RPG_RT.exe for the overwhelmingly common "tint never touched" case).
       # Weather belongs to SaveScreen; the complete pan state lives on
       # SavePartyLocation rather than these screen translation fields.
-      scr = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SCREEN })
+      scr = LCF::Array1D.blank_record(LCF::Schema::SAVE_SCREEN)
       finish, current, frames = @screen.tint_save_data
       n = Screen::NEUTRAL
       State.put_fields(scr, [1, finish[0], n, 2, finish[1], n, 3, finish[2], n, 4, finish[3], n,
@@ -679,65 +533,14 @@ module Game
       # -- see SAVE_PICTURE's own comment for the controlled genuine-RPG_RT
       # A/B pair that pinned this down, ruling out cycle #154's own
       # "probe just happened to pick default values" alternative reading.
-      pics = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+      pics = LCF::Array2D.blank_table(LCF::Schema::SAVE_PICTURE)
       (1..MAX_PICTURE_ID).each do |id|
         p = @pictures[id]
-        e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
-        if p
-          # Field 1 (name) is present only while the picture is actually
-          # shown (`#shown?`, not mere name-emptiness -- see Picture#erase!'s
-          # own comment for why) -- this table's own SAVE_PICTURE schema
-          # comment carries cycle #159's genuine-RPG_RT evidence: an id that
-          # was shown and then Erase Picture'd keeps every position/zoom/tone
-          # field at its last value but drops the name outright, distinct
-          # from an id that was never shown at all (which this loop leaves
-          # as a fully field-less placeholder, `p` nil, matching cycle #154's
-          # own finding unchanged).
-          e[1] = p.name if p.shown?
-          State.put_fields(e, [6, p.fixed_to_map, false,
-                               9, p.use_transparent_color, false])
-          raw = p.save_fixed
-          e[2] = LCF.double_from_fixed(raw[:show_x])
-          e[3] = LCF.double_from_fixed(raw[:show_y])
-          e[4] = LCF.double_from_fixed(raw[:x])
-          e[5] = LCF.double_from_fixed(raw[:y])
-          e[7] = LCF.double_from_fixed(raw[:zoom]) if p.zoom != 100
-          # Transparency is a percentage of the 0..255 opacity, in 1/1024 units.
-          cur_trans = 102_400 - Game.clamp(raw[:opacity], 0, 261_120) * 100 / 255
-          e[8] = LCF.double_from_fixed(cur_trans) if cur_trans != 0
-          # Field 18 (current_bot_trans, RPG2003-only) mirrors field 8 (top == bottom).
-          e[18] = LCF.double_from_fixed(cur_trans) if cur_trans != 0
-          e[11] = LCF.double_from_fixed(raw[:red]) if p.red != 100
-          e[12] = LCF.double_from_fixed(raw[:green]) if p.green != 100
-          e[13] = LCF.double_from_fixed(raw[:blue]) if p.blue != 100
-          e[14] = LCF.double_from_fixed(raw[:saturation]) if p.saturation != 100
-          moving = p.moving?
-          fx = moving ? raw[:tx] : raw[:x]
-          fy = moving ? raw[:ty] : raw[:y]
-          fzoom = moving ? raw[:tzoom] : raw[:zoom]
-          fopacity = moving ? raw[:topacity] : raw[:opacity]
-          fred = moving ? raw[:tred] : raw[:red]
-          fgreen = moving ? raw[:tgreen] : raw[:green]
-          fblue = moving ? raw[:tblue] : raw[:blue]
-          fsat = moving ? raw[:tsat] : raw[:saturation]
-          e[31] = LCF.double_from_fixed(fx)
-          e[32] = LCF.double_from_fixed(fy)
-          e[33] = Picture.unfix(fzoom) if fzoom != 102_400
-          # Rounded to a whole percent, as the finish transparency always was.
-          fin_trans = (102_400 - Game.clamp(fopacity, 0, 261_120) * 100 / 255 + 512) / 1024
-          # Field 35 (finish_bot_trans, RPG2003-only) mirrors field 34.
-          State.put_fields(e, [34, fin_trans, 0, 35, fin_trans, 0])
-          e[41] = Picture.unfix(fred) if fred != 102_400
-          e[42] = Picture.unfix(fgreen) if fgreen != 102_400
-          e[43] = Picture.unfix(fblue) if fblue != 102_400
-          e[44] = Picture.unfix(fsat) if fsat != 102_400
-          e[51] = p.frames_left if moving
-        end
-        pics[id] = e
+        pics[id] = p ? p.lsd_picture : LCF::Array1D.blank_record(LCF::Schema::SAVE_PICTURE)
       end
       save[103] = pics
 
-      inv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_INVENTORY })
+      inv = LCF::Array1D.blank_record(LCF::Schema::SAVE_INVENTORY)
       # party_count (1) / party (2): the same count-then-data split as
       # item_count/item_ids (11/12) just below -- see SAVE_INVENTORY's own
       # comment. A genuine RPG_RT.exe requires both fields; writing only the
@@ -795,9 +598,9 @@ module Game
       # (`AddTeleportTarget`'s own `tgt.ID = map_id`) -- so this claim, unlike
       # its neighbours in chunks 102/103 below, needed no code change, only
       # this citation swap.
-      targets = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_TARGET })
+      targets = LCF::Array2D.blank_table(LCF::Schema::SAVE_TARGET)
       esc = @escape_target
-      e0 = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TARGET })
+      e0 = LCF::Array1D.blank_record(LCF::Schema::SAVE_TARGET)
       if esc
         e0[1] = esc[:map_id]
         e0[2] = esc[:x]
@@ -807,7 +610,7 @@ module Game
       end
       targets[0] = e0
       @teleport_targets.each do |map_id, t|
-        e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TARGET })
+        e = LCF::Array1D.blank_record(LCF::Schema::SAVE_TARGET)
         e[1] = map_id
         e[2] = t[:x]
         e[3] = t[:y]
@@ -839,7 +642,7 @@ module Game
       lower_subs, upper_subs = @tile_substitutions
       if self.map || !@map_event_positions.empty? || !@map_event_exec.empty? ||
          !lower_subs.empty? || !upper_subs.empty? || @encounter_rate || @parallax
-        mapev = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MAP_EVENT })
+        mapev = LCF::Array1D.blank_record(LCF::Schema::SAVE_MAP_EVENT)
         if self.map
           hero_px = @x * TILE + TILE / 2
           hero_py = @y * TILE + TILE / 2
@@ -856,10 +659,10 @@ module Game
         # deliberately not assumed to stay in lockstep here -- an id present
         # in only one still gets its own entry, with just that one field set.
         unless @map_event_positions.empty? && @map_event_exec.empty?
-          events = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+          events = LCF::Array2D.blank_table(LCF::Schema::SAVE_MOVABLE)
           ids = @map_event_positions.keys | @map_event_exec.keys
           ids.each do |id|
-            e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+            e = LCF::Array1D.blank_record(LCF::Schema::SAVE_MOVABLE)
             pos = @map_event_positions[id]
             if pos
               x, y, direction = pos
@@ -870,13 +673,13 @@ module Game
               e[43] = idx if idx
             end
             frames = @map_event_exec[id]
-            e[108] = self.class.build_event_exec_state(frames) if frames && !frames.empty?
+            e[108] = State.build_event_exec_state(frames) if frames && !frames.empty?
             events[id] = e
           end
           mapev[11] = events
         end
-        mapev[21] = self.class.tile_replacement_bytes(lower_subs) unless lower_subs.empty?
-        mapev[22] = self.class.tile_replacement_bytes(upper_subs) unless upper_subs.empty?
+        mapev[21] = State.tile_replacement_bytes(lower_subs) unless lower_subs.empty?
+        mapev[22] = State.tile_replacement_bytes(upper_subs) unless upper_subs.empty?
         mapev[3] = @encounter_rate if @encounter_rate
         if @parallax
           mapev[32] = @parallax[:name].to_s
@@ -895,8 +698,8 @@ module Game
       # mid-execution there at save time -- see #foreground_event_exec's own
       # comment for when that is genuinely reachable. Absent otherwise,
       # matching every other "nothing to restore" chunk in this method.
-      if @foreground_event_exec && @foreground_event_exec[:frames]
-        save[113] = self.class.build_event_exec_state(@foreground_event_exec[:frames])
+      if @foreground_event_exec && @foreground_event_exec.frames
+        save[113] = State.build_event_exec_state(@foreground_event_exec.frames)
       end
 
       # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
@@ -914,13 +717,13 @@ module Game
         events = db && db[:common_event]
         event = events && events[id]
         raise "common event #{id} needs its database command list to save a cursor" unless event
-        running_common[id] = [{ commands: event[:event] || [], current_command: index, event_id: 0 }]
+        running_common[id] = [Interpreter::Frame.new(event[:event] || [], index, 0, false)]
       end
       unless running_common.empty?
-        ce = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_COMMON_EVENT })
+        ce = LCF::Array2D.blank_table(LCF::Schema::SAVE_COMMON_EVENT)
         running_common.each do |id, frames|
-          entry = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_COMMON_EVENT })
-          entry[1] = self.class.build_event_exec_state(frames)
+          entry = LCF::Array1D.blank_record(LCF::Schema::SAVE_COMMON_EVENT)
+          entry[1] = State.build_event_exec_state(frames)
           ce[id] = entry
         end
         save[114] = ce
@@ -974,19 +777,19 @@ module Game
     # schema.rb comment on why that particular numbering, not a confirmed
     # genuine-file convention (nothing to check it against was available).
     def self.build_event_exec_state(frames)
-      state = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_EVENT_EXEC_STATE })
-      stack = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_EVENT_EXEC_FRAME })
+      state = LCF::Array1D.blank_record(LCF::Schema::SAVE_EVENT_EXEC_STATE)
+      stack = LCF::Array2D.blank_table(LCF::Schema::SAVE_EVENT_EXEC_FRAME)
       frames.each_with_index do |f, i|
-        frame = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_EVENT_EXEC_FRAME })
-        cmds = f[:commands] || []
+        frame = LCF::Array1D.blank_record(LCF::Schema::SAVE_EVENT_EXEC_FRAME)
+        cmds = f.commands || []
         # Mirrors field 2's own encoded byte length exactly, the same
         # size-field convention MAP_EVENT_PAGE's own event_command_size
         # (field 51) already established -- see that field's own comment.
         frame[1] = LCF.encode_event_commands(cmds).bytesize
         frame[2] = cmds
-        frame[11] = f[:current_command] || 0
-        frame[12] = f[:event_id] || 0
-        frame[13] = !!f[:triggered_by_decision_key]
+        frame[11] = f.current_command || 0
+        frame[12] = f.event_id || 0
+        frame[13] = !!f.triggered_by_decision_key
         stack[i + 1] = frame
       end
       state[1] = stack
@@ -1031,12 +834,8 @@ module Game
       return nil unless stack
       frames = []
       stack.each do |_, frame|
-        frames << {
-          commands: frame[:commands] || [],
-          current_command: frame[:current_command] || 0,
-          event_id: frame[:event_id] || 0,
-          triggered_by_decision_key: !!frame[:triggered_by_decision_key],
-        }
+        frames << Interpreter::Frame.new(frame[:commands] || [], frame[:current_command] || 0,
+                                         frame[:event_id] || 0, !!frame[:triggered_by_decision_key])
       end
       frames.empty? ? nil : frames
     rescue StandardError => e
@@ -1064,7 +863,7 @@ module Game
     # elsewhere in this file. Now written on the same "elide at the schema
     # default" idiom the other fields already use.
     def bgm_chunk(bgm)
-      b = LCF::Array1D.new('', { elements: LCF::Schema::BGM })
+      b = LCF::Array1D.blank_record(LCF::Schema::BGM)
       b[1] = bgm[:name] || ''
       # Elided at their own schema default (0/100/100/50) -- confirmed
       # against a genuine kk1.12 save under wine for fields 3-5: an untouched
@@ -1090,7 +889,7 @@ module Game
     # (`balance: cmd.param(3)`), so only this save-side round-trip was
     # dropping it.
     def se_chunk(se)
-      s = LCF::Array1D.new('', { elements: LCF::Schema::SE })
+      s = LCF::Array1D.blank_record(LCF::Schema::SE)
       s[1] = se[:name] || ''
       # Elided at default, the same as #bgm_chunk's own fields 3-5 -- see
       # that method's own citation.
@@ -1128,6 +927,27 @@ module Game
         i += 3
       end
       rec
+    end
+
+    # SAVE_SYSTEM field 125, see #to_lsd. Rescued here rather than in #to_lsd: a rescue makes every live
+    # local of the body it is in cross the protected call.
+    def put_battle_background(sys, db, map_tree)
+      store_battle_background(sys, db, map_tree)
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] battle background lookup failed: #{e.message}"
+    end
+
+    def store_battle_background(sys, db, map_tree)
+      props = LCF.field?(map_tree, :map_properties) ? map_tree[:map_properties] : nil
+      terrain_name = ''
+      if LCF.field?(db, :chipset) && LCF.field?(db, :terrain) && self.map.in_bounds?(@x, @y)
+        chipset = ChipSet.new(db, self.map.chipset_id)
+        tid = chipset.terrain(self.map.lower(@x, @y))
+        row = db[:terrain][tid]
+        terrain_name = row[:background_name].to_s if row && LCF.field?(row, :background_name)
+      end
+      name = Backdrop.name_for(map_id, props, terrain_name)
+      sys[125] = name unless name.nil? || name.empty?
     end
 
     SYSTEM_BGM_SAVE_FIELD = {
@@ -1193,88 +1013,7 @@ module Game
       mp = {}
       (save[108] || []).each do |aid, sa|
         actor = party.roster[aid]
-        if actor
-          # The class comes back first, mirroring Party#load_state's own
-          # ordering comment: it decides which growth/EXP curves the level
-          # and exp restored just below are read against. -1 (liblcf's own
-          # field default) means "never changed", not "class 0" -- Change
-          # Class to "no class" is itself a real, persisted change.
-          cid = sa[:class_id]
-          actor.restore_class(cid) if cid && cid != -1
-          actor.set_level(sa[:level]) if sa[:level]
-          actor.exp = sa[:exp] if sa[:exp]
-          # A live Change Parameters edit (#change_param) -- #set_level just
-          # above re-seeds @base/@base_raw from the level-derived baseline,
-          # discarding it, so it's restored after, the same order the
-          # Party#load_state path already uses. hp_mod/sp_mod
-          # (fields 33/34) default to -1 (liblcf's own "never touched"
-          # sentinel, distinct from a real 0 the other four fields already
-          # use); the other four default to 0 outright. Confirmed against a
-          # genuine RPG_RT.exe -- see SAVE_PARTY_ACTOR's own comment.
-          hp_mod = sa[:hp_mod]
-          sp_mod = sa[:sp_mod]
-          mods = [hp_mod && hp_mod != -1 ? hp_mod : 0,
-                  sp_mod && sp_mod != -1 ? sp_mod : 0,
-                  sa[:attack_mod] || 0, sa[:defense_mod] || 0,
-                  sa[:spirit_mod] || 0, sa[:agility_mod] || 0]
-          if mods.any? { |m| m != 0 }
-            curve = actor.base_stats(actor.level)
-            actor.restore_base(Array.new(curve.size) { |i| curve[i] + mods[i] })
-          end
-          actor.equip(sa[:equipment]) if sa[:equipment]
-          actor.skills = sa[:skills] if sa[:skills]
-          # sa.states is the same dense, database-sized array #to_lsd now
-          # writes (see Actor#total_state_count's own citation) -- a
-          # nonzero slot means "afflicted", regardless of its actual
-          # turn-counter value, which this codebase does not otherwise
-          # track once a state survives past the battle that inflicted it.
-          if sa[:states]
-            ids = []
-            sa[:states].each_index { |i| ids << (i + 1) if sa[:states][i] && sa[:states][i] != 0 }
-            actor.states = ids
-          end
-          # A live Change Battle Commands (or a Change Class, which also
-          # materializes the list) -- gated on `changed_battle_commands` the
-          # same way a reference implementation's own read does, not merely
-          # "the field is
-          # present", since an empty list is schema.rb's own declared
-          # default rather than a real Change Battle Commands to nothing.
-          actor.battle_commands = sa[:battle_commands] if sa[:changed_battle_commands]
-          # RPG2003 battle row (0x5B/91) -- the schema default (0/front)
-          # restores the same as never having touched it, so no changed-flag
-          # gating is needed the way battle_commands' own nil-vs-empty
-          # ambiguity requires above.
-          actor.battle_row = sa[:row] if LCF.field?(sa, :row)
-          # A Change Actor Name override on *any* roster member, not just the
-          # leader (whose name chunk 100's title also carries below). Already flagged this field's other case when it was first
-          # decoded: "reserve actors store only a placeholder" -- an actor
-          # with no real override writes a single 0x01 byte here rather than
-          # an empty string, matched against a genuine save under wine (every
-          # roster actor other than the true leader carries exactly this
-          # placeholder). Applying it verbatim overwrites the actor's correct
-          # database name with a control character, which then defeats any
-          # later lookup by name (see the title-chunk leader fixup below).
-          nm = sa[:actor_name]
-          actor.name = nm if nm && !nm.empty? && nm != "\x01"
-          # Field 2 (title) has no equivalent "blank means unchanged" rule --
-          # do_change_actor_title explicitly lets an empty string *clear* the
-          # title -- so an empty string is applied, unlike actor_name above;
-          # only the reserve-actor placeholder byte is skipped.
-          tt = sa[:title]
-          actor.title = tt if tt && tt != "\x01"
-          # A live Change Sprite Association override (chunk 108 fields
-          # 11/12/13) -- what genuine RPG_RT.exe itself restores the on-map
-          # sprite from, not chunk 104's hero-record mirror (fields 73/74,
-          # never read back -- see #to_lsd's own citation and
-          # SAVE_PARTY_ACTOR's schema.rb comment for cycle #170's wine
-          # verification of both halves of this). Gated on sprite_name's own
-          # presence, the same "the command actually ran" signal #to_lsd
-          # writes it under; an absent field leaves the actor's own database
-          # default charset (#initialize) untouched.
-          sn = sa[:sprite_name]
-          actor.set_charset(sn, sa[:sprite_id] || 0) if sn
-          actor.transparent = (sa[:sprite_transparent] || 0) != 0 if sn
-        end
+        actor.restore_lsd_actor(sa) if actor
         hp[aid] = sa[:hp] if sa[:hp]
         mp[aid] = sa[:mp] if sa[:mp]
       end
@@ -1527,24 +1266,8 @@ module Game
       # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a
       # save written before this landed simply omits them, leaving the fresh
       # `Timer.new` defaults #initialize already seeded in place.
-      timer = state.timer(0)
-      v = inv[:timer1_frames]
-      timer.frames = v unless v.nil?
-      v = inv[:timer1_active]
-      timer.running = v unless v.nil?
-      v = inv[:timer1_visible]
-      timer.visible = v unless v.nil?
-      v = inv[:timer1_battle]
-      timer.in_battle = v unless v.nil?
-      timer = state.timer(1)
-      v = inv[:timer2_frames]
-      timer.frames = v unless v.nil?
-      v = inv[:timer2_active]
-      timer.running = v unless v.nil?
-      v = inv[:timer2_visible]
-      timer.visible = v unless v.nil?
-      v = inv[:timer2_battle]
-      timer.in_battle = v unless v.nil?
+      state.timer(0).restore_lsd_timer(inv, 23)
+      state.timer(1).restore_lsd_timer(inv, 27)
       # Step counter and battle win/defeat/escape/victory tallies (inventory
       # chunk 109 fields 32-35/42); a save written before this landed simply
       # omits them, leaving the fresh State's zeroed defaults in place.
@@ -1643,7 +1366,7 @@ module Game
       # itself only decodes the chunk onto Game::State, it does not touch a
       # live interpreter (there is none to touch here).
       fg_frames = read_foreground_frames(save)
-      state.foreground_event_exec = fg_frames && { event_id: fg_frames.first[:event_id], frames: fg_frames }
+      state.foreground_event_exec = fg_frames && ForegroundExec.new(fg_frames.first.event_id, fg_frames)
       # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
       # Event Parallel Process -- see #common_event_exec's own comment.
       # Absent, or missing individual ids, on a save written before cycle
@@ -1655,7 +1378,7 @@ module Game
           frames = read_event_exec_frames(entry[:execution_state])
           if frames
             state.common_event_exec[id] = frames
-            state.common_event_progress[id] = frames.first[:current_command]
+            state.common_event_progress[id] = frames.first.current_command
           end
         end
       end
@@ -1818,6 +1541,305 @@ module Game
       return nil if name.nil? || name.empty?
       { name: name, volume: chunk[:volume] || 100, tempo: chunk[:pitch] || 100,
         balance: chunk[:balance] || 50 }
+    end
+  end
+
+  class Actor
+    # This actor's chunk 108 entry (Game::State#to_lsd).
+    def lsd_actor
+      e = LCF::Array1D.blank_record(LCF::Schema::SAVE_PARTY_ACTOR)
+      # Field 1 is the actor's current name, but ONLY while it actually
+      # differs from the database row (#name_changed?) -- an untouched
+      # actor writes the "\x01" placeholder instead, confirmed
+      # against a genuine kk1.12 save under wine (see #name_changed?'s own
+      # citation); a prior version of this line wrote the current name
+      # unconditionally, which happens to equal the database default for
+      # any actor never hit by Change Actor Name, so it looked correct
+      # against a save whose leader/party actually had been renamed
+      # (Nepheshel Save01) while silently diverging from genuine RPG_RT
+      # for every other, untouched roster entry.
+      e[1] = name_changed? ? name : "\x01"
+      # Field 2 is the actor's current title, gated on #title_changed? the
+      # same way -- confirmed against liblcf's SaveActor field table (see
+      # SAVE_PARTY_ACTOR's comment in schema.rb) for the field id, and
+      # against the same genuine kk1.12 save for the placeholder gating.
+      e[2] = title_changed? ? title : "\x01"
+      # A live Change Sprite Association (10630) override -- fields 11
+      # (sprite_name) / 12 (sprite_id) / 13 (sprite_transparent), gated on
+      # #sprite_changed? (the command actually having run), not merely a
+      # non-blank current graphic -- see SAVE_PARTY_ACTOR's own schema.rb
+      # comment for the genuine-RPG_RT wine verification this cycle (#170)
+      # that pinned these fields down, and for why chunk 104's own hero-
+      # record mirror (fields 73/74) is *not* what a genuine Continue
+      # restores the sprite from.
+      if sprite_changed?
+        e[11] = charset_name || ''
+        e[12] = charset_index || 0
+        e[13] = 3 if transparent
+      end
+      e[31] = level
+      e[32] = exp
+      e[51] = skills.size
+      e[52] = skills
+      e[61] = equipment
+      e[71] = hp
+      e[72] = mp
+      # Field 82 is a dense array, one slot per database state id
+      # (`total_state_count` long), not a sparse list of only the
+      # currently-afflicted ids -- see Actor#total_state_count's own
+      # citation. Written unconditionally (even all-zero) to match a
+      # genuine save, the same "container present, contents sparse"
+      # convention chunk 103's own 50-slot picture range already
+      # established.
+      n = total_state_count
+      dense = Array.new(n, 0)
+      states.each { |sid| dense[sid - 1] = 1 if sid >= 1 && sid <= n }
+      e[81] = n
+      e[82] = dense
+      # A live Change Class survives Save/Continue too, not just the name/
+      # title/sprite overrides above -- only once #change_class (or a
+      # restored one) has actually run, matching the reference sentinel
+      # value liblcf's own field default declares: `class_id != -1`
+      # "changed at all", not merely "class_id > 0" -- Change Class to "no class"
+      # (id 0) is itself a real, persisted change.
+      e[90] = class_id if class_changed?
+      # Field 80 (battle_commands) is written unconditionally -- liblcf's
+      # own generator/csv/fields.csv declares its default as the literal
+      # sentinel array `[-1]*7` (seven "defer to class/database" slots),
+      # and a genuine kk1.12 save under wine carries field 80 present with
+      # exactly that default on every actor whose commands were never
+      # touched (field 83, `changed_battle_commands`, absent alongside
+      # it) -- not omitted the way this codebase's own writer used to
+      # treat "untouched" fields. Field 83 stays gated on
+      # #battle_commands_changed? (matching a reference implementation's
+      # own flag of the same name),
+      # the actual "was this ever overridden" signal `.from_lsd` reads.
+      e[80] = battle_commands_changed? ? battle_commands : State::BATTLE_COMMANDS_DEFAULT
+      # RPG2003 battle row (0x5B/91, liblcf's `ChunkSaveActor::row`) --
+      # only written off the front-row default, the same eliding-writer
+      # convention `class_id`/`battle_commands` follow above, so an
+      # RPG2000 save (or a 2003 save whose party never touched Row) never
+      # gains the field.
+      # 92-95 mirror the actor's current class/database-derived combat toggles -- see
+      # SAVE_PARTY_ACTOR's own schema.rb comment.
+      State.put_fields(e, [83, battle_commands_changed?, false,
+                           91, battle_row, ROW_FRONT,
+                           92, double_hand?, false,
+                           93, equipment_fixed?, false,
+                           94, force_ai?, false,
+                           95, strong_defence?, false])
+      # A live Change Parameters edit (#change_param) survives Save/
+      # Continue too -- see SAVE_PARTY_ACTOR's own comment for the
+      # genuine-RPG_RT verification. `@base_raw` is the curve plus this
+      # modifier with no equipment folded in, so subtracting the curve
+      # back out isolates the same delta #change_param itself computes.
+      raw = base_raw
+      curve = base_stats(level)
+      # hp_mod/sp_mod (33/34) are written unconditionally, delta 0
+      # included -- confirmed against a genuine kk1.12 save under wine,
+      # every actor's own untouched hp_mod/sp_mod present as an explicit
+      # 0, distinct from liblcf's own declared -1 ("never touched")
+      # default (see schema.rb's own comment on these two fields).
+      # attack_mod/defense_mod/spirit_mod/agility_mod (41-44) keep the
+      # opposite, "omit at zero" convention the same save confirms.
+      e[33] = raw[0] - curve[0]
+      e[34] = raw[1] - curve[1]
+      [41, 42, 43, 44].each_with_index do |field, i|
+        delta = raw[i + 2] - curve[i + 2]
+        e[field] = delta if delta != 0
+      end
+      e
+    end
+
+    # Applies this actor's chunk 108 entry (Game::State.from_lsd).
+    def restore_lsd_actor(sa)
+      # The class comes back first, mirroring Party#load_state's own
+      # ordering comment: it decides which growth/EXP curves the level
+      # and exp restored just below are read against. -1 (liblcf's own
+      # field default) means "never changed", not "class 0" -- Change
+      # Class to "no class" is itself a real, persisted change.
+      cid = sa[:class_id]
+      restore_class(cid) if cid && cid != -1
+      set_level(sa[:level]) if sa[:level]
+      self.exp = sa[:exp] if sa[:exp]
+      # A live Change Parameters edit (#change_param) -- #set_level just
+      # above re-seeds @base/@base_raw from the level-derived baseline,
+      # discarding it, so it's restored after, the same order the
+      # Party#load_state path already uses. hp_mod/sp_mod
+      # (fields 33/34) default to -1 (liblcf's own "never touched"
+      # sentinel, distinct from a real 0 the other four fields already
+      # use); the other four default to 0 outright. Confirmed against a
+      # genuine RPG_RT.exe -- see SAVE_PARTY_ACTOR's own comment.
+      hp_mod = sa[:hp_mod]
+      sp_mod = sa[:sp_mod]
+      mods = [hp_mod && hp_mod != -1 ? hp_mod : 0,
+              sp_mod && sp_mod != -1 ? sp_mod : 0,
+              sa[:attack_mod] || 0, sa[:defense_mod] || 0,
+              sa[:spirit_mod] || 0, sa[:agility_mod] || 0]
+      if mods.any? { |m| m != 0 }
+        curve = base_stats(level)
+        restore_base(Array.new(curve.size) { |i| curve[i] + mods[i] })
+      end
+      equip(sa[:equipment]) if sa[:equipment]
+      self.skills = sa[:skills] if sa[:skills]
+      # sa.states is the same dense, database-sized array #to_lsd now
+      # writes (see Actor#total_state_count's own citation) -- a
+      # nonzero slot means "afflicted", regardless of its actual
+      # turn-counter value, which this codebase does not otherwise
+      # track once a state survives past the battle that inflicted it.
+      if sa[:states]
+        ids = []
+        sa[:states].each_index { |i| ids << (i + 1) if sa[:states][i] && sa[:states][i] != 0 }
+        self.states = ids
+      end
+      # A live Change Battle Commands (or a Change Class, which also
+      # materializes the list) -- gated on `changed_battle_commands` the
+      # same way a reference implementation's own read does, not merely
+      # "the field is
+      # present", since an empty list is schema.rb's own declared
+      # default rather than a real Change Battle Commands to nothing.
+      self.battle_commands = sa[:battle_commands] if sa[:changed_battle_commands]
+      # RPG2003 battle row (0x5B/91) -- the schema default (0/front)
+      # restores the same as never having touched it, so no changed-flag
+      # gating is needed the way battle_commands' own nil-vs-empty
+      # ambiguity requires above.
+      self.battle_row = sa[:row] if LCF.field?(sa, :row)
+      # A Change Actor Name override on *any* roster member, not just the
+      # leader (whose name chunk 100's title also carries, see .from_lsd). Already flagged this field's other case when it was first
+      # decoded: "reserve actors store only a placeholder" -- an actor
+      # with no real override writes a single 0x01 byte here rather than
+      # an empty string, matched against a genuine save under wine (every
+      # roster actor other than the true leader carries exactly this
+      # placeholder). Applying it verbatim overwrites the actor's correct
+      # database name with a control character, which then defeats any
+      # later lookup by name (see the title-chunk leader fixup in .from_lsd).
+      nm = sa[:actor_name]
+      self.name = nm if nm && !nm.empty? && nm != "\x01"
+      # Field 2 (title) has no equivalent "blank means unchanged" rule --
+      # do_change_actor_title explicitly lets an empty string *clear* the
+      # title -- so an empty string is applied, unlike actor_name above;
+      # only the reserve-actor placeholder byte is skipped.
+      tt = sa[:title]
+      self.title = tt if tt && tt != "\x01"
+      # A live Change Sprite Association override (chunk 108 fields
+      # 11/12/13) -- what genuine RPG_RT.exe itself restores the on-map
+      # sprite from, not chunk 104's hero-record mirror (fields 73/74,
+      # never read back -- see #to_lsd's own citation and
+      # SAVE_PARTY_ACTOR's schema.rb comment for cycle #170's wine
+      # verification of both halves of this). Gated on sprite_name's own
+      # presence, the same "the command actually ran" signal #to_lsd
+      # writes it under; an absent field leaves the actor's own database
+      # default charset (#initialize) untouched.
+      sn = sa[:sprite_name]
+      set_charset(sn, sa[:sprite_id] || 0) if sn
+      self.transparent = (sa[:sprite_transparent] || 0) != 0 if sn
+    end
+  end
+
+  class Picture
+    # This picture's chunk 103 entry (Game::State#to_lsd).
+    def lsd_picture
+      e = LCF::Array1D.blank_record(LCF::Schema::SAVE_PICTURE)
+      # Field 1 (name) is present only while the picture is actually
+      # shown (`#shown?`, not mere name-emptiness -- see Picture#erase!'s
+      # own comment for why) -- this table's own SAVE_PICTURE schema
+      # comment carries cycle #159's genuine-RPG_RT evidence: an id that
+      # was shown and then Erase Picture'd keeps every position/zoom/tone
+      # field at its last value but drops the name outright, distinct
+      # from an id that was never shown at all (which #to_lsd leaves
+      # as a fully field-less placeholder, `p` nil, matching cycle #154's
+      # own finding unchanged).
+      e[1] = name if shown?
+      State.put_fields(e, [6, fixed_to_map, false,
+                           9, use_transparent_color, false])
+      e[2] = LCF.double_from_fixed(@show_x)
+      e[3] = LCF.double_from_fixed(@show_y)
+      e[4] = LCF.double_from_fixed(@x)
+      e[5] = LCF.double_from_fixed(@y)
+      e[7] = LCF.double_from_fixed(@zoom) if zoom != 100
+      # Transparency is a percentage of the 0..255 opacity, in 1/1024 units.
+      cur_trans = 102_400 - Game.clamp(@opacity, 0, 261_120) * 100 / 255
+      e[8] = LCF.double_from_fixed(cur_trans) if cur_trans != 0
+      # Field 18 (current_bot_trans, RPG2003-only) mirrors field 8 (top == bottom).
+      e[18] = LCF.double_from_fixed(cur_trans) if cur_trans != 0
+      # Picture.unfix(@red) rather than #red: a self `red` also names native RGSS::Color#red, so it is not
+      # compiled as a direct call.
+      e[11] = LCF.double_from_fixed(@red) if Picture.unfix(@red) != 100
+      e[12] = LCF.double_from_fixed(@green) if Picture.unfix(@green) != 100
+      e[13] = LCF.double_from_fixed(@blue) if Picture.unfix(@blue) != 100
+      e[14] = LCF.double_from_fixed(@saturation) if saturation != 100
+      moving = moving?
+      fx = moving ? @tx : @x
+      fy = moving ? @ty : @y
+      fzoom = moving ? @tzoom : @zoom
+      fopacity = moving ? @topacity : @opacity
+      fred = moving ? @tred : @red
+      fgreen = moving ? @tgreen : @green
+      fblue = moving ? @tblue : @blue
+      fsat = moving ? @tsat : @saturation
+      e[31] = LCF.double_from_fixed(fx)
+      e[32] = LCF.double_from_fixed(fy)
+      e[33] = Picture.unfix(fzoom) if fzoom != 102_400
+      # Rounded to a whole percent, as the finish transparency always was.
+      fin_trans = (102_400 - Game.clamp(fopacity, 0, 261_120) * 100 / 255 + 512) / 1024
+      # Field 35 (finish_bot_trans, RPG2003-only) mirrors field 34.
+      State.put_fields(e, [34, fin_trans, 0, 35, fin_trans, 0])
+      e[41] = Picture.unfix(fred) if fred != 102_400
+      e[42] = Picture.unfix(fgreen) if fgreen != 102_400
+      e[43] = Picture.unfix(fblue) if fblue != 102_400
+      e[44] = Picture.unfix(fsat) if fsat != 102_400
+      e[51] = frames_left if moving
+      e
+    end
+  end
+
+  class Timer
+    # Applies chunk 109's frames/active/visible/battle fields +base+..+base+3 (23 for timer 1,
+    # 27 for timer 2); an absent field keeps this timer's value.
+    def restore_lsd_timer(inv, base)
+      v = inv[base]
+      self.frames = v unless v.nil?
+      v = inv[base + 1]
+      self.running = v unless v.nil?
+      v = inv[base + 2]
+      self.visible = v unless v.nil?
+      v = inv[base + 3]
+      self.in_battle = v unless v.nil?
+    end
+  end
+
+  class Vehicle
+    # This vehicle's chunk 105-107 record (Game::State#to_lsd); +type+ is its @vehicles key.
+    def lsd_movable(type, db)
+      # The ivars rather than the readers: a self `x`/`y` also names native RGSS::Rect#x/#y.
+      mv = LCF::Array1D.blank_record(LCF::Schema::SAVE_MOVABLE)
+      mv[11] = @map_id
+      mv[12] = @x
+      mv[13] = @y
+      dir_row = CharSet::DIR_ROW[@direction] || 2
+      mv[21] = dir_row
+      mv[22] = dir_row
+      # Field 33 (layer): a true constant, see the hero's own field 33 in
+      # Game::State#to_lsd.
+      mv[33] = 1
+      mv[35] = 0
+      mv[37] = DEFAULT_MOVE_SPEED[type]
+      if @charset_name && !@charset_name.empty?
+        mv[73] = @charset_name
+        idx = @charset_index || 0
+        mv[74] = idx if idx != 0
+      elsif db && LCF.field?(db, :system) && db[:system]
+        name_field = SYSTEM_NAME_FIELD[type]
+        index_field = SYSTEM_INDEX_FIELD[type]
+        name = LCF.field?(db[:system], name_field) ? db[:system][name_field] : nil
+        if name && !name.to_s.empty?
+          mv[73] = name.to_s
+          idx = LCF.field?(db[:system], index_field) ? (db[:system][index_field] || 0) : 0
+          mv[74] = idx if idx != 0
+        end
+      end
+      mv[101] = TYPE_ID[type]
+      mv
     end
   end
 

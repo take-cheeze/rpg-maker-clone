@@ -8,6 +8,7 @@ class LCF::Array1D
   def delete: (untyped) -> untyped
   def field?: (untyped) -> untyped
   def key?: (untyped) -> untyped
+  def self.blank_record: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::Array2D
@@ -15,6 +16,7 @@ class LCF::Array2D
   def []=: (untyped, untyped) -> untyped
   def initialize: (untyped, untyped) -> untyped
   def same_schema?: (untyped) -> untyped
+  def self.blank_table: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::Database < LCF::File
@@ -1662,6 +1664,7 @@ class Game::Timer
   def in_battle=: (untyped) -> untyped
   def display_text: () -> untyped
   def initialize: () -> untyped
+  def restore_lsd_timer: (untyped, untyped) -> untyped
   def seconds: () -> untyped
   def set: (untyped) -> untyped
   def start: (untyped, ?untyped) -> untyped
@@ -1742,6 +1745,7 @@ class Game::Vehicle
   def charset_index=: (untyped) -> untyped
   def type: () -> untyped
   def load_movable: (untyped) -> untyped
+  def lsd_movable: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 class Game::Weather
@@ -5155,6 +5159,7 @@ class Game::Picture
   def frames_left: () -> untyped
   def green: () -> untyped
   def initialize: (untyped, ?untyped) -> untyped
+  def lsd_picture: () -> untyped
   def move_to: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def move_to_fixed: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def moving?: () -> untyped
@@ -5162,7 +5167,6 @@ class Game::Picture
   def red: () -> untyped
   def restore_legacy_lsd: (untyped, untyped, untyped) -> untyped
   def saturation: () -> untyped
-  def save_fixed: () -> untyped
   def show_x: () -> untyped
   def show_y: () -> untyped
   def shown?: () -> untyped
@@ -5292,8 +5296,10 @@ class Game::State
   def move_picture: (untyped, *untyped) -> untyped
   def move_picture_fixed: (untyped, *untyped) -> untyped
   def pictures_moving?: () -> untyped
+  def put_battle_background: (untyped, untyped, untyped) -> untyped
   def set_screen_transition: (untyped, untyped) -> untyped
   def show_picture: (untyped, untyped) -> untyped
+  def store_battle_background: (untyped, untyped, untyped) -> untyped
   def timer_display_text: () -> untyped
   def timer_frames: () -> untyped
   def timer_frames=: (untyped) -> untyped
@@ -5304,7 +5310,6 @@ class Game::State
   def to_lsd: (?untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
   def walk_step: () -> untyped
   def self.bgm_from_chunk: (untyped) -> untyped
-  def self.build_event_exec_state: (untyped) -> untyped
   def self.from_lsd: (untyped, untyped) -> untyped
   def self.ole_now: () -> untyped
   def self.put_fields: (untyped, untyped) -> untyped
@@ -5515,6 +5520,7 @@ class Game::Actor
   def knock_out!: () -> untyped
   def knows_skill?: (untyped) -> untyped
   def learn_skill: (untyped) -> untyped
+  def lsd_actor: () -> untyped
   def max_level: () -> untyped
   def permanent_states: () -> untyped
   def preemptive?: () -> untyped
@@ -5524,6 +5530,7 @@ class Game::Actor
   def rename_skill?: () -> untyped
   def restore_base: (untyped) -> untyped
   def restore_class: (untyped) -> untyped
+  def restore_lsd_actor: (untyped) -> untyped
   def set_battle_combo: (untyped, untyped) -> untyped
   def set_exp: (untyped) -> untyped
   def set_faceset: (untyped, untyped) -> untyped
@@ -6292,6 +6299,32 @@ class RPG2k::Scene::Battle::Ui
   def initialize: () -> untyped
   def start: (untyped, untyped, untyped, untyped, untyped) -> untyped
 end
+# bc2cpp-native: base_rpg
+class Game::Interpreter::Frame
+  def commands: () -> untyped
+  def current_command: () -> untyped
+  def event_id: () -> untyped
+  def triggered_by_decision_key: () -> untyped
+  def initialize: (untyped, untyped, untyped, untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::State::ForegroundExec
+  def event_id: () -> untyped
+  def frames: () -> untyped
+  def initialize: (untyped, untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class RPG2k::Scene::Map::Parallel
+  def interp: () -> untyped
+  def commands: () -> untyped
+  def gate_switch: () -> untyped
+  def common_event_id: () -> untyped
+  def event: () -> untyped
+  def event=: (untyped) -> untyped
+  def wait_timer: () -> untyped
+  def wait_timer=: (untyped) -> untyped
+  def initialize: (untyped, untyped, untyped, untyped, untyped) -> untyped
+end
 
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
@@ -7013,9 +7046,8 @@ class RPG2k::Scene::Map
   def initialize: (RPG2k, Game::State) -> untyped
   # #update passes @interpreter, #drive_parallel_wait its own `it` (the Parallel Process's interpreter).
   def drive_battle: (Game::Interpreter) -> untyped
-  # #step_parallel's `p[:interp]`: the Game::Interpreter.new of #new_parallel, the one writer of :interp in the
-  # @parallels records. No rule proves an element of an Array ivar's Hash records yet (TC1013 at #step_parallel).
-  def drive_parallel_wait: (untyped, Game::Interpreter) -> untyped
+  # #step_parallel passes its Parallel and that entry's `interp` (Parallel declares it Game::Interpreter).
+  def drive_parallel_wait: (RPG2k::Scene::Map::Parallel, Game::Interpreter) -> untyped
   # The dirty set is nil after a bulk Switches/Variables#replace, until the next page sweep clears it.
   def ids_touch?: (Array, Hash?) -> untyped
   def draw_vehicle_frame: (untyped, Game::Vehicle, untyped, untyped, untyped) -> untyped
@@ -7174,7 +7206,7 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def rebuild_event_tiles: () -> Array
   def record_map_event_positions: () -> untyped
-  def record_parallel_progress: (untyped) -> untyped
+  def record_parallel_progress: (RPG2k::Scene::Map::Parallel) -> untyped
   def refresh_event_pages: () -> untyped
   def release_random_blocks_transition: () -> untyped
   def release_transition_capture: () -> untyped
@@ -7194,7 +7226,7 @@ class RPG2k::Scene::Map
   def step_forced_event: (untyped) -> untyped
   def step_forced_movement: () -> untyped
   def step_ownerless_map_animation: () -> untyped
-  def step_parallel: (untyped) -> untyped
+  def step_parallel: (RPG2k::Scene::Map::Parallel) -> untyped
   def step_player_route: () -> untyped
   def step_vehicle_route: (untyped) -> untyped
   %a{bc2cpp:hint}
@@ -7234,13 +7266,13 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def load_charset: () -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
-  def new_parallel: (untyped, untyped, untyped, untyped) -> Hash
+  def new_parallel: (untyped, untyped, untyped, untyped) -> RPG2k::Scene::Map::Parallel
   %a{bc2cpp:hint}
   def note_anim_input: (untyped) -> (Symbol | nil)
   %a{bc2cpp:hint}
   def rebuild_tile_cache: (untyped, untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
-  def record_foreground_event_exec: () -> (Hash | nil)
+  def record_foreground_event_exec: () -> (Game::State::ForegroundExec | nil)
   %a{bc2cpp:hint}
   def refresh_player_graphic: () -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
@@ -7917,11 +7949,42 @@ module RPG2k
       # :contents) and `= nil` in #close_number_input. :model is the one `Game::NumberInput.new`.
       @number_input: { model: Game::NumberInput, interp: untyped, ?embedded: untyped, ?x: untyped, ?y: untyped,
                        ?window: untyped, ?contents: RGSS::Bitmap }?
+      # #build_parallels' `[]`, filled only with #new_parallel results or entries of the previous @parallels.
+      @parallels: Array[RPG2k::Scene::Map::Parallel]?
+      # A Parallel Process: #new_parallel is the one construction, with its `Game::Interpreter.new`, a common
+      # event's switch id or nil, and a common event id or nil; the Wait countdown is nil or
+      # #frames_from_tenths' Integer counted down by 1 (#drive_parallel_wait).
+      class Parallel
+        @interp: Game::Interpreter
+        @gate_switch: Integer?
+        @common_event_id: Integer?
+        @wait_timer: Integer?
+      end
     end
 
     class DebugMenu
       # The variable editor: the literal in #open_editor and `= nil`; :digits is #digits_of's `Array.new(n, 0)`.
       @editor: { id: untyped, negative: untyped, digits: Array, cursor: untyped }?
+    end
+  end
+end
+
+# Game::Interpreter::Frame: the writers are #initialize's stores; every construction (Interpreter#call_stack_snapshot,
+# State#to_lsd's common-event cursor, State.read_event_exec_frames) passes an Integer cursor and event id (an
+# `|| 0`-defaulted ivar, a schema :int field or a #common_event_progress entry).
+module Game
+  class Interpreter
+    class Frame
+      @current_command: Integer
+      @event_id: Integer
+    end
+  end
+  # Game::State::ForegroundExec: built by Scene::Map#record_foreground_event_exec (an event id or 0, and
+  # #call_stack_snapshot's Array) and State.from_lsd (the first Frame's event id and .read_event_exec_frames' Array).
+  class State
+    class ForegroundExec
+      @event_id: Integer
+      @frames: Array[untyped]
     end
   end
 end
@@ -10318,6 +10381,10 @@ class Game::Party
 end
 class Game::EnemyAi
   def skill_helps_troop?: (untyped, untyped, Array[Game::Battle::Combatant]) -> bool
+end
+class Game::State
+  # #to_lsd passes the same frame Arrays, or its own `[Interpreter::Frame.new(...)]` for a cursor-only common event.
+  def self.build_event_exec_state: (Array[Game::Interpreter::Frame]) -> untyped
 end
 class Game::TextReveal
   # Game::Message.scan and Scene::Map#message_page_layout build both lists from PauseMarker / SpeedMarker.new only.

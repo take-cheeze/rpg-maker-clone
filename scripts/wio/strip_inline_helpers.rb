@@ -408,7 +408,7 @@ REWRITES = {
       { old: '        record_foreground_event_exec
 ',
         new: '        (frames = @interpreter.call_stack_snapshot; @state.foreground_event_exec =
-          frames && { event_id: @active_event ? @active_event.id : 0, frames: frames })
+          frames && Game::State::ForegroundExec.new(@active_event ? @active_event.id : 0, frames))
 ' }, # record_foreground_event_exec
       { old: '        record_tile_substitutions
 ',

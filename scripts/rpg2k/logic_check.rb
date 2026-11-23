@@ -2080,9 +2080,9 @@ check '#call_stack_snapshot captures a clean mid-list position; #restore_call_st
 
   frames = it.call_stack_snapshot
   eq 1, frames.size, 'a single frame -- no Call Event pushed anything'
-  eq 2, frames[0][:current_command], 'parked right after the Wait, at the next command'
-  eq 7, frames[0][:event_id]
-  eq true, frames[0][:triggered_by_decision_key]
+  eq 2, frames[0].current_command, 'parked right after the Wait, at the next command'
+  eq 7, frames[0].event_id
+  eq true, frames[0].triggered_by_decision_key
 
   it2 = Game::Interpreter.new(new_state)
   it2.restore_call_stack(frames)
@@ -2110,14 +2110,14 @@ check '#call_stack_snapshot captures a process mid a nested Call Event too, unli
 
   frames = it.call_stack_snapshot
   eq 2, frames.size, 'the suspended caller frame plus the called frame'
-  eq 1, frames[0][:current_command], 'the caller is parked right after its own Call Event'
-  eq 2, frames[1][:current_command], 'the called frame is parked right after its own Wait'
+  eq 1, frames[0].current_command, 'the caller is parked right after its own Call Event'
+  eq 2, frames[1].current_command, 'the called frame is parked right after its own Wait'
   # Cycle #192: a Call Event targeting a COMMON event reads back event_id 0
   # on its own frame (liblcf's own "0 if it's common event or in other
   # map"), never the outer caller's own id -- the outermost frame alone
   # still carries the interpreter's own root #event_id.
-  eq 3, frames[0][:event_id], 'the outermost frame is still this interpreter\'s own root event_id'
-  eq 0, frames[1][:event_id], 'a called common event\'s own frame reads back 0, not the caller\'s 3'
+  eq 3, frames[0].event_id, 'the outermost frame is still this interpreter\'s own root event_id'
+  eq 0, frames[1].event_id, 'a called common event\'s own frame reads back 0, not the caller\'s 3'
 
   it2 = Game::Interpreter.new(new_state)
   it2.resolver = FakeResolver.new(common: { 5 => called })
@@ -2146,8 +2146,8 @@ check "#call_stack_snapshot's called frame carries the target map event's own ev
 
   frames = it.call_stack_snapshot
   eq 2, frames.size
-  eq 7, frames[0][:event_id], 'the outermost (suspended caller) frame is the interpreter\'s own root identity'
-  eq 12, frames[1][:event_id],
+  eq 7, frames[0].event_id, 'the outermost (suspended caller) frame is the interpreter\'s own root identity'
+  eq 12, frames[1].event_id,
      'the called frame carries the TARGET map event\'s own id (12), not the caller\'s (7)'
 
   # A re-snapshot after a full restore reproduces the exact same per-frame
@@ -2159,7 +2159,7 @@ check "#call_stack_snapshot's called frame carries the target map event's own ev
   it2.restore_call_stack(frames)
   eq 7, it2.event_id, 'event_id restored from the outermost frame, same as before'
   round = it2.call_stack_snapshot
-  eq frames.map { |f| f[:event_id] }, round.map { |f| f[:event_id] },
+  eq frames.map(&:event_id), round.map(&:event_id),
      'restoring then re-snapshotting reproduces the exact same per-frame event_ids'
 
 end
@@ -2184,8 +2184,8 @@ check '#return_from_call restores the caller\'s own event_id -- it does not leak
 
   frames = it.call_stack_snapshot
   eq 2, frames.size, 'the suspended root caller plus the second called frame'
-  eq 7, frames[0][:event_id], 'the caller\'s own identity, not leaked from the first call\'s target (12)'
-  eq 20, frames[1][:event_id], 'the second call\'s own frame correctly carries its own target (20)'
+  eq 7, frames[0].event_id, 'the caller\'s own identity, not leaked from the first call\'s target (12)'
+  eq 20, frames[1].event_id, 'the second call\'s own frame correctly carries its own target (20)'
 end
 
 check '#call_stack_snapshot on a Call Event to "this event" gives the called frame the SAME id as the caller' do
@@ -2205,8 +2205,8 @@ check '#call_stack_snapshot on a Call Event to "this event" gives the called fra
 
   frames = it.call_stack_snapshot
   eq 2, frames.size
-  eq 7, frames[0][:event_id]
-  eq 7, frames[1][:event_id], 'the called frame is genuinely the same event (7), not a distinct callee id'
+  eq 7, frames[0].event_id
+  eq 7, frames[1].event_id, 'the called frame is genuinely the same event (7), not a distinct callee id'
 end
 
 check '#call_stack_snapshot is nil once the process has finished' do
@@ -2255,7 +2255,7 @@ check '#call_stack_snapshot rewinds a mid-Key-Input-Proc wait so #restore_call_s
 
   frames = it.call_stack_snapshot
   eq 1, frames.size
-  eq 0, frames[0][:current_command],
+  eq 0, frames[0].current_command,
      'rewound to the Key Input Proc command itself, not past it (@index was already 1)'
 
   it2 = Game::Interpreter.new(new_state)
@@ -2306,19 +2306,19 @@ check 'SAVE_EVENT_EXEC_STATE round-trips a captured call-stack snapshot through 
   eq frames.size, round.size, 'both frames survived the round trip'
 
   round.each_index do |i|
-    eq frames[i][:current_command], round[i][:current_command], "frame #{i} current_command"
-    eq frames[i][:event_id], round[i][:event_id], "frame #{i} event_id"
-    eq frames[i][:triggered_by_decision_key], round[i][:triggered_by_decision_key],
+    eq frames[i].current_command, round[i].current_command, "frame #{i} current_command"
+    eq frames[i].event_id, round[i].event_id, "frame #{i} event_id"
+    eq frames[i].triggered_by_decision_key, round[i].triggered_by_decision_key,
        "frame #{i} triggered_by_decision_key"
-    eq frames[i][:commands].size, round[i][:commands].size, "frame #{i} command count"
-    frames[i][:commands].each_index do |j|
-      eq frames[i][:commands][j].code, round[i][:commands][j].code, "frame #{i} command #{j} code"
-      eq frames[i][:commands][j].parameters, round[i][:commands][j].parameters,
+    eq frames[i].commands.size, round[i].commands.size, "frame #{i} command count"
+    frames[i].commands.each_index do |j|
+      eq frames[i].commands[j].code, round[i].commands[j].code, "frame #{i} command #{j} code"
+      eq frames[i].commands[j].parameters, round[i].commands[j].parameters,
          "frame #{i} command #{j} parameters"
     end
   end
-  eq true, round[0][:triggered_by_decision_key], 'only the outermost frame carries the trigger flag'
-  eq false, round[1][:triggered_by_decision_key], 'a Call Event\'s own nested frame never does'
+  eq true, round[0].triggered_by_decision_key, 'only the outermost frame carries the trigger flag'
+  eq false, round[1].triggered_by_decision_key, 'a Call Event\'s own nested frame never does'
 
   # And the round-tripped frames genuinely drive a fresh Game::Interpreter to
   # completion, not just decode as inert data.
@@ -11447,7 +11447,7 @@ check 'to_lsd/from_lsd round-trips a foreground and a common-event call-stack sn
   fg_it.event_id = 42
   fg_it.triggered_by_decision_key = true
   fg_it.update # parks on the Wait
-  st.foreground_event_exec = { event_id: 42, frames: fg_it.call_stack_snapshot }
+  st.foreground_event_exec = Game::State::ForegroundExec.new(42, fg_it.call_stack_snapshot)
 
   ce_it = Game::Interpreter.new(Game::State.new(Game::Party.new(db), 1, 0, 0))
   called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0]), FakeCmd.new(IC::WAIT, [1])]
@@ -11461,15 +11461,15 @@ check 'to_lsd/from_lsd round-trips a foreground and a common-event call-stack sn
 
   fg = round.foreground_event_exec
   ok !fg.nil?, 'chunk 113 came back'
-  eq 42, fg[:event_id]
-  eq 1, fg[:frames].size
-  eq 1, fg[:frames][0][:current_command], 'parked right after the Wait'
-  eq true, fg[:frames][0][:triggered_by_decision_key]
+  eq 42, fg.event_id
+  eq 1, fg.frames.size
+  eq 1, fg.frames[0].current_command, 'parked right after the Wait'
+  eq true, fg.frames[0].triggered_by_decision_key
 
   ce_frames = round.common_event_exec[7]
   ok !ce_frames.nil?, 'chunk 114 carries an entry for common event 7'
   eq 2, ce_frames.size, 'the suspended caller frame plus the called frame, not collapsed'
-  eq 2, ce_frames[1][:current_command], 'the called frame is parked right after its own Wait'
+  eq 2, ce_frames[1].current_command, 'the called frame is parked right after its own Wait'
   ok round.common_event_exec[12].nil?, 'no entry at all for a common event nothing ran'
 
   # Absent when nothing was mid-execution -- the overwhelming common case --
@@ -11516,9 +11516,9 @@ check "to_lsd/from_lsd round-trips a map event's own Parallel Process " \
   frames = round.map_event_exec[5]
   ok !frames.nil?, "chunk 111 field 108 came back for map event 5's own entry"
   eq 2, frames.size, 'the suspended caller frame plus the called frame, not collapsed'
-  eq 5, frames[0][:event_id], "the outer frame is this Parallel Process's own event, 5"
-  eq 6, frames[1][:event_id], 'the called frame is map event 6, the Call Event target'
-  eq 2, frames[1][:current_command], 'the called frame is parked right after its own Wait'
+  eq 5, frames[0].event_id, "the outer frame is this Parallel Process's own event, 5"
+  eq 6, frames[1].event_id, 'the called frame is map event 6, the Call Event target'
+  eq 2, frames[1].current_command, 'the called frame is parked right after its own Wait'
   ok round.map_event_exec[12].nil?, 'no entry at all for a map event nothing ever ran'
 
   # Absent when nothing was mid-execution -- the overwhelming common case --
