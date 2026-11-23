@@ -7,7 +7,7 @@
 
 module Game
   # A headless combat model driving both the live turn-based fight
-  # (Scene::Battle holds one as its own `@ui[:battle]`) and, separately, an
+  # (Scene::Battle holds one as its own `@ui.battle`) and, separately, an
   # out-of-battle skill/item cast resolved on Combatant snapshots so the
   # caller can compute an effect without mutating the real party. Escape
   # (#attempt_escape) and enemy-cast state infliction (#inflict_state, fed
