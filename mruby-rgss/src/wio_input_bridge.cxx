@@ -26,14 +26,15 @@ namespace {
 uint64_t g_prev = 0;
 
 void send_key(mrb_state* M, int key, bool press) {
-  RClass* rgss = mrb_module_get(M, "RGSS");
+  RClass* rgss = mrb_module_get_id(M, MRB_SYM(RGSS));
   if (!rgss)
     return;
-  RClass* input = mrb_module_get_under(M, rgss, "Input");
+  RClass* input = mrb_module_get_under_id(M, rgss, MRB_SYM(Input));
   if (!input)
     return;
-  mrb_funcall(M, mrb_obj_value(input), press ? "press" : "release", 1,
-              mrb_fixnum_value(key));
+  mrb_funcall_id(M, mrb_obj_value(input),
+                 press ? MRB_SYM(press) : MRB_SYM(release), 1,
+                 mrb_fixnum_value(key));
 }
 
 }  // namespace

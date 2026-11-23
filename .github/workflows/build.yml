@@ -1117,6 +1117,10 @@ jobs:
           - name: CP932 table lookups match the reference
             run: ruby scripts/cp932_tables_check.rb
 
+          # A literal-name lookup in the engine's natives costs a symbol search per call.
+          - name: Native sources name symbols by presym
+            run: ruby scripts/native/presym_names_check.rb
+
           - name: LCF schema coverage
             run: ruby scripts/lcf/schema_coverage.rb
 

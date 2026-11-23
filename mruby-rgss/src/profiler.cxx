@@ -589,7 +589,7 @@ mrb_value prof_section(mrb_state* M, mrb_value) {
   mrb_value name, blk;
   mrb_get_args(M, "o&", &name, &blk);
   if (!mrb_symbol_p(name) && !mrb_string_p(name))
-    mrb_raisef(M, mrb_exc_get_id(M, mrb_intern_lit(M, "TypeError")),
+    mrb_raisef(M, mrb_exc_get_id(M, MRB_SYM(TypeError)),
                "section name must be a Symbol or String, not %C",
                mrb_obj_class(M, name));
   if (mrb_nil_p(blk))
@@ -637,19 +637,18 @@ mrb_value prof_stats(mrb_state* M, mrb_value) {
       g_frames.frames ? g_frames.work_ns_sum / g_frames.frames / 1e6 : 0.0;
 
   mrb_value h = mrb_hash_new(M);
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frames")),
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(frames)),
                mrb_fixnum_value(static_cast<mrb_int>(g_frames.frames)));
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "fps")),
-               rgss::num_value(M, fps));
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frame_avg_ms")),
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(fps)), rgss::num_value(M, fps));
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(frame_avg_ms)),
                rgss::num_value(M, avg_ms));
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frame_max_ms")),
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(frame_max_ms)),
                rgss::num_value(M, g_frames.work_ns_max / 1e6));
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frame_drops")),
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(frame_drops)),
                mrb_fixnum_value(static_cast<mrb_int>(g_frames.drops)));
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "rss_bytes")),
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(rss_bytes)),
                mrb_fixnum_value(static_cast<mrb_int>(read_rss_bytes())));
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "live_blocks")),
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(live_blocks)),
                mrb_fixnum_value(static_cast<mrb_int>(g_live_blocks)));
 
   mrb_int lv_used = 0;
@@ -658,23 +657,23 @@ mrb_value prof_stats(mrb_state* M, mrb_value) {
     lv_mem_monitor(&mon);
     lv_used = static_cast<mrb_int>(mon.total_size - mon.free_size);
   }
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "lv_used_bytes")),
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(lv_used_bytes)),
                mrb_fixnum_value(lv_used));
 
   mrb_value sections = mrb_hash_new(M);
   for (const auto& kv : g_sections) {
     const SectionAgg& a = kv.second;
     mrb_value sh = mrb_hash_new(M);
-    mrb_hash_set(M, sh, mrb_symbol_value(mrb_intern_lit(M, "calls")),
+    mrb_hash_set(M, sh, mrb_symbol_value(MRB_SYM(calls)),
                  mrb_fixnum_value(static_cast<mrb_int>(a.calls)));
-    mrb_hash_set(M, sh, mrb_symbol_value(mrb_intern_lit(M, "avg_ms")),
+    mrb_hash_set(M, sh, mrb_symbol_value(MRB_SYM(avg_ms)),
                  rgss::num_value(M, a.calls ? a.ns_sum / a.calls / 1e6 : 0.0));
-    mrb_hash_set(M, sh, mrb_symbol_value(mrb_intern_lit(M, "max_ms")),
+    mrb_hash_set(M, sh, mrb_symbol_value(MRB_SYM(max_ms)),
                  rgss::num_value(M, a.ns_max / 1e6));
     mrb_hash_set(M, sections, mrb_str_new(M, kv.first.data(), kv.first.size()),
                  sh);
   }
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "sections")), sections);
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(sections)), sections);
 
   // Object type breakdown -- straight off the GC's own per-type counters
   // (mrb_gc_type_counts, the pinned fork commit (mruby-gc-type-live-counts,
@@ -688,14 +687,13 @@ mrb_value prof_stats(mrb_state* M, mrb_value) {
     if (live[i] == 0 && allocs[i] == 0)
       continue;
     mrb_value th = mrb_hash_new(M);
-    mrb_hash_set(M, th, mrb_symbol_value(mrb_intern_lit(M, "live")),
+    mrb_hash_set(M, th, mrb_symbol_value(MRB_SYM(live)),
                  mrb_fixnum_value(static_cast<mrb_int>(live[i])));
-    mrb_hash_set(M, th, mrb_symbol_value(mrb_intern_lit(M, "allocs")),
+    mrb_hash_set(M, th, mrb_symbol_value(MRB_SYM(allocs)),
                  mrb_fixnum_value(static_cast<mrb_int>(allocs[i])));
     mrb_hash_set(M, object_types, mrb_str_new_cstr(M, kTypeNames[i]), th);
   }
-  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "object_types")),
-               object_types);
+  mrb_hash_set(M, h, mrb_symbol_value(MRB_SYM(object_types)), object_types);
 
   return h;
 }
