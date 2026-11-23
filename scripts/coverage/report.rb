@@ -158,6 +158,7 @@ CHECKS = [
   { name: 'bc2cpp-ruby-parse-cache', command: %w[scripts/bc2cpp-rpg/ruby_parse_cache_check.rb] },
   # No CRuby-side lines of mrblib, but every scripts/**/*_check.rb rides here.
   { name: 'native-binding-split', command: %w[scripts/native/binding_split_check.rb] },
+  { name: 'native-presym-names', command: %w[scripts/native/presym_names_check.rb] },
   # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under CRuby
   # through the RGSS compatibility layer (scripts/rgss/cruby_compat.rb), so the
   # RGSS mrblib lines its 87 assertions reach count here instead of reading 0%.

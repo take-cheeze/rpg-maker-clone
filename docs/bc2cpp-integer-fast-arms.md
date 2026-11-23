@@ -45,3 +45,10 @@ On the optcarrot probe (Lan_Master, callgrind, frames 2–21), the three arms
 together took per-frame instructions from 54.76M to 50.40M (−8.0%). `!=`
 accounted for about −3.9M of that and now lands with the array write fast
 paths; `%` accounted for about −0.5M.
+
+## `x == literal` (LITERAL_EQ_IDENTITY, `tools/bc2cpp/codegen_literal_eq.rb`)
+
+Against a Symbol, `nil`, `true` or `false` literal, `==` is one word compare: the world gate proves that every `==`
+the program can reach answers false for such an argument unless it is identical (no Ruby `==`, `===`, `<=>` or
+`equal?`, only audited native bodies). Against a Fixnum literal, a Fixnum operand is the word compare, a Float the
+numeric compare (`1 == 1.0` is true) and anything else false. `BC2CPP_LITERAL_EQ_IDENTITY=0` keeps the full compare.
