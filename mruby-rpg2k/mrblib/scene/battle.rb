@@ -34,6 +34,96 @@ class RPG2k
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
 
+      # The fight's live state (#ui): phase, the Game::Battle model, combatant snapshots, cursors, windows and
+      # sprites. Fixed fields instead of a Symbol-keyed Hash; a field #start has not set yet reads nil.
+      class Ui
+        # Set once, by #start.
+        attr_reader :allies, :battle, :events, :foes, :troop
+        attr_accessor :action_win, :actor_i, :actor_sprites, :ally_i, :ally_win, :anim_timer, :back_sprite,
+                      :banner_pending, :banner_reveal, :banner_shown, :banner_timer, :battler_boundary, :cmd,
+                      :cmd_win, :desc_win, :enemy_shake, :enemy_sprites, :event_return_phase, :event_timer,
+                      :event_win, :frame, :item_i, :item_top, :item_win, :items, :list_arrow_anim,
+                      :list_down_arrow, :list_down_shown, :list_up_arrow, :list_up_shown, :opt, :options_shown,
+                      :pages_run, :pending, :phase, :result, :result_win, :skill_i, :skill_top, :skill_win, :skills,
+                      :sprite_hues, :sprite_names, :status_win, :target_i, :target_win
+
+        # Every field is a store here or in #start, so the fields get fixed slots.
+        def initialize
+          @actor_sprites = nil
+          @banner_pending = nil
+          @banner_reveal = nil
+          @banner_shown = nil
+          @banner_timer = nil
+          @desc_win = nil
+          @enemy_shake = nil
+          @event_timer = nil
+          @item_top = nil
+          @list_arrow_anim = nil
+          @list_down_arrow = nil
+          @list_down_shown = nil
+          @list_up_arrow = nil
+          @list_up_shown = nil
+          @skill_top = nil
+          @sprite_hues = nil
+          @sprite_names = nil
+        end
+
+        # The fight's opening state (Scene::Battle#start).
+        def start(troop, battle, allies, foes, events)
+          @phase = :command
+          @troop = troop
+          # Whether the Battle/Auto Battle/Escape options window
+          # has already shown its once-per-battle automatic
+          # appearance (see #enter_command_phase) -- distinct
+          # from `opt`, the cursor row inside it whenever it is
+          # open (set fresh by #start_options each time).
+          @options_shown = false
+          @opt = 0
+          @battle = battle
+          @allies = allies
+          @foes = foes
+          @actor_i = 0
+          @cmd = 0
+          @target_i = 0
+          @skill_i = 0
+          @item_i = 0
+          @ally_i = 0
+          @pending = nil
+          @skills = []
+          @items = []
+          @status_win = nil
+          @cmd_win = nil
+          @target_win = nil
+          @skill_win = nil
+          @item_win = nil
+          @ally_win = nil
+          @action_win = nil
+          @anim_timer = 0
+          @back_sprite = nil
+          @enemy_sprites = nil
+          @result_win = nil
+          @result = nil
+          # The troop's battle-event pages: their own interpreter,
+          # the message window they draw into, and which pages have
+          # already fired this turn (RPG2000 runs a page once per
+          # turn its condition holds, so this resets each round).
+          @events = events
+          @event_win = nil
+          @pages_run = {}
+          # Whether the just-drained #step_action entry finished
+          # its battler's whole action (see #drive_battle_animate),
+          # and which phase a running battle-event page resumes to
+          # once it finishes (see #run_battle_events).
+          @battler_boundary = false
+          @event_return_phase = :command
+          # Frames elapsed since this battle opened -- cosmetic
+          # only (drives a levitating enemy's bob, #flying_offset),
+          # never read for any combat/save-affecting purpose, so
+          # it needs no seeding beyond starting at 0 every fight.
+          @frame = 0
+        end
+      end
+
       # `req` is the Battle Processing request that opened this fight
       # (`{ troop_id:, first_strike:, defeat_game_over:, ... }`), `owner` the
       # interpreter that raised it -- the map's foreground event by default, or
@@ -63,8 +153,8 @@ class RPG2k
         @backdrop_cache = map.backdrop_cache
         @battlecharset_cache = map.battlecharset_cache
         @system2_cache = map.system2_cache
-        # Filled by #start: a hash from the first moment, so every method can index it.
-        @ui = {}
+        # Filled by #start: a Ui from the first moment, so every method can read it (unset fields are nil).
+        @ui = Ui.new
         @disposed = false
       end
 
@@ -117,7 +207,7 @@ class RPG2k
         # clock, so they need a tick of their own every frame regardless of
         # phase -- this screen had no per-frame sprite hook for them before.
         tick_battle_list_arrows
-        case @ui[:phase]
+        case @ui.phase
         when :encounter_message then drive_battle_encounter_message
         when :battle_options then drive_battle_options
         when :command     then drive_battle_command
@@ -161,109 +251,81 @@ class RPG2k
         # sleep skip) in battle.
         situations = LCF.field?(db, :situation) ? db[:situation] : nil
         properties = LCF.field?(db, :property) ? db[:property] : nil
-        @ui.update({ phase: :command, troop: troop,
-                       # Whether the Battle/Auto Battle/Escape options window
-                       # has already shown its once-per-battle automatic
-                       # appearance (see #enter_command_phase) -- distinct
-                       # from `opt`, the cursor row inside it whenever it is
-                       # open (set fresh by #start_options each time).
-                       options_shown: false, opt: 0,
-                       # `allies.dup`, not `allies` itself: `@ui[:allies]`
-                       # below stays the exact same array Game::Battle is
-                       # handed here would otherwise *be* -- Ruby arrays are
-                       # mutable objects, so without the dup, deleting a
-                       # departed member from the render-facing
-                       # `@ui[:allies]` (#remove_battle_actor_sprite)
-                       # would delete it from Game::Battle's own bookkeeping
-                       # array too, breaking the rejoin-reuses-the-same-
-                       # Combatant guarantee #sync_allies_from_party depends
-                       # on. The two arrays start with the same
-                       # Combatant *objects* (so a lookup through either one
-                       # sees the same battle-only state) but are free to
-                       # diverge in which objects they each hold.
-                       battle: Game::Battle.new(allies.dup, foes, @rng,
-                                                situations, true, true, true,
-                                                @req.first_strike ? true : false,
-                                                properties,
-                                                # Lets the troop run its 行動パターン:
-                                                # skills, transformations and the
-                                                # switch / party-level conditions.
-                                                Game::EnemyAi.new(db, @state),
-                                                # A negative attribute rank rate
-                                                # (see #apply_attr_multiplier)
-                                                # is handled differently per
-                                                # edition.
-                                                 rpg2003: Game.rpg2003_database?(db),
-                                                 # RPG2003 battle timing
-                                                 # presentation (Battle Setup
-                                                 # chunk 0x1D field 7): 0
-                                                 # traditional / 1 alternative /
-                                                 # 2 gauge. Drives whether the
-                                                 # active-time gauge engine
-                                                 # (#advance_gauges) ever runs;
-                                                 # RPG2000 has no battlecommands
-                                                 # table, so this reads 0 and the
-                                                 # turn-based machine is used.
-                                                 battle_type: LCF.field?(db, :battlecommands) && db[:battlecommands] ? (db[:battlecommands][:battle_type] || 0) : 0,
-                                                 # Mid-battle roster sync
-                                                # (Game::Battle#sync_allies_from_party):
-                                                # a Change Party Member command
-                                                # run from a battle event page
-                                                # mutates this same live
-                                                # Game::Party, and the battle
-                                                # re-derives its own @allies
-                                                # from it every round/action
-                                                # rather than staying pinned to
-                                                # the `allies` snapshot taken
-                                                # just above. The screen itself
-                                                # (`@ui[:allies]`, the
-                                                # status window, actor sprites)
-                                                # follows the same change the
-                                                # instant it happens instead --
-                                                # see #on_battle_party_changed,
-                                                # reached from
-                                                # Interpreter#do_change_party
-                                                # via `@ui[:events].
-                                                # battle_screen` below.
-                                                party: @state.party),
-                       allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
-                       skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
-                       skills: [], items: [],
-                       status_win: nil, cmd_win: nil, target_win: nil,
-                       skill_win: nil, item_win: nil, ally_win: nil,
-                       action_win: nil, anim_timer: 0,
-                       back_sprite: nil, enemy_sprites: nil,
-                       result_win: nil, result: nil,
-                       # The troop's battle-event pages: their own interpreter,
-                       # the message window they draw into, and which pages have
-                       # already fired this turn (RPG2000 runs a page once per
-                       # turn its condition holds, so this resets each round).
-                       events: Game::Interpreter.new(@state), event_win: nil,
-                       pages_run: {},
-                       # Whether the just-drained #step_action entry finished
-                       # its battler's whole action (see #drive_battle_animate),
-                       # and which phase a running battle-event page resumes to
-                       # once it finishes (see #run_battle_events).
-                       battler_boundary: false, event_return_phase: :command,
-                       # Frames elapsed since this battle opened -- cosmetic
-                       # only (drives a levitating enemy's bob, #flying_offset),
-                       # never read for any combat/save-affecting purpose, so
-                       # it needs no seeding beyond starting at 0 every fight.
-                       frame: 0 })
-        @ui[:events].battle = @ui[:battle]
+        # Built before any field is set, in the literal's order, so a failing constructor leaves @ui untouched.
+        # `allies.dup`, not `allies` itself: `@ui.allies`
+        # below stays the exact same array Game::Battle is
+        # handed here would otherwise *be* -- Ruby arrays are
+        # mutable objects, so without the dup, deleting a
+        # departed member from the render-facing
+        # `@ui.allies` (#remove_battle_actor_sprite)
+        # would delete it from Game::Battle's own bookkeeping
+        # array too, breaking the rejoin-reuses-the-same-
+        # Combatant guarantee #sync_allies_from_party depends
+        # on. The two arrays start with the same
+        # Combatant *objects* (so a lookup through either one
+        # sees the same battle-only state) but are free to
+        # diverge in which objects they each hold.
+        battle = Game::Battle.new(allies.dup, foes, @rng,
+                                  situations, true, true, true,
+                                  @req.first_strike ? true : false,
+                                  properties,
+                                  # Lets the troop run its 行動パターン:
+                                  # skills, transformations and the
+                                  # switch / party-level conditions.
+                                  Game::EnemyAi.new(db, @state),
+                                  # A negative attribute rank rate
+                                  # (see #apply_attr_multiplier)
+                                  # is handled differently per
+                                  # edition.
+                                  rpg2003: Game.rpg2003_database?(db),
+                                  # RPG2003 battle timing
+                                  # presentation (Battle Setup
+                                  # chunk 0x1D field 7): 0
+                                  # traditional / 1 alternative /
+                                  # 2 gauge. Drives whether the
+                                  # active-time gauge engine
+                                  # (#advance_gauges) ever runs;
+                                  # RPG2000 has no battlecommands
+                                  # table, so this reads 0 and the
+                                  # turn-based machine is used.
+                                  battle_type: LCF.field?(db, :battlecommands) && db[:battlecommands] ? (db[:battlecommands][:battle_type] || 0) : 0,
+                                  # Mid-battle roster sync
+                                  # (Game::Battle#sync_allies_from_party):
+                                  # a Change Party Member command
+                                  # run from a battle event page
+                                  # mutates this same live
+                                  # Game::Party, and the battle
+                                  # re-derives its own @allies
+                                  # from it every round/action
+                                  # rather than staying pinned to
+                                  # the `allies` snapshot taken
+                                  # just above. The screen itself
+                                  # (`@ui.allies`, the
+                                  # status window, actor sprites)
+                                  # follows the same change the
+                                  # instant it happens instead --
+                                  # see #on_battle_party_changed,
+                                  # reached from
+                                  # Interpreter#do_change_party
+                                  # via `@ui.events.
+                                  # battle_screen` below.
+                                  party: @state.party)
+        events = Game::Interpreter.new(@state)
+        @ui.start(troop, battle, allies, foes, events)
+        @ui.events.battle = @ui.battle
         # Lets a Change Party Member command run from a battle event page
         # (Interpreter#do_change_party) reach back into this screen the
-        # moment it fires -- see #on_battle_party_changed. `@ui[:events]`
+        # moment it fires -- see #on_battle_party_changed. `@ui.events`
         # is the one interpreter ever running commands while a battle is open
         # (the foreground/parallel interpreters are held off by `event_busy?`/
         # `parallels_paused?` for as long as `@ui` exists), so this is
         # never set on any other interpreter.
-        @ui[:events].battle_screen = self
+        @ui.events.battle_screen = self
         # A battle page can Call Common Event (1005), so it needs the same
         # resolver the encounter's own owning interpreter runs against --
         # the foreground by default, or a Parallel Process's own interpreter
         # for a fight it opened itself (see `owner` above).
-        @ui[:events].resolver = @owner.resolver
+        @ui.events.resolver = @owner.resolver
         build_battle_sprites
         build_actor_sprites
         refresh_battle_status
@@ -308,8 +370,8 @@ class RPG2k
           enter_command_phase
         else
           show_battle_banner(lines)
-          @ui[:phase] = :encounter_message
-          @ui[:anim_timer] = BATTLE_ENCOUNTER_MSG_FRAMES
+          @ui.phase = :encounter_message
+          @ui.anim_timer = BATTLE_ENCOUNTER_MSG_FRAMES
         end
       end
 
@@ -329,7 +391,7 @@ class RPG2k
           "#{enemy.name}#{term(:encounter)}"
         end
         lines << term(:special_combat) if req.first_strike
-        @ui[:banner_reveal] = true unless lines.empty?
+        @ui.banner_reveal = true unless lines.empty?
         lines
       end
 
@@ -377,20 +439,20 @@ class RPG2k
       # and fall into the same turn-0-battle-event / command-phase flow
       # #start used to reach directly -- same settle-before-events ordering
       # as #start's own empty-troop branch, and for the identical reason (see
-      # that comment). `@ui[:anim_timer]` (the hold #start primes) is only
+      # that comment). `@ui.anim_timer` (the hold #start primes) is only
       # touched once every line is up, so the hold really does start at the
       # *last* line, which is what the wine capture measured.
       def drive_battle_encounter_message
         return if reveal_battle_banner_line
-        if @ui[:anim_timer] > 0
-          @ui[:anim_timer] -= 1
-          held = BATTLE_ENCOUNTER_MSG_FRAMES - @ui[:anim_timer]
-          return if @ui[:anim_timer] > 0 &&
+        if @ui.anim_timer > 0
+          @ui.anim_timer -= 1
+          held = BATTLE_ENCOUNTER_MSG_FRAMES - @ui.anim_timer
+          return if @ui.anim_timer > 0 &&
                     !(held >= BATTLE_ENCOUNTER_MSG_SKIP_FRAMES &&
                       Input.trigger?(Input::C))
         end
         close_battle_action
-        @ui[:phase] = :command
+        @ui.phase = :command
         return if settle_already_finished_battle
         return if run_battle_events
         enter_command_phase
@@ -402,18 +464,18 @@ class RPG2k
       # still running, so #drive_battle_encounter_message knows not to start
       # the final hold yet.
       def reveal_battle_banner_line
-        pending = @ui[:banner_pending]
-        return false unless pending && @ui[:banner_shown] < pending.size
-        @ui[:banner_timer] -= 1
-        return true if @ui[:banner_timer] > 0
-        @ui[:banner_shown] += 1
-        @ui[:banner_timer] = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
-        @ui[:action_win].dispose if @ui[:action_win]
+        pending = @ui.banner_pending
+        return false unless pending && @ui.banner_shown < pending.size
+        @ui.banner_timer -= 1
+        return true if @ui.banner_timer > 0
+        @ui.banner_shown += 1
+        @ui.banner_timer = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+        @ui.action_win.dispose if @ui.action_win
         # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left the
         # method tables, so only the 1-argument shape still dispatches;
         # banner_shown counts up from 1 here, and a Range goes through the
         # same mrb_ary_aget1_impl path as (start, length).
-        @ui[:action_win] = battle_panel_window(pending[0...@ui[:banner_shown]], 340)
+        @ui.action_win = battle_panel_window(pending[0...@ui.banner_shown], 340)
         true
       end
 
@@ -436,7 +498,7 @@ class RPG2k
       # only falls back to the normal command window when there is actually
       # someone to command.
       def settle_already_finished_battle
-        battle = @ui[:battle]
+        battle = @ui.battle
         return false unless battle.finished?
         battle.end_round
         enter_battle_result(battle.result)
@@ -456,7 +518,7 @@ class RPG2k
       # ordering predicts.
 
       def battler_z(i)
-        100 + (@ui[:troop].members.size - 1 - i)
+        100 + (@ui.troop.members.size - 1 - i)
       end
 
       # Vertical pixel bob for a levitating (`Game::Enemy#levitate`) troop
@@ -488,7 +550,7 @@ class RPG2k
           FLYING_OFFSETS = "4444445555555555666666666666777777777777777788888888888888888888888888888888888888888777777777777777766666666666655555555554444444444433333333332222222222221111111111111111000000000000000000000000000000000000000001111111111111111222222222222333333333344444"
           def flying_offset(member)
             return 0 unless member.levitate && @state.party.rpg2003?
-            frame = (@ui[:frame] || 0) + (member.flying_phase || 0)
+            frame = (@ui.frame || 0) + (member.flying_phase || 0)
             FLYING_OFFSETS[frame % FLYING_PERIOD].to_i - 4
           end
 
@@ -535,8 +597,8 @@ class RPG2k
       # #take_revealed_monsters), building the sprite on screen mid-battle.
       def build_battle_sprites
         build_battle_back(encounter_backdrop)
-        troop_members = @ui[:troop].members
-        @ui[:enemy_sprites] = Array.new(troop_members.size) do |i|
+        troop_members = @ui.troop.members
+        @ui.enemy_sprites = Array.new(troop_members.size) do |i|
           enemy = troop_members[i]
           next nil if enemy.hidden
           bmp = battler_bitmap(enemy)
@@ -552,8 +614,8 @@ class RPG2k
         # transformation mid-fight is noticed and redrawn (see
         # #refresh_battle_sprites) -- matching a reference implementation's own
         # sprite refresh, which rebuilds on either changing.
-        @ui[:sprite_names] = @ui[:foes].map { |f| f.battler_name }
-        @ui[:sprite_hues] = @ui[:foes].map { |f| f.battler_hue || 0 }
+        @ui.sprite_names = @ui.foes.map { |f| f.battler_name }
+        @ui.sprite_hues = @ui.foes.map { |f| f.battler_hue || 0 }
         refresh_battle_sprites
       end
 
@@ -573,11 +635,11 @@ class RPG2k
       # doesn't even answer #alternate_battle_layout?) builds nothing,
       # matching current behaviour exactly.
       def build_actor_sprites
-        @ui[:actor_sprites] = nil
+        @ui.actor_sprites = nil
         return unless @state.party.respond_to?(:alternate_battle_layout?) &&
                       @state.party.alternate_battle_layout?
-        allies = @ui[:allies]
-        @ui[:actor_sprites] = Array.new(allies.size) do |i|
+        allies = @ui.allies
+        @ui.actor_sprites = Array.new(allies.size) do |i|
           ally = allies[i]
           build_actor_sprite(ally.actor, i, defending: ally.defending, dead: ally.dead?,
                              states: ally.states)
@@ -749,7 +811,7 @@ class RPG2k
       # front-row-gets-half-width, back-row-gets-zero rule.
       #
       # Returns the sprite's top-left [x, y] for the `i`-th member of
-      # `@ui[:allies]`, or nil when the database asks for manual placement
+      # `@ui.allies`, or nil when the database asks for manual placement
       # (the caller falls back to battle_x/battle_y) or the party outgrows the
       # grid (8 rows).
       #
@@ -768,10 +830,10 @@ class RPG2k
       def automatic_battle_position(i)
         return nil unless @state.party.respond_to?(:automatic_battle_placement?) &&
                           @state.party.automatic_battle_placement?
-        pos = battle_grid_position(i, @ui[:allies].length)
+        pos = battle_grid_position(i, @ui.allies.length)
         return nil unless pos
         half = ACTOR_CHARSET_CELL / 2
-        ally = @ui[:allies][i]
+        ally = @ui.allies[i]
         row_x_offset = ally && ally.back_row? ? 0 : half
         # The clamp keeps the *centre* on screen (y is deliberately unclamped
         # for actors); the sprite's own top-left is then half a cell left of
@@ -840,14 +902,14 @@ class RPG2k
           inclination: LCF.field?(row, :grid_inclination) ? (row[:grid_inclination] || 0) : 0 }
       end
 
-      # Interpreter#do_change_party's hook (via `@ui[:events].
+      # Interpreter#do_change_party's hook (via `@ui.events.
       # battle_screen`, set in #start) for a Change Party Member battle
       # event that actually added or removed a member -- mirrors a reference
       # implementation's party-change hook running synchronously, right when the
       # party changes, rather than leaving the screen to notice on some later
       # redraw. `actor` is the `Game::Actor` (from `Game::Party#roster`, so it
       # resolves the same whether they are still a member or just left).
-      # `Game::Battle`'s own roster (`@ui[:battle]`) is left alone --
+      # `Game::Battle`'s own roster (`@ui.battle`) is left alone --
       # its `sync_allies_from_party`/`out_of_play?`/`member` bookkeeping
       # already reads correctly from the live party on its own
       # schedule; this only updates what's drawn.
@@ -864,37 +926,37 @@ class RPG2k
       # state -- the same reuse-on-rejoin guarantee the mechanics give,
       # or build a fresh one exactly the way
       # `Game::Battle#sync_allies_from_party` would on its own next sync --
-      # pushed onto `@ui[:battle].allies` (not just returned) so that
+      # pushed onto `@ui.battle.allies` (not just returned) so that
       # later sync finds it already there and reuses it too, rather than the
       # render layer and the battle ending up tracking two different
       # `Combatant` objects for the same actor.
       def add_battle_actor_sprite(actor)
-        battle = @ui[:battle]
+        battle = @ui.battle
         combatant = battle.ally_by_actor_id(actor.id)
         unless combatant
           combatant = Game::Battle.from_actor(actor)
           battle.allies.push(combatant)
         end
-        return if @ui[:allies].any? { |c| c.equal?(combatant) }
-        @ui[:allies].push(combatant)
-        return unless @ui[:actor_sprites]
-        i = @ui[:allies].length - 1
-        @ui[:actor_sprites].push(build_actor_sprite(combatant.actor, i, defending: combatant.defending, dead: combatant.dead?, states: combatant.states))
+        return if @ui.allies.any? { |c| c.equal?(combatant) }
+        @ui.allies.push(combatant)
+        return unless @ui.actor_sprites
+        i = @ui.allies.length - 1
+        @ui.actor_sprites.push(build_actor_sprite(combatant.actor, i, defending: combatant.defending, dead: combatant.dead?, states: combatant.states))
         reset_actor_battler_z
       end
 
       # An actor just left the fight: drop their `Combatant` from the
-      # render-facing `@ui[:allies]` (not from `Game::Battle`'s own
+      # render-facing `@ui.allies` (not from `Game::Battle`'s own
       # roster -- see #on_battle_party_changed) and dispose their specific
       # sprite, leaving every other actor's sprite untouched. A rejoin later
       # builds a brand new sprite (#add_battle_actor_sprite always calls
       # #build_actor_sprite fresh); this never leaves a disposed `Sprite`
       # sitting in the collection for that to reuse.
       def remove_battle_actor_sprite(actor)
-        idx = @ui[:allies].index { |c| c.actor && c.actor.id == actor.id }
+        idx = @ui.allies.index { |c| c.actor && c.actor.id == actor.id }
         return unless idx
-        @ui[:allies].delete_at(idx)
-        sprites = @ui[:actor_sprites]
+        @ui.allies.delete_at(idx)
+        sprites = @ui.actor_sprites
         return unless sprites
         dispose_battle_sprite(sprites.delete_at(idx))
         reset_actor_battler_z
@@ -913,16 +975,16 @@ class RPG2k
       # (see `Combatant.from_actor`'s own row comment) -- only the pose can
       # still change there.
       def reposition_actor_sprite(combatant)
-        sprites = @ui[:actor_sprites]
+        sprites = @ui.actor_sprites
         return unless sprites
-        i = @ui[:allies].index { |c| c.equal?(combatant) }
+        i = @ui.allies.index { |c| c.equal?(combatant) }
         return unless i && sprites[i]
         dispose_battle_sprite(sprites[i])
         sprites[i] = build_actor_sprite(combatant.actor, i, defending: combatant.defending, dead: combatant.dead?, states: combatant.states)
       end
 
       # Re-derive every surviving actor sprite's Z from its current index in
-      # `@ui[:allies]` (#actor_sprite_z). An add or remove elsewhere in
+      # `@ui.allies` (#actor_sprite_z). An add or remove elsewhere in
       # the roster shifts everyone after it, so without this, two sprites can
       # end up sharing a Z once enough adds/removes have happened -- e.g.
       # remove index 1 of 3 (leaving index 2's sprite still at its old Z 202),
@@ -930,7 +992,7 @@ class RPG2k
       # 202. Matches a reference implementation's own battler-Z reset, called
       # for the same reason right after a party change adds a sprite.
       def reset_actor_battler_z
-        sprites = @ui[:actor_sprites]
+        sprites = @ui.actor_sprites
         return unless sprites
         sprites.each_with_index { |spr, i| spr.z = actor_sprite_z(i) if spr }
       end
@@ -1044,7 +1106,7 @@ class RPG2k
         # map and not the one element on screen until the tint next changes.
         # #update_map_tone keeps it in lockstep thereafter.
         spr.tone = @map_scene.current_map_tone if @map_scene.respond_to?(:current_map_tone)
-        @ui[:back_sprite] = spr
+        @ui.back_sprite = spr
       end
 
       # Mirror the map layer's screen tone onto the battle backdrop. The
@@ -1058,7 +1120,7 @@ class RPG2k
       # calls this whenever the tint changes and #build_battle_back seeds it
       # on build.
       def apply_backdrop_tone(tone)
-        spr = @ui[:back_sprite]
+        spr = @ui.back_sprite
         spr.tone = tone if spr
       end
 
@@ -1116,8 +1178,8 @@ class RPG2k
       # Change Battle Background (13210): swap the backdrop mid-fight, releasing
       # the sprite and bitmap the old one held.
       def rebuild_battle_back(name)
-        dispose_battle_sprite(@ui[:back_sprite])
-        @ui[:back_sprite] = nil
+        dispose_battle_sprite(@ui.back_sprite)
+        @ui.back_sprite = nil
         build_battle_back(name)
       end
 
@@ -1165,7 +1227,7 @@ class RPG2k
       # for the per-enemy sprites instead of a viewport tone. A sprite with no
       # flash in flight costs nothing here (native #update no-ops).
       def update_enemy_flashes
-        (@ui[:enemy_sprites] || []).each { |s| s.update if s }
+        (@ui.enemy_sprites || []).each { |s| s.update if s }
       end
 
       # Advance the per-battle frame counter #flying_offset reads and re-seat
@@ -1174,10 +1236,10 @@ class RPG2k
       # `levitate` member: #flying_offset already reads 0 for both, so the
       # assignment below is just re-writing the same y already set.
       def update_enemy_positions
-        @ui[:frame] = (@ui[:frame] || 0) + 1
-        sprites = @ui[:enemy_sprites]
+        @ui.frame = (@ui.frame || 0) + 1
+        sprites = @ui.enemy_sprites
         return unless sprites
-        @ui[:troop].members.each_with_index do |member, i|
+        @ui.troop.members.each_with_index do |member, i|
           spr = sprites[i]
           next unless spr && member.levitate
           spr.y = battler_y(member, spr.bitmap)
@@ -1187,14 +1249,14 @@ class RPG2k
       # Show a living enemy's sprite, hide a defeated one — called after each
       # animated action so a downed enemy vanishes from the field.
       def refresh_battle_sprites
-        sprites = @ui[:enemy_sprites]
+        sprites = @ui.enemy_sprites
         return unless sprites
         # A transformation swaps a monster's graphic mid-fight, so redraw any
         # combatant no longer wearing the battler its sprite was built from
         # before deciding what is visible.
-        names = (@ui[:sprite_names] ||= [])
-        hues = (@ui[:sprite_hues] ||= [])
-        @ui[:foes].each_with_index do |foe, i|
+        names = (@ui.sprite_names ||= [])
+        hues = (@ui.sprite_hues ||= [])
+        @ui.foes.each_with_index do |foe, i|
           changed = names[i] != foe.battler_name || hues[i] != (foe.battler_hue || 0)
           next unless changed
           rebuild_battler_sprite(i, foe) if sprites[i]
@@ -1211,7 +1273,7 @@ class RPG2k
           # below.
           sync_troop_member_rewards(i, foe)
         end
-        @ui[:foes].each_with_index do |foe, i|
+        @ui.foes.each_with_index do |foe, i|
           spr = sprites[i]
           # Out of play, not merely dead: a monster that has fled (its own Escape
           # action, or a page's Force Flee) or one still flagged invisible is off
@@ -1225,7 +1287,7 @@ class RPG2k
           # #drops key off the troop member's own `hidden`, not the combatant's
           # -- without this they would still pay out for a monster that never
           # actually died this fight.
-          member = @ui[:troop].members[i]
+          member = @ui.troop.members[i]
           member.hidden = true if member && foe.hidden && !member.hidden
         end
       end
@@ -1250,8 +1312,8 @@ class RPG2k
       # to 0..255 convention `Interpreter::FLASH_SCALE`/#fire_target_flash
       # already use for a raw RGSS `Color`.
       def rebuild_battler_sprite(i, foe)
-        sprites = @ui[:enemy_sprites]
-        member = @ui[:troop].members[i]
+        sprites = @ui.enemy_sprites
+        member = @ui.troop.members[i]
         return unless member
         old = sprites[i]
         bmp = battler_bitmap(foe)
@@ -1283,12 +1345,12 @@ class RPG2k
       # `enemy_id`, the identical constructor `EnemyAi#enemy` used to resolve
       # what the combatant just turned into.
       def sync_troop_member_rewards(i, foe)
-        member = @ui[:troop].members[i]
+        member = @ui.troop.members[i]
         return unless member && foe.respond_to?(:enemy_id) && foe.enemy_id
         member.reseed_rewards(Game::Enemy.new(db, foe.enemy_id))
       end
 
-      def living_allies; @ui[:allies].reject { |a| a.dead? }; end
+      def living_allies; @ui.allies.reject { |a| a.dead? }; end
 
       # Allies selectable as a manually-chosen Battle Item target right now.
       # Unlike a skill target (still `#living_allies` below -- a reference
@@ -1314,21 +1376,21 @@ class RPG2k
       # actor_set at all.
       def battle_ally_targets
         return living_allies unless pending_kind == :item
-        allies = @ui[:allies]
+        allies = @ui.allies
         return allies unless @state.party.respond_to?(:item_usable_by?)
-        it = @ui[:pending] && @ui[:pending][:it]
+        it = @ui.pending && @ui.pending[:it]
         return allies unless it
         allies.select { |a| a.actor.nil? || @state.party.item_usable_by?(it, a.actor.id) }
       end
       # Targetable foes: alive *and* in play, so a troop member still flagged
       # invisible never appears in the target cursor.
-      def living_foes;   @ui[:foes].reject(&:out_of_play?); end
-      def current_actor; living_allies[@ui[:actor_i]]; end
+      def living_foes;   @ui.foes.reject(&:out_of_play?); end
+      def current_actor; living_allies[@ui.actor_i]; end
 
       # The real Game::Actor behind the current battler (the snapshots are built
       # from the party in order), so the Skill menu can read its known skills.
       def current_actor_row
-        idx = @ui[:allies].index(current_actor)
+        idx = @ui.allies.index(current_actor)
         idx ? @state.party.actors[idx] : nil
       end
 
@@ -1395,7 +1457,7 @@ class RPG2k
       # editor-only extension with no real LCF field, so there is
       # nothing for a vanilla database to gate this on beyond the edition).
       def row_command_available?
-        @ui[:battle] && @ui[:battle].respond_to?(:rpg2003?) && @ui[:battle].rpg2003?
+        @ui.battle && @ui.battle.respond_to?(:rpg2003?) && @ui.battle.rpg2003?
       end
 
       # `actor`'s own RPG2003 battle-command list resolved to menu rows, or nil
@@ -1494,13 +1556,13 @@ class RPG2k
       # the same way.
       def drive_battle_command
         if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
-          @ui[:cmd] += 1
-          @ui[:cmd] %= battle_commands.length
+          @ui.cmd += 1
+          @ui.cmd %= battle_commands.length
           draw_battle_command
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
-          @ui[:cmd] -= 1
-          @ui[:cmd] %= battle_commands.length
+          @ui.cmd -= 1
+          @ui.cmd %= battle_commands.length
           draw_battle_command
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
@@ -1522,8 +1584,8 @@ class RPG2k
             open_battle_options
           else
             # Re-commanding the previous actor is the ordinary case.
-            @ui[:actor_i] = prev_i # re-command the previous commandable member
-            @ui[:cmd] = 0
+            @ui.actor_i = prev_i # re-command the previous commandable member
+            @ui.cmd = 0
             draw_battle_command
           end
         end
@@ -1552,7 +1614,7 @@ class RPG2k
       # to act on -- exactly this pair of checks: no significant restriction
       # and not already on auto battle.
       def any_commandable_ally?
-        battle = @ui[:battle]
+        battle = @ui.battle
         living_allies.any? { |a| !battle.command_restricted?(a) && !force_ai_actor?(a) }
       end
 
@@ -1567,18 +1629,18 @@ class RPG2k
       # is wired separately in #drive_battle_command and is not gated by this
       # flag, matching `SelectPreviousActor()`'s own unconditional re-entry.
       def enter_command_phase
-        if @ui[:options_shown] || !any_commandable_ally?
-          @ui[:options_shown] = true
+        if @ui.options_shown || !any_commandable_ally?
+          @ui.options_shown = true
           open_next_command
         else
-          @ui[:options_shown] = true
+          @ui.options_shown = true
           open_battle_options
         end
       end
 
       def open_battle_options
-        @ui[:phase] = :battle_options
-        @ui[:opt] = 0
+        @ui.phase = :battle_options
+        @ui.opt = 0
         draw_battle_options
       end
 
@@ -1593,13 +1655,13 @@ class RPG2k
       def drive_battle_options
         rows = battle_option_rows
         if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
-          @ui[:opt] += 1
-          @ui[:opt] %= rows.length
+          @ui.opt += 1
+          @ui.opt %= rows.length
           draw_battle_options
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
-          @ui[:opt] -= 1
-          @ui[:opt] %= rows.length
+          @ui.opt -= 1
+          @ui.opt %= rows.length
           draw_battle_options
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
@@ -1615,10 +1677,10 @@ class RPG2k
       # gate on `allow_escape` this engine's old direct-B-press shortcut
       # already had, just triggered from the window instead.
       def select_battle_option
-        case battle_option_rows[@ui[:opt]][:action]
+        case battle_option_rows[@ui.opt][:action]
         when :battle
           play_system_se(SFX_DECISION)
-          @ui[:phase] = :command
+          @ui.phase = :command
           # `open_next_command`, not a direct `draw_battle_command` -- the
           # window opening never advanced `actor_i` past a restricted/
           # Forced-AI leading actor (matching a reference implementation's own
@@ -1650,13 +1712,13 @@ class RPG2k
       # command phase already leaves it -- its round action is decided
       # elsewhere, not by a queued command.
       def queue_auto_battle_round
-        battle = @ui[:battle]
+        battle = @ui.battle
         living_allies.each do |a|
           next if battle.command_restricted?(a)
           battle.choose_auto_battle_command(a)
         end
-        @ui[:actor_i] = living_allies.length
-        @ui[:phase] = :command
+        @ui.actor_i = living_allies.length
+        @ui.phase = :command
         open_next_command
       end
 
@@ -1675,7 +1737,7 @@ class RPG2k
       # a first-strike encounter's opening Escape always succeeds even against
       # enemies fast enough to floor the roll at 0%.
       def try_battle_escape
-        battle = @ui[:battle]
+        battle = @ui.battle
         if battle.attempt_escape(battle.first_strike?)
           # A dedicated Escape SE, not Decision -- ported from a reference
           # implementation's own escape handling, not independently confirmed
@@ -1715,7 +1777,7 @@ class RPG2k
         # command window confirms. The RPG2003 battle combo (Enable Combo) and
         # the battle-page `command_actor` condition both read it; RPG2000 never
         # consults either, so recording it for every battle is harmless.
-        row = battle_command_rows[@ui[:cmd]]
+        row = battle_command_rows[@ui.cmd]
         # Row carries no real command_id (it is not a Battle-Commands table
         # entry -- see #battle_command_rows), so it clears any previously
         # recorded command instead of leaving a stale one behind, mirroring a
@@ -1728,14 +1790,14 @@ class RPG2k
         case row[:action]
         when :attack
           play_system_se(SFX_DECISION)
-          @ui[:pending] = { kind: :attack }
-          @ui[:target_i] = 0
-          @ui[:phase] = :target
+          @ui.pending = { kind: :attack }
+          @ui.target_i = 0
+          @ui.phase = :target
           draw_battle_target
         when :skill then open_battle_skill
         when :defend
           play_system_se(SFX_DECISION)
-          @ui[:battle].command_defend(current_actor)
+          @ui.battle.command_defend(current_actor)
           # The alternate-layout sprite swaps to its Defend pose the instant
           # the command commits (a reference implementation's own idle
           # animation checks the defending flag continuously; this codebase
@@ -1755,7 +1817,7 @@ class RPG2k
           # `Game::Battle#command_skip` resolves to here (#strike returns nil
           # for a skipped battler and the turn is passed).
           play_system_se(SFX_DECISION)
-          @ui[:battle].command_skip(current_actor)
+          @ui.battle.command_skip(current_actor)
           advance_actor
         when :row
           # RPG2003's Row battle command: flip the acting ally's front/back
@@ -1772,7 +1834,7 @@ class RPG2k
           # Combatant class's own field comment) -- and, like Special,
           # consumes the turn as a `DoNothing` action
           # (`Game::Battle#command_skip`).
-          if @ui[:battle].toggle_row(current_actor)
+          if @ui.battle.toggle_row(current_actor)
             if current_actor_row && current_actor_row.respond_to?(:battle_row=)
               current_actor_row.battle_row = current_actor.row
             end
@@ -1782,7 +1844,7 @@ class RPG2k
             # roster-change redraw happens to catch it up.
             reposition_actor_sprite(current_actor)
             play_system_se(SFX_DECISION)
-            @ui[:battle].command_skip(current_actor)
+            @ui.battle.command_skip(current_actor)
             advance_actor
           else
             play_system_se(SFX_BUZZER)
@@ -1823,28 +1885,28 @@ class RPG2k
           move_battle_target_cursor(-1, foes.length)
         elsif Input.trigger?(Input::C)
           play_system_se(SFX_DECISION)
-          target = foes[@ui[:target_i]]
+          target = foes[@ui.target_i]
           close_battle_target
           if pending_skill?
             apply_pending_skill(target)
           else
-            @ui[:battle].command_attack(current_actor, target)
-            @ui[:pending] = nil
-            @ui[:phase] = :command
+            @ui.battle.command_attack(current_actor, target)
+            @ui.pending = nil
+            @ui.phase = :command
             advance_actor
           end
         elsif Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           close_battle_target
           if pending_kind == :skill
-            @ui[:phase] = :skill
+            @ui.phase = :skill
             draw_battle_skill
           elsif pending_skill? # an item-invoked skill: back out to the item list
-            @ui[:phase] = :item
+            @ui.phase = :item
             draw_battle_item
           else
-            @ui[:pending] = nil
-            @ui[:phase] = :command
+            @ui.pending = nil
+            @ui.phase = :command
             draw_battle_command
           end
         end
@@ -1859,27 +1921,27 @@ class RPG2k
 
       def move_battle_target_cursor(delta, foes_count)
         if foes_count > BATTLE_VISIBLE_ROWS
-          target = @ui[:target_i] + delta
+          target = @ui.target_i + delta
           return if target.negative? || target >= BATTLE_VISIBLE_ROWS
-          @ui[:target_i] = target
+          @ui.target_i = target
         else
-          @ui[:target_i] = (@ui[:target_i] + delta) % foes_count
+          @ui.target_i = (@ui.target_i + delta) % foes_count
         end
         draw_battle_target
         play_system_se(SFX_CURSOR)
       end
 
-      def pending_kind; @ui[:pending] && @ui[:pending][:kind]; end
+      def pending_kind; @ui.pending && @ui.pending[:kind]; end
 
       # Whether the pending action casts a skill -- either chosen from the
       # Skill menu (`kind: :skill`) or invoked by a special/use_skill battle
       # item (`kind: :item` with a resolved `sk`, see #drive_battle_item's
       # confirm branch) -- as opposed to a plain medicine/switch item or a
       # basic Attack, both of which leave `sk` unset. #apply_pending_skill/
-      # #apply_pending_skill_all read `@ui[:pending][:item_id]` themselves to
+      # #apply_pending_skill_all read `@ui.pending[:item_id]` themselves to
       # tell the two skill sources apart where that still matters (the SP
       # cost and the log entry's bag-consumption id).
-      def pending_skill?; @ui[:pending] && @ui[:pending][:sk]; end
+      def pending_skill?; @ui.pending && @ui.pending[:sk]; end
 
       # -- Skill sub-menu ------------------------------------------------------
 
@@ -1890,14 +1952,14 @@ class RPG2k
         list = actor ? @state.party.battle_skills(actor, current_actor) : []
         # A status that seals skills (封印 / Silence) takes them off the menu
         # rather than letting the actor pick one that would be refused.
-        battle = @ui[:battle]
+        battle = @ui.battle
         battler = current_actor
         if battle && battler
           list = list.reject do |sid, _cost|
             battle.skill_sealed?(battler, @state.party.db_skill(sid))
           end
         end
-        @ui[:skills] = list
+        @ui.skills = list
         # A reference implementation always plays Decision opening this list, and
         # Buzzer only once a confirm inside it finds nothing usable
         # (checking whether the selection is enabled)
@@ -1906,7 +1968,7 @@ class RPG2k
         # never opens an empty list at all, so
         # Buzzer plays here, at the one point that same "nothing to pick"
         # outcome is actually known.
-        if @ui[:skills].empty?
+        if @ui.skills.empty?
           play_system_se(SFX_BUZZER)
           return
         end
@@ -1918,8 +1980,8 @@ class RPG2k
         # that skill no longer appears in this list (forgotten, or newly
         # sealed by a status effect).
         remembered = current_actor.last_skill_id
-        @ui[:skill_i] = remembered && @ui[:skills].index { |sid, _cost| sid == remembered } || 0
-        @ui[:phase] = :skill
+        @ui.skill_i = remembered && @ui.skills.index { |sid, _cost| sid == remembered } || 0
+        @ui.phase = :skill
         draw_battle_skill
       end
 
@@ -2022,7 +2084,7 @@ class RPG2k
       # these probes and restored to their original bytes (byte-identical by
       # `md5sum`) once each wine session was torn down.
       def drive_battle_skill
-        skills = @ui[:skills]
+        skills = @ui.skills
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !skills.empty?
           move_battle_skill_cursor(BATTLE_LIST_COLUMN_MAX)
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !skills.empty?
@@ -2036,15 +2098,15 @@ class RPG2k
         elsif Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           close_battle_skill
-          @ui[:phase] = :command
+          @ui.phase = :command
           draw_battle_command
         end
       end
 
       def move_battle_skill_cursor(delta)
-        target = move_battle_list_index(@ui[:skill_i], delta, @ui[:skills].length)
+        target = move_battle_list_index(@ui.skill_i, delta, @ui.skills.length)
         return unless target
-        @ui[:skill_i] = target
+        @ui.skill_i = target
         draw_battle_skill
         play_system_se(SFX_CURSOR)
       end
@@ -2071,7 +2133,7 @@ class RPG2k
       # otherwise Decision, then route to enemy / ally target selection (or
       # cast at once on a self-scope skill).
       def confirm_battle_skill
-        sid, cost = @ui[:skills][@ui[:skill_i]]
+        sid, cost = @ui.skills[@ui.skill_i]
         sk = @state.party.db_skill(sid)
         if battle_skill_unavailable?(cost, sk)
           play_system_se(SFX_BUZZER)
@@ -2079,22 +2141,22 @@ class RPG2k
         end
         play_system_se(SFX_DECISION)
         current_actor.last_skill_id = sid
-        @ui[:pending] = { kind: :skill, sk: sk, sid: sid }
+        @ui.pending = { kind: :skill, sk: sk, sid: sid }
         close_battle_skill
         case @state.party.battle_skill_target(sk)
         when :self
           apply_pending_skill(current_actor)
         when :enemy
-          @ui[:target_i] = 0
-          @ui[:phase] = :target
+          @ui.target_i = 0
+          @ui.phase = :target
           draw_battle_target
         when :all_enemy
           apply_pending_skill_all(living_foes)
         when :all_ally
           apply_pending_skill_all(living_allies)
         else # :ally
-          @ui[:ally_i] = 0
-          @ui[:phase] = :ally_target
+          @ui.ally_i = 0
+          @ui.phase = :ally_target
           draw_battle_ally_target
         end
       end
@@ -2110,11 +2172,11 @@ class RPG2k
       # #drive_battle_animate's bag consumption and #reflects_skill?'s own
       # item-casts-are-never-reflected exclusion.
       def apply_pending_skill(target)
-        sk = @ui[:pending][:sk]
-        sid = @ui[:pending][:sid]
-        item_id = @ui[:pending][:item_id]
+        sk = @ui.pending[:sk]
+        sid = @ui.pending[:sid]
+        item_id = @ui.pending[:item_id]
         c = @state.party.battle_skill_command(sk, current_actor, target, free: !item_id.nil?)
-        @ui[:battle].command_skill(current_actor, target,
+        @ui.battle.command_skill(current_actor, target,
                                           name: sk[:name], skill_id: sid, item_id: item_id,
                                           absorb: c[:absorb] ? true : false,
                                           # Left as `c[:attack]` verbatim (not coerced to a
@@ -2137,8 +2199,8 @@ class RPG2k
                                           cured: c[:cured],
                                           physical_rate: c[:physical_rate] || 0,
                                           switch_id: c[:switch_id])
-        @ui[:pending] = nil
-        @ui[:phase] = :command
+        @ui.pending = nil
+        @ui.phase = :command
         advance_actor
       end
 
@@ -2150,15 +2212,15 @@ class RPG2k
       # identical comment -- the item pays instead of SP, and rides the
       # command for bag consumption / reflect exclusion.
       def apply_pending_skill_all(targets)
-        sk = @ui[:pending][:sk]
-        sid = @ui[:pending][:sid]
-        item_id = @ui[:pending][:item_id]
+        sk = @ui.pending[:sk]
+        sid = @ui.pending[:sid]
+        item_id = @ui.pending[:item_id]
         meta = @state.party.battle_skill_command(sk, current_actor, targets.first, free: !item_id.nil?)
         effects = targets.map do |t|
           c = @state.party.battle_skill_command(sk, current_actor, t, free: !item_id.nil?)
           { target: t, hp: c[:hp], mp: c[:mp] }
         end
-        @ui[:battle].command_skill_all(current_actor, effects,
+        @ui.battle.command_skill_all(current_actor, effects,
                                               name: sk[:name], skill_id: sid, item_id: item_id,
                                               absorb: meta[:absorb] ? true : false,
                                               attack: meta[:attack], # see #apply_pending_skill's comment
@@ -2172,8 +2234,8 @@ class RPG2k
                                               stat_effect: meta[:stat_effect] || 0,
                                               cured: meta[:cured],
                                               physical_rate: meta[:physical_rate] || 0)
-        @ui[:pending] = nil
-        @ui[:phase] = :command
+        @ui.pending = nil
+        @ui.phase = :command
         advance_actor
       end
 
@@ -2182,16 +2244,16 @@ class RPG2k
       # Open the party's battle-usable items (nothing to open if the bag holds
       # none).
       def open_battle_item
-        @ui[:items] = @state.party.battle_items
+        @ui.items = @state.party.battle_items
         # See #start_skill's identical comment -- the same Decision/
         # Buzzer split, ported from that reference implementation.
-        if @ui[:items].empty?
+        if @ui.items.empty?
           play_system_se(SFX_BUZZER)
           return
         end
         play_system_se(SFX_DECISION)
-        @ui[:item_i] = 0
-        @ui[:phase] = :item
+        @ui.item_i = 0
+        @ui.phase = :item
         draw_battle_item
       end
 
@@ -2226,7 +2288,7 @@ class RPG2k
       # merely inherited from a shared code shape, the same outcome cycle
       # #130 reached for the options/command cursors.
       def drive_battle_item
-        items = @ui[:items]
+        items = @ui.items
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !items.empty?
           move_battle_item_cursor(BATTLE_LIST_COLUMN_MAX)
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !items.empty?
@@ -2236,7 +2298,7 @@ class RPG2k
         elsif (Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && !items.empty?
           move_battle_item_cursor(-1)
         elsif Input.trigger?(Input::C)
-          item_id, _count = @ui[:items][@ui[:item_i]]
+          item_id, _count = @ui.items[@ui.item_i]
           # A row now can hold an item #battle_items lists but is not
           # battle-usable (see its own doc comment) -- selectable, since the
           # cursor moves freely onto it, but Decision just buzzes and stays,
@@ -2249,7 +2311,7 @@ class RPG2k
           end
           play_system_se(SFX_DECISION)
           it = @state.party.db_item(item_id)
-          @ui[:pending] = { kind: :item, item_id: item_id, it: it }
+          @ui.pending = { kind: :item, item_id: item_id, it: it }
           close_battle_item
           # A type-9 special item, or an equipment item flagged `use_skill`,
           # invokes the skill named in its `skill_id` instead of being plain
@@ -2264,22 +2326,22 @@ class RPG2k
           # every skill reached here is one #battle_skill_target can resolve.
           sk = @state.party.skill_invoking_item?(it) ? @state.party.db_skill(it[:skill_id]) : nil
           if sk
-            @ui[:pending][:sk] = sk
-            @ui[:pending][:sid] = it[:skill_id]
+            @ui.pending[:sk] = sk
+            @ui.pending[:sid] = it[:skill_id]
             case @state.party.battle_skill_target(sk)
             when :self
               apply_pending_skill(current_actor)
             when :enemy
-              @ui[:target_i] = 0
-              @ui[:phase] = :target
+              @ui.target_i = 0
+              @ui.phase = :target
               draw_battle_target
             when :all_enemy
               apply_pending_skill_all(living_foes)
             when :all_ally
               apply_pending_skill_all(living_allies)
             else # :ally
-              @ui[:ally_i] = 0
-              @ui[:phase] = :ally_target
+              @ui.ally_i = 0
+              @ui.phase = :ally_target
               draw_battle_ally_target
             end
           elsif @state.party.switch_item?(item_id)
@@ -2290,24 +2352,24 @@ class RPG2k
             # itself, not a living-only subset, which is
             # what lets an all-party 蘇生専用 item revive every KO'd member
             # in one cast.
-            apply_pending_item_all(@ui[:allies])
+            apply_pending_item_all(@ui.allies)
           else
-            @ui[:ally_i] = 0
-            @ui[:phase] = :ally_target
+            @ui.ally_i = 0
+            @ui.phase = :ally_target
             draw_battle_ally_target
           end
         elsif Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           close_battle_item
-          @ui[:phase] = :command
+          @ui.phase = :command
           draw_battle_command
         end
       end
 
       def move_battle_item_cursor(delta)
-        target = move_battle_list_index(@ui[:item_i], delta, @ui[:items].length)
+        target = move_battle_list_index(@ui.item_i, delta, @ui.items.length)
         return unless target
-        @ui[:item_i] = target
+        @ui.item_i = target
         draw_battle_item
         play_system_se(SFX_CURSOR)
       end
@@ -2351,17 +2413,17 @@ class RPG2k
       # does), and a plain Down x4 visits all four rows in order before
       # wrapping, Up from row 0 wraps straight to row 3. Fixed by dropping
       # the Right/Left arms entirely -- Down/Up (trigger or repeat) are the
-      # only inputs that move `@ui[:ally_i]`.
+      # only inputs that move `@ui.ally_i`.
       def drive_battle_ally_target
         allies = battle_ally_targets
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !allies.empty?
-          @ui[:ally_i] += 1
-          @ui[:ally_i] %= allies.length
+          @ui.ally_i += 1
+          @ui.ally_i %= allies.length
           draw_battle_ally_target
           play_system_se(SFX_CURSOR)
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !allies.empty?
-          @ui[:ally_i] -= 1
-          @ui[:ally_i] %= allies.length
+          @ui.ally_i -= 1
+          @ui.ally_i %= allies.length
           draw_battle_ally_target
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C) && !allies.empty?
@@ -2371,7 +2433,7 @@ class RPG2k
           # Attack/Defend/Item/Skill above, every one of which plays
           # Decision as its own first statement before acting.
           play_system_se(SFX_DECISION)
-          target = allies[@ui[:ally_i]]
+          target = allies[@ui.ally_i]
           close_battle_ally_target
           if pending_skill?
             apply_pending_skill(target)
@@ -2382,10 +2444,10 @@ class RPG2k
           play_system_se(SFX_CANCEL)
           close_battle_ally_target
           if pending_kind == :skill
-            @ui[:phase] = :skill
+            @ui.phase = :skill
             draw_battle_skill
           else
-            @ui[:phase] = :item
+            @ui.phase = :item
             draw_battle_item
           end
         end
@@ -2402,52 +2464,52 @@ class RPG2k
       # the action actually lands, exactly like the bag deduction it sits
       # beside there.
       def apply_pending_switch_item
-        pending = @ui[:pending]
-        @ui[:battle].command_item(current_actor, current_actor,
+        pending = @ui.pending
+        @ui.battle.command_item(current_actor, current_actor,
                                          item_id: pending[:item_id],
                                          name: pending[:it][:name],
                                          switch_id: pending[:it][:switch_id])
-        @ui[:pending] = nil
-        @ui[:phase] = :command
+        @ui.pending = nil
+        @ui.phase = :command
         advance_actor
       end
 
       # Commit the pending item on `target` (recovery from the model; the bag is
       # consumed later, when the action lands), then move to the next actor.
       def apply_pending_item(target)
-        pending = @ui[:pending]
+        pending = @ui.pending
         c = @state.party.battle_item_command(pending[:it], target)
-        @ui[:battle].command_item(current_actor, target,
+        @ui.battle.command_item(current_actor, target,
                                          item_id: pending[:item_id],
                                          name: pending[:it][:name],
                                          hp: c[:hp], mp: c[:mp], cured: c[:cured])
-        @ui[:pending] = nil
-        @ui[:phase] = :command
+        @ui.pending = nil
+        @ui.phase = :command
         advance_actor
       end
 
       # Commit an all-party item on every living ally: one per-member recovery
       # from the model, queued as a single volley that consumes one item.
       def apply_pending_item_all(targets)
-        pending = @ui[:pending]
+        pending = @ui.pending
         effects = targets.map do |t|
           c = @state.party.battle_item_command(pending[:it], t)
           { target: t, hp: c[:hp], mp: c[:mp] }
         end
         cured = @state.party.battle_item_command(pending[:it], targets.first)[:cured]
-        @ui[:battle].command_item_all(current_actor, effects,
+        @ui.battle.command_item_all(current_actor, effects,
                                              item_id: pending[:item_id],
                                              name: pending[:it][:name], cured: cured)
-        @ui[:pending] = nil
-        @ui[:phase] = :command
+        @ui.pending = nil
+        @ui.phase = :command
         advance_actor
       end
 
       # Move to the next living party member, or start playing out the round once
       # every member has a command.
       def advance_actor
-        @ui[:actor_i] += 1
-        @ui[:cmd] = 0
+        @ui.actor_i += 1
+        @ui.cmd = 0
         open_next_command
       end
 
@@ -2466,7 +2528,7 @@ class RPG2k
       # empty/all-KO'd-party fix above.
       def open_next_command
         skip_restricted_actors
-        if @ui[:actor_i] >= living_allies.length
+        if @ui.actor_i >= living_allies.length
           start_round_animation
         else
           draw_battle_command
@@ -2481,9 +2543,9 @@ class RPG2k
       # `Game::Battle#choose_auto_battle_command` to queue its action right
       # here instead of ever drawing the manual command window for it.
       def skip_restricted_actors
-        battle = @ui[:battle]
+        battle = @ui.battle
         allies = living_allies
-        i = @ui[:actor_i]
+        i = @ui.actor_i
         loop do
           a = allies[i]
           break unless a
@@ -2496,7 +2558,7 @@ class RPG2k
             break
           end
         end
-        @ui[:actor_i] = i
+        @ui.actor_i = i
       end
 
       def force_ai_actor?(combatant)
@@ -2512,9 +2574,9 @@ class RPG2k
       # to the Fight/Auto/Escape menu once it would land on the very first
       # ally.
       def prev_commandable_actor_index
-        battle = @ui[:battle]
+        battle = @ui.battle
         allies = living_allies
-        i = @ui[:actor_i] - 1
+        i = @ui.actor_i - 1
         i -= 1 while i >= 0 && (battle.command_restricted?(allies[i]) || force_ai_actor?(allies[i]))
         i >= 0 ? i : nil
       end
@@ -2558,13 +2620,13 @@ class RPG2k
       # the battle's per-action queue. From here #drive_battle_animate lands one
       # attack per BATTLE_ANIM_FRAMES until the round's queue empties.
       def start_round_animation
-        if @ui[:cmd_win]
-          @ui[:cmd_win].dispose
-          @ui[:cmd_win] = nil
+        if @ui.cmd_win
+          @ui.cmd_win.dispose
+          @ui.cmd_win = nil
         end
-        @ui[:battle].begin_round
-        @ui[:phase] = :animate
-        @ui[:anim_timer] = 0 # land the first attack next frame
+        @ui.battle.begin_round
+        @ui.phase = :animate
+        @ui.anim_timer = 0 # land the first attack next frame
       end
 
       # One attack per BATTLE_ANIM_FRAMES: land the next action (mutating a single
@@ -2579,8 +2641,8 @@ class RPG2k
           @map_scene.step_map_animation
           return
         end
-        if @ui[:anim_timer] > 0
-          @ui[:anim_timer] -= 1
+        if @ui.anim_timer > 0
+          @ui.anim_timer -= 1
           return
         end
         # A battle page is checked once per *acting battler*, not once per
@@ -2594,11 +2656,11 @@ class RPG2k
         # The acting battler rides along as the per-battler check's source, so
         # the turn_enemy / turn_actor / command_actor conditions test the
         # battler the check is for (Game::BattlePage.active?).
-        if @ui[:battler_boundary]
-          @ui[:battler_boundary] = false
-          return if run_battle_events(:animate, @ui[:battle].acting_battler)
+        if @ui.battler_boundary
+          @ui.battler_boundary = false
+          return if run_battle_events(:animate, @ui.battle.acting_battler)
         end
-        entry = @ui[:battle].step_action
+        entry = @ui.battle.step_action
         if entry
           # An Item action spends one *use* from the real bag when it lands (so
           # backing out during the command phase never spends it), which only
@@ -2618,9 +2680,9 @@ class RPG2k
           react_to_landed_hit(entry)
           # When an animation plays, it is the wait; otherwise the banner timer
           # is, exactly as before.
-          @ui[:anim_timer] =
+          @ui.anim_timer =
             start_battle_animation(entry) ? 0 : BATTLE_ANIM_FRAMES
-          @ui[:battler_boundary] = @ui[:battle].pending_empty?
+          @ui.battler_boundary = @ui.battle.pending_empty?
         else
           finish_round_animation
         end
@@ -2677,7 +2739,7 @@ class RPG2k
       # which has no sprite to measure and so never moves off it.
       def battle_animation_pixel(entry)
         i = entry[:target_index]
-        sprites = @ui[:enemy_sprites]
+        sprites = @ui.enemy_sprites
         spr = i && sprites ? sprites[i] : nil
         bmp = spr && spr.bitmap
         return [SCREEN_W / 2, SCREEN_H / 2, nil] unless bmp
@@ -2688,7 +2750,7 @@ class RPG2k
       # 11210: it needs this round's own positioning (#battle_animation_pixel,
       # the targeted enemy's live sprite -- or the ally-side screen-centre
       # fallback) and Character Flash mechanism (#fire_target_flash, an
-      # `@ui[:enemy_sprites]` entry), the same two `battle_animation_id`/
+      # `@ui.enemy_sprites` entry), the same two `battle_animation_id`/
       # `entry`-shaped inputs #start_battle_animation already builds from a
       # round's own log entry -- just keyed off `req[:target]` (the command's
       # own troop-member param) directly instead of an entry's
@@ -2739,7 +2801,7 @@ class RPG2k
           idx = req[:target] - 1
           idx >= 0 && idx < @state.party.actors.size
         else
-          req[:target] < (@ui[:foes] || []).size
+          req[:target] < (@ui.foes || []).size
         end
       end
 
@@ -2763,7 +2825,7 @@ class RPG2k
       # living, on-screen troop member. Skips slots with no sprite (a hidden
       # troop member -- #build_battle_sprites never created one) and any member
       # now out of play (dead or fled -- its sprite is hidden, its index still
-      # present in `@ui[:enemy_sprites]`); the remaining sprites' live on-screen
+      # present in `@ui.enemy_sprites`); the remaining sprites' live on-screen
       # positions are what the animation is drawn over, and their indices are
       # what a flash_scope-1 / screen_shaking-1 timing pulses. Ally-side
       # animations get no on-screen sprite in RPG2000's front view, so the
@@ -2771,8 +2833,8 @@ class RPG2k
       def whole_side_anim_targets(allies)
         return [@map_scene.anim_target(SCREEN_W / 2, SCREEN_H / 2, height: nil, index: nil,
                                  flash_target: nil)] if allies
-        sprites = @ui[:enemy_sprites] || []
-        foes = @ui[:foes] || []
+        sprites = @ui.enemy_sprites || []
+        foes = @ui.foes || []
         out = []
         sprites.each_with_index do |spr, i|
           foe = foes[i]
@@ -2788,7 +2850,7 @@ class RPG2k
       # Close out an animated round: clear the commands, drop the action banner,
       # and branch to the result window or the next command phase.
       def finish_round_animation
-        battle = @ui[:battle]
+        battle = @ui.battle
         # `end_round` clears every ally's `defending` for the new round --
         # revert any sprite still showing the Defend pose from the round
         # that just ended, snapshotted here since `#end_round` itself wipes
@@ -2797,20 +2859,20 @@ class RPG2k
         # felled during the round just gone needs the same catch-up onto
         # the Dead pose -- `dead?` itself survives `#end_round` untouched,
         # so it is read after rather than snapshotted before.
-        defenders = @ui[:allies].select { |a| a.defending }
+        defenders = @ui.allies.select { |a| a.defending }
         battle.end_round
-        (defenders + @ui[:allies].select { |a| a.dead? }).uniq { |a| a.object_id }
+        (defenders + @ui.allies.select { |a| a.dead? }).uniq { |a| a.object_id }
           .each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
         if battle.finished?
           enter_battle_result(battle.result)
         else
-          @ui[:actor_i] = 0
-          @ui[:cmd] = 0
-          @ui[:phase] = :command
+          @ui.actor_i = 0
+          @ui.cmd = 0
+          @ui.phase = :command
           # A new turn re-arms every page: RPG2000 fires a battle page once per
           # turn in which its condition holds, not once per battle.
-          @ui[:pages_run] = {}
+          @ui.pages_run = {}
           open_next_command unless run_battle_events
         end
       end
@@ -2837,19 +2899,19 @@ class RPG2k
       # default, no source) leaves them ungated.
       def run_battle_events(return_phase = :command, source = nil)
         ui = @ui
-        return false unless ui && ui[:troop].pages
-        matched = Game::BattlePage.select_all(ui[:troop].pages, @state.switches,
-                                              @state.variables, ui[:battle], source)
-        entry = matched.find { |(id, _)| !ui[:pages_run][id] }
+        return false unless ui && ui.troop.pages
+        matched = Game::BattlePage.select_all(ui.troop.pages, @state.switches,
+                                              @state.variables, ui.battle, source)
+        entry = matched.find { |(id, _)| !ui.pages_run[id] }
         return false unless entry
-        ui[:pages_run][entry[0]] = true
+        ui.pages_run[entry[0]] = true
         cmds = entry[1][:event]
         return run_battle_events(return_phase, source) if cmds.nil? || cmds.empty? # empty page: try the next
-        ui[:events].battle = ui[:battle]
-        ui[:events].battle_source = source
-        ui[:events].start(cmds)
-        ui[:event_return_phase] = return_phase
-        ui[:phase] = :event
+        ui.events.battle = ui.battle
+        ui.events.battle_source = source
+        ui.events.start(cmds)
+        ui.event_return_phase = return_phase
+        ui.phase = :event
         true
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle event page failed: #{e.message}"
@@ -2861,7 +2923,7 @@ class RPG2k
       # battle-only commands, so the interpreter is driven the same way the map
       # drives an event — only the UI it may reach for is narrower.
       def drive_battle_event
-        it = @ui[:events]
+        it = @ui.events
         apply_battle_event_requests(it)
         return if finish_terminated_battle
         if it.waiting?
@@ -2878,12 +2940,12 @@ class RPG2k
         when :message, :choice then drive_battle_event_message(it)
         when :animation then @map_scene.drive_map_animation(it)
         when :wait
-          @ui[:event_timer] ||= @map_scene.frames_from_tenths(it.wait_frames)
-          if @ui[:event_timer] <= 0
-            @ui[:event_timer] = nil
+          @ui.event_timer ||= @map_scene.frames_from_tenths(it.wait_frames)
+          if @ui.event_timer <= 0
+            @ui.event_timer = nil
             it.resume
           else
-            @ui[:event_timer] -= 1
+            @ui.event_timer -= 1
           end
         else
           # A battle page cannot open the map's teleport / shop / menu UI; those
@@ -2897,12 +2959,12 @@ class RPG2k
       # and takes the first option, which is what the runtime can answer without
       # a battle choice widget.
       def drive_battle_event_message(it)
-        unless @ui[:event_win]
+        unless @ui.event_win
           lines = it.wait_kind == :choice ? it.choice_labels : it.message_lines
-          @ui[:event_win] = battle_text_window(lines || [], 340)
+          @ui.event_win = battle_text_window(lines || [], 340)
           # Same player-input wait as the map's Show Message/Show Choices, so
           # it gets the same blinking keypress arrow (Window#pause).
-          @ui[:event_win].pause = true
+          @ui.event_win.pause = true
           return # shown this frame; take the button from the next one
         end
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
@@ -2912,9 +2974,9 @@ class RPG2k
       end
 
       def close_battle_event_window
-        return if @disposed || !@ui[:event_win]
-        @ui[:event_win].dispose
-        @ui[:event_win] = nil
+        return if @disposed || !@ui.event_win
+        @ui.event_win.dispose
+        @ui.event_win = nil
       end
 
       # Apply the requests a battle page queued: revealed troop members get the
@@ -2944,12 +3006,12 @@ class RPG2k
       # Show Hidden Monster: clear the member's hidden flag and build the sprite
       # build_battle_sprites skipped, so it appears mid-fight.
       def reveal_battle_monster(index)
-        member = @ui[:troop].members[index]
+        member = @ui.troop.members[index]
         return unless member && member.hidden
         member.hidden = false
         # Bring the combatant into the fight as well, not just the sprite: until
         # now it took no turn and could not be targeted (Combatant#out_of_play?).
-        foe = @ui[:battle].enemy(index)
+        foe = @ui.battle.enemy(index)
         foe.hidden = false if foe
         bmp = battler_bitmap(member)
         spr = Sprite.new
@@ -2958,8 +3020,8 @@ class RPG2k
         spr.y = battler_y(member, bmp)
         spr.z = battler_z(index)
         spr.opacity = battler_opacity(member)
-        dispose_battle_sprite(@ui[:enemy_sprites][index])
-        @ui[:enemy_sprites][index] = spr
+        dispose_battle_sprite(@ui.enemy_sprites[index])
+        @ui.enemy_sprites[index] = spr
       end
 
       # Force Flee: the troop member ran, so drop its sprite. Game::Battle has
@@ -2967,10 +3029,10 @@ class RPG2k
       # as a kill), and the troop member's own flag is set so a later rebuild does
       # not draw it again.
       def remove_fled_monster(index)
-        member = @ui[:troop].members[index]
+        member = @ui.troop.members[index]
         member.hidden = true if member
-        dispose_battle_sprite(@ui[:enemy_sprites][index])
-        @ui[:enemy_sprites][index] = nil
+        dispose_battle_sprite(@ui.enemy_sprites[index])
+        @ui.enemy_sprites[index] = nil
       end
 
       # The escape sound RPG_RT plays when a Force Flee sends enemies running.
@@ -2994,7 +3056,7 @@ class RPG2k
       # Terminate Battle: leave the fight with no victory / defeat processing.
       # Returns whether the battle was ended, so the caller stops driving it.
       def finish_terminated_battle
-        return false unless @ui[:battle].terminated?
+        return false unless @ui.battle.terminated?
         close_battle_event_window
         finish_battle(:abort)
         true
@@ -3009,29 +3071,29 @@ class RPG2k
       # to the party's command phase (a between-rounds check, the default).
       def leave_battle_event_phase
         close_battle_event_window
-        return_phase = @ui[:event_return_phase] || :command
+        return_phase = @ui.event_return_phase || :command
         return if run_battle_events(return_phase)
-        battle = @ui[:battle]
+        battle = @ui.battle
         if battle.finished?
           enter_battle_result(battle.result)
         elsif return_phase == :animate
-          @ui[:phase] = :animate
+          @ui.phase = :animate
         else
-          @ui[:phase] = :command
+          @ui.phase = :command
           enter_command_phase
         end
       end
 
 
       def enter_battle_result(result)
-        @ui[:result] = result
+        @ui.result = result
         @map_scene.play_victory_bgm if result == :victory
-        lines = battle_result_lines(result, @ui[:troop])
-        [@ui[:status_win], @ui[:cmd_win]].each { |w| w.dispose if w }
-        @ui[:status_win] = nil
-        @ui[:cmd_win] = nil
+        lines = battle_result_lines(result, @ui.troop)
+        [@ui.status_win, @ui.cmd_win].each { |w| w.dispose if w }
+        @ui.status_win = nil
+        @ui.cmd_win = nil
         open_battle_result(lines)
-        @ui[:phase] = :result
+        @ui.phase = :result
       end
 
       # The result panel waits for the player, on **either** Decision or
@@ -3041,7 +3103,7 @@ class RPG2k
       # Cancel (Escape) closed it back to the map just as Decision does.
       def drive_battle_result
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        finish_battle(@ui[:result])
+        finish_battle(@ui.result)
       end
 
       # Close the battle and hand the outcome back to the event. A defeat in an
@@ -3064,19 +3126,19 @@ class RPG2k
       # encounter has no such event to resume into.
       # `result` is always a Symbol: the three call sites pass either a
       # literal `:abort` (#drive_battle_escape here, and Scene::Map's own
-      # `@battle.finish_battle(:abort)`) or `@ui[:result]`, which nothing
+      # `@battle.finish_battle(:abort)`) or `@ui.result`, which nothing
       # but #enter_battle_result ever writes -- and that method's own
       # `# bc2cpp: (Symbol)` annotation already certifies its argument.
 
       def finish_battle(result)
         # Persist the party's post-battle HP (and any knock-outs) before leaving
         # the fight, so damage taken sticks and a downed member stays down.
-        @ui[:battle].apply_to_party
+        @ui.battle.apply_to_party
         # Capture the fight's own round count (Game::Battle#turn, its live
         # @rounds counter) before #dispose discards the Battle object --
         # this is RPG2000's "turns passed in latest battle" (Game::State
         # #last_battle_turns, LCF inventory chunk 109 field 41).
-        @state.last_battle_turns = @ui[:battle].turn
+        @state.last_battle_turns = @ui.battle.turn
         # Tally the Control Variables "Other" battle counters here, together and
         # unconditionally, matching a reference implementation's own
         # end-of-battle handling: the battle-count tally runs for every result
@@ -3482,7 +3544,7 @@ class RPG2k
         end
         # Each defeated enemy may drop its treasure item (rolled on the battle's
         # own RNG); grant it to the bag and name it in the result window.
-        troop.drops(@ui[:battle].rng).each do |iid|
+        troop.drops(@ui.battle.rng).each do |iid|
           @state.party.gain_item(iid, 1)
           it = @state.party.db_item(iid)
           name = it ? it[:name] : "item #{iid}"
@@ -3648,7 +3710,7 @@ class RPG2k
       # status window, then the per-actor command window -- sit left-to-right,
       # but only one of the two 76px command-shaped windows is ever showing at
       # once, so the status window slides to whichever side is free. During
-      # the top-level Battle/Auto Battle/Escape choice (`@ui[:phase] ==
+      # the top-level Battle/Auto Battle/Escape choice (`@ui.phase ==
       # :battle_options`) the options window takes the left slot (x=0) and the
       # status window is pushed to `BATTLE_CMD_W`; once an actor is choosing
       # Attack/Skill/Defend/Item the per-actor command window takes the
@@ -3663,7 +3725,7 @@ class RPG2k
       # target list is up (which only ever opens from the per-actor phase)
       # the status panel stays at x=0 under it.
       def battle_status_x
-        @ui[:phase] == :battle_options ? BATTLE_CMD_W : 0
+        @ui.phase == :battle_options ? BATTLE_CMD_W : 0
       end
 
       # Rebuild the status panel: the party's HP and SP, each with the one
@@ -3694,17 +3756,17 @@ class RPG2k
       # cannot be built (no System2 graphic, or a failed load) rather than
       # leaving the panel blank.
       def refresh_battle_status
-        @ui[:status_win].dispose if @ui[:status_win]
-        win = battle_status_gauge_window(@ui[:allies]) if gauge_battle_layout?
-        @ui[:status_win] = win || begin
-          rows = @ui[:allies].map { |a| battle_status_row(a) }
+        @ui.status_win.dispose if @ui.status_win
+        win = battle_status_gauge_window(@ui.allies) if gauge_battle_layout?
+        @ui.status_win = win || begin
+          rows = @ui.allies.map { |a| battle_status_row(a) }
           # No row highlighted while the options window is open -- nobody is
           # "the acting actor" until Battle or Auto Battle is chosen.
           # Confirmed against genuine RPG_RT.exe under wine (cycle #244): on
           # every party-command frame the only green cursor on screen is the
           # options window's own, and the acting actor's row cursor appears
           # in the status panel the moment 戦う is accepted.
-          idx = @ui[:phase] == :battle_options ? nil : @ui[:allies].index(current_actor)
+          idx = @ui.phase == :battle_options ? nil : @ui.allies.index(current_actor)
           battle_status_window(rows, idx)
         end
       end
@@ -3971,7 +4033,7 @@ class RPG2k
       def draw_battle_command
         actor = current_actor
         return unless actor
-        @ui[:cmd_win].dispose if @ui[:cmd_win]
+        @ui.cmd_win.dispose if @ui.cmd_win
         labels = battle_commands
         cmd_x, cmd_y = battle_cmd_window_rect
         win = Window.new(cmd_x, cmd_y, BATTLE_CMD_W, BATTLE_PANEL_H)
@@ -3985,8 +4047,8 @@ class RPG2k
         end
         win.contents = c
         win.cursor_rect =
-          Rect.new(0, @ui[:cmd] * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
-        @ui[:cmd_win] = win
+          Rect.new(0, @ui.cmd * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
+        @ui.cmd_win = win
         refresh_battle_status
       end
 
@@ -4004,7 +4066,7 @@ class RPG2k
       # x=4..71 -- a `Rect.new(0, row * 16, 60, 16)`, the full contents
       # width, wrapping from 逃げる back to 戦う on a fourth Down.
       def draw_battle_options
-        @ui[:cmd_win].dispose if @ui[:cmd_win]
+        @ui.cmd_win.dispose if @ui.cmd_win
         labels = battle_option_rows.map { |r| r[:label] }
         win = Window.new(0, BATTLE_PANEL_Y, BATTLE_CMD_W, BATTLE_PANEL_H)
         win.z = 320
@@ -4017,8 +4079,8 @@ class RPG2k
         end
         win.contents = c
         win.cursor_rect =
-          Rect.new(0, @ui[:opt] * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
-        @ui[:cmd_win] = win
+          Rect.new(0, @ui.opt * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
+        @ui.cmd_win = win
         refresh_battle_status
       end
 
@@ -4049,12 +4111,12 @@ class RPG2k
       # redraws it (at a lower z) rather than relying on it still being up.
       def draw_battle_target
         foes = living_foes
-        @ui[:target_win].dispose if @ui[:target_win]
+        @ui.target_win.dispose if @ui.target_win
         draw_battle_skill if pending_kind == :skill
         draw_battle_item if pending_kind == :item
-        @ui[:target_win] =
+        @ui.target_win =
           battle_list_window(0, BATTLE_TARGET_W, foes.map(&:name),
-                             @ui[:target_i], 330)
+                             @ui.target_i, 330)
       end
 
       # Closing the target cursor also takes down the Skill / Item list
@@ -4066,9 +4128,9 @@ class RPG2k
         close_battle_skill
         close_battle_item
         close_battle_list_desc
-        return unless @ui[:target_win]
-        @ui[:target_win].dispose
-        @ui[:target_win] = nil
+        return unless @ui.target_win
+        @ui.target_win.dispose
+        @ui.target_win = nil
       end
 
       # A bottom-anchored list window of `labels` with the cursor on `sel`, at
@@ -4117,7 +4179,7 @@ class RPG2k
       # drew them pure white.
       #
       # `desc`, when given, also (re)builds the description banner
-      # `@ui[:desc_win]` this screen shows above a Skill / Item list: a
+      # `@ui.desc_win` this screen shows above a Skill / Item list: a
       # (0, 0, 320, 32) window with the highlighted row's database
       # description on its single row. Confirmed against genuine RPG_RT
       # under wine (cycle #246): the banner's frame spans logical y 0..31
@@ -4154,9 +4216,16 @@ class RPG2k
         # under wine, see Scene::Base#sticky_list_top). Lists with no
         # `scroll_key` (the enemy- and ally-target cursors) never scroll at
         # all, so they start from 0 every draw and land on 0.
-        scroll = sticky_list_top(scroll_key ? @ui[scroll_key] : 0, sel_row,
-                                 row_count, rows)
-        @ui[scroll_key] = scroll if scroll_key
+        kept = case scroll_key
+               when :skill_top then @ui.skill_top
+               when :item_top then @ui.item_top
+               else 0
+               end
+        scroll = sticky_list_top(kept, sel_row, row_count, rows)
+        case scroll_key
+        when :skill_top then @ui.skill_top = scroll
+        when :item_top then @ui.item_top = scroll
+        end
         refresh_battle_list_arrows(scroll, row_count, rows) if scroll_key
         win = Window.new(x, BATTLE_PANEL_Y, w, BATTLE_PANEL_H)
         win.z = z
@@ -4189,7 +4258,7 @@ class RPG2k
                                      col_w, BATTLE_LINE_H)
         end
         if desc
-          @ui[:desc_win].dispose if @ui[:desc_win]
+          @ui.desc_win.dispose if @ui.desc_win
           dwin = Window.new(0, 0, SCREEN_W, desc_h)
           dwin.z = z
           dwin.windowskin = windowskin
@@ -4197,7 +4266,7 @@ class RPG2k
           dc.font.color = Color.new(255, 255, 255, 255)
           draw_system_text(dc, 0, 0, dc.width, BATTLE_LINE_H, desc.to_s, windowskin, 0)
           dwin.contents = dc
-          @ui[:desc_win] = dwin
+          @ui.desc_win = dwin
         end
         win
       end
@@ -4206,9 +4275,9 @@ class RPG2k
       # builds (see its `desc:` note) -- called by every `close_battle_*`
       # method so the banner never outlives the list it belongs to.
       def close_battle_list_desc
-        return if @disposed || !@ui[:desc_win]
-        @ui[:desc_win].dispose
-        @ui[:desc_win] = nil
+        return if @disposed || !@ui.desc_win
+        @ui.desc_win.dispose
+        @ui.desc_win = nil
       end
 
       # The blinking scroll arrows an overflowing in-battle Skill / Item list
@@ -4235,41 +4304,41 @@ class RPG2k
 
       def refresh_battle_list_arrows(scroll, row_count, rows)
         return if @disposed
-        @ui[:list_up_arrow] ||=
+        @ui.list_up_arrow ||=
           build_list_arrow_sprite(windowskin, LIST_UP_ARROW_SRC_Y,
                                   (SCREEN_W - LIST_ARROW_W) / 2, BATTLE_PANEL_Y,
                                   BATTLE_LIST_ARROW_Z)
-        @ui[:list_down_arrow] ||=
+        @ui.list_down_arrow ||=
           build_list_arrow_sprite(windowskin, LIST_DOWN_ARROW_SRC_Y,
                                   (SCREEN_W - LIST_ARROW_W) / 2,
                                   SCREEN_H - LIST_ARROW_H, BATTLE_LIST_ARROW_Z)
-        @ui[:list_up_shown] = scroll > 0
-        @ui[:list_down_shown] = scroll + rows < row_count
-        on = list_arrow_blink_on?(@ui[:list_arrow_anim])
-        @ui[:list_up_arrow].visible = on && @ui[:list_up_shown]
-        @ui[:list_down_arrow].visible = on && @ui[:list_down_shown]
+        @ui.list_up_shown = scroll > 0
+        @ui.list_down_shown = scroll + rows < row_count
+        on = list_arrow_blink_on?(@ui.list_arrow_anim)
+        @ui.list_up_arrow.visible = on && @ui.list_up_shown
+        @ui.list_down_arrow.visible = on && @ui.list_down_shown
       end
 
       # Advance the arrows' shared blink phase one frame and re-apply it.
-      # `@ui[:list_arrow_anim]` lives on the fight rather than on the sprites
+      # `@ui.list_arrow_anim` lives on the fight rather than on the sprites
       # so redrawing the list (which this screen does on every cursor step)
       # cannot restart the blink -- RPG_RT's own arrows keep their phase
       # across a keypress.
       def tick_battle_list_arrows
-        @ui[:list_arrow_anim] = advance_list_arrow_anim(@ui[:list_arrow_anim])
-        up = @ui[:list_up_arrow]
-        down = @ui[:list_down_arrow]
+        @ui.list_arrow_anim = advance_list_arrow_anim(@ui.list_arrow_anim)
+        up = @ui.list_up_arrow
+        down = @ui.list_down_arrow
         return unless up && down
-        on = list_arrow_blink_on?(@ui[:list_arrow_anim])
-        up.visible = !!(on && @ui[:list_up_shown])
-        down.visible = !!(on && @ui[:list_down_shown])
+        on = list_arrow_blink_on?(@ui.list_arrow_anim)
+        up.visible = !!(on && @ui.list_up_shown)
+        down.visible = !!(on && @ui.list_down_shown)
       end
 
       def close_battle_list_arrows
         return if @disposed
-        [@ui[:list_up_arrow], @ui[:list_down_arrow]].each { |s| s.dispose if s }
-        @ui[:list_up_arrow] = nil
-        @ui[:list_down_arrow] = nil
+        [@ui.list_up_arrow, @ui.list_down_arrow].each { |s| s.dispose if s }
+        @ui.list_up_arrow = nil
+        @ui.list_down_arrow = nil
       end
 
       # The current actor's battle skills as `name` + `-` + the SP cost, in a
@@ -4301,24 +4370,24 @@ class RPG2k
       # wine in cycle #249 on a 26-skill leader, and all three previously
       # left open here.
       def draw_battle_skill
-        @ui[:skill_win].dispose if @ui[:skill_win]
-        labels = @ui[:skills].map do |sid, cost|
+        @ui.skill_win.dispose if @ui.skill_win
+        labels = @ui.skills.map do |sid, cost|
           sk = @state.party.db_skill(sid)
           [sk ? sk[:name] : "Skill #{sid}", '-', cost.to_s]
         end
-        idxs = @ui[:skills].map do |sid, cost|
+        idxs = @ui.skills.map do |sid, cost|
           sk = @state.party.db_skill(sid)
           battle_skill_unavailable?(cost, sk) ? 3 : 0
         end
-        @ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @ui[:skill_i], 325,
+        @ui.skill_win = battle_list_window(0, SCREEN_W, labels, @ui.skill_i, 325,
                                              column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs,
                                              scroll_key: :skill_top,
                                              desc: battle_list_description(
-                                               @ui[:skills][@ui[:skill_i]], true
+                                               @ui.skills[@ui.skill_i], true
                                              ))
       end
 
-      # The list's own sticky top row (`@ui[:skill_top]`) is deliberately
+      # The list's own sticky top row (`@ui.skill_top`) is deliberately
       # *not* cleared here: #confirm_battle_skill closes the list and
       # #draw_battle_target immediately redraws it under the enemy cursor,
       # and genuine RPG_RT keeps the scrolled-to rows across exactly that
@@ -4330,9 +4399,9 @@ class RPG2k
       def close_battle_skill
         close_battle_list_desc
         close_battle_list_arrows
-        return unless @ui[:skill_win]
-        @ui[:skill_win].dispose
-        @ui[:skill_win] = nil
+        return unless @ui.skill_win
+        @ui.skill_win.dispose
+        @ui.skill_win = nil
       end
 
       # The party's battle items as `name` + `:` + the held count, in the
@@ -4342,7 +4411,7 @@ class RPG2k
       # logical 131..133 / 291..293 (its 6px cell at cell x 120) with the
       # counts "5", "12" and "99" all ending flush at 151 / 311 (cell x
       # 144). RPG_RT kept the rows in the *bag's own stored order* where
-      # `Game::Party#battle_items` (which feeds `@ui[:items]`, outside this
+      # `Game::Party#battle_items` (which feeds `@ui.items`, outside this
       # method) sorts them by id -- recorded in docs/TODO.md, not fixed
       # here. A listed
       # but not battle-usable item draws in the windowskin's disabled swatch
@@ -4350,17 +4419,17 @@ class RPG2k
       # both sampled (99,166,247) against the usable rows' (189,223,255) --
       # and Decision on one only buzzes (`#drive_battle_item`).
       def draw_battle_item
-        @ui[:item_win].dispose if @ui[:item_win]
-        labels = @ui[:items].map do |id, count|
+        @ui.item_win.dispose if @ui.item_win
+        labels = @ui.items.map do |id, count|
           it = @state.party.db_item(id)
           [it ? it[:name] : "Item #{id}", ':', count.to_s]
         end
-        idxs = @ui[:items].map { |id, _count| @state.party.battle_usable?(id) ? 0 : 3 }
-        @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325,
+        idxs = @ui.items.map { |id, _count| @state.party.battle_usable?(id) ? 0 : 3 }
+        @ui.item_win = battle_list_window(0, SCREEN_W, labels, @ui.item_i, 325,
                                             column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs,
                                             scroll_key: :item_top,
                                             desc: battle_list_description(
-                                              @ui[:items][@ui[:item_i]], false
+                                              @ui.items[@ui.item_i], false
                                             ))
       end
 
@@ -4379,14 +4448,14 @@ class RPG2k
         rec[:description].to_s
       end
 
-      # Keeps `@ui[:item_top]` for the same measured reason
+      # Keeps `@ui.item_top` for the same measured reason
       # #close_battle_skill does.
       def close_battle_item
         close_battle_list_desc
         close_battle_list_arrows
-        return unless @ui[:item_win]
-        @ui[:item_win].dispose
-        @ui[:item_win] = nil
+        return unless @ui.item_win
+        @ui.item_win.dispose
+        @ui.item_win = nil
       end
 
       # The party member a healing skill / medicine applies to. RPG_RT does
@@ -4417,18 +4486,18 @@ class RPG2k
       # (chunk 109's party list blackens RPG_RT on Continue). Cycle #136's
       # multi-actor Down/Up findings stand unchanged.
       def draw_battle_ally_target
-        @ui[:ally_win].dispose if @ui[:ally_win]
+        @ui.ally_win.dispose if @ui.ally_win
         draw_battle_skill if pending_kind == :skill
         draw_battle_item if pending_kind == :item
-        allies = @ui[:allies]
-        target = battle_ally_targets[@ui[:ally_i]]
+        allies = @ui.allies
+        target = battle_ally_targets[@ui.ally_i]
         idx = allies.index(target) || 0
         win = (gauge_battle_layout? && battle_status_gauge_window(allies)) ||
               battle_status_window(allies.map { |a| battle_status_row(a) }, idx)
         win.z = 335
         win.cursor_rect = Rect.new(0, idx * BATTLE_LINE_H,
                                    BATTLE_STATUS_W - Window::BORDER * 2, BATTLE_LINE_H)
-        @ui[:ally_win] = win
+        @ui.ally_win = win
       end
 
       # Like #close_battle_target: the Skill / Item list this cursor was
@@ -4439,9 +4508,9 @@ class RPG2k
         close_battle_skill
         close_battle_item
         close_battle_list_desc
-        return unless @ui[:ally_win]
-        @ui[:ally_win].dispose
-        @ui[:ally_win] = nil
+        return unless @ui.ally_win
+        @ui.ally_win.dispose
+        @ui.ally_win = nil
       end
 
       # Banner the attack that just landed ("Hero hits Slime for 12", "…
@@ -4481,18 +4550,20 @@ class RPG2k
       # driver of their own and keep showing every line at once.
       def show_battle_banner(lines)
         lines = lines.to_a
-        if @ui.delete(:banner_reveal)
-          @ui[:banner_pending] = lines
-          @ui[:banner_shown] = 1
-          @ui[:banner_timer] = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+        reveal = @ui.banner_reveal
+        @ui.banner_reveal = nil
+        if reveal
+          @ui.banner_pending = lines
+          @ui.banner_shown = 1
+          @ui.banner_timer = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
           # INDEX_CLOSED: see the banner driver above -- the 1-argument Range
           # shape dispatches where (start, length) no longer does.
           lines = lines[0...1]
         else
-          @ui[:banner_pending] = nil
+          @ui.banner_pending = nil
         end
-        @ui[:action_win].dispose if @ui[:action_win]
-        @ui[:action_win] = battle_panel_window(lines, 340)
+        @ui.action_win.dispose if @ui.action_win
+        @ui.action_win = battle_panel_window(lines, 340)
       end
 
       # The system SFX a landed action plays, alongside its banner. Each check
@@ -4621,10 +4692,10 @@ class RPG2k
       # #show_battle_banner) -- the encounter banner is closed exactly here,
       # and a stale pending list must not outlive the window it belonged to.
       def close_battle_action
-        @ui[:banner_pending] = nil
-        return unless @ui[:action_win]
-        @ui[:action_win].dispose
-        @ui[:action_win] = nil
+        @ui.banner_pending = nil
+        return unless @ui.action_win
+        @ui.action_win.dispose
+        @ui.action_win = nil
       end
 
       # The victory / defeat / escape panel. Confirmed against genuine
@@ -4650,12 +4721,12 @@ class RPG2k
       # coding yet; the wait that follows is the same keypress wait either
       # way.
       def open_battle_result(lines)
-        @ui[:result_win] = battle_panel_window(lines, 320)
+        @ui.result_win = battle_panel_window(lines, 320)
         # The result panel is a player-input wait the same shape as a map
         # message box (see #drive_battle_result), so it gets the same
         # blinking keypress arrow (Window#pause, native primitive at
         # mruby-rgss/src/lib.cxx:5845-5855).
-        @ui[:result_win].pause = true
+        @ui.result_win.pause = true
       end
 
       # RPG_RT's own battle message window (the per-action banner, the
@@ -4847,15 +4918,15 @@ class RPG2k
 
       def dispose
         return if @disposed
-        [@ui[:status_win], @ui[:cmd_win],
-         @ui[:target_win], @ui[:skill_win],
-         @ui[:item_win], @ui[:ally_win],
-         @ui[:action_win], @ui[:result_win],
-         @ui[:event_win]].each { |w| w.dispose if w }
+        [@ui.status_win, @ui.cmd_win,
+         @ui.target_win, @ui.skill_win,
+         @ui.item_win, @ui.ally_win,
+         @ui.action_win, @ui.result_win,
+         @ui.event_win].each { |w| w.dispose if w }
         close_battle_list_arrows
-        dispose_battle_sprite(@ui[:back_sprite])
-        (@ui[:enemy_sprites] || []).each { |s| dispose_battle_sprite(s) }
-        (@ui[:actor_sprites] || []).each { |s| dispose_battle_sprite(s) }
+        dispose_battle_sprite(@ui.back_sprite)
+        (@ui.enemy_sprites || []).each { |s| dispose_battle_sprite(s) }
+        (@ui.actor_sprites || []).each { |s| dispose_battle_sprite(s) }
         @disposed = true
       end
 
@@ -4879,7 +4950,7 @@ class RPG2k
       # missing @ui (the animation already finished/the fight already
       # ended) is a silent no-op, matching #fire_target_flash's own guard.
       def clear_target_flash(target_index)
-        sprites = @ui && @ui[:enemy_sprites]
+        sprites = @ui && @ui.enemy_sprites
         spr = target_index && sprites ? sprites[target_index] : nil
         spr.flash(nil, 0) if spr
       end
@@ -4898,7 +4969,7 @@ class RPG2k
       # (mruby-rgss/src/lib.cxx) already ported natively but unused elsewhere
       # in this codebase, decayed each frame by #update_enemy_flashes.
       def fire_target_flash(target_index, t)
-        sprites = @ui && @ui[:enemy_sprites]
+        sprites = @ui && @ui.enemy_sprites
         spr = target_index && sprites ? sprites[target_index] : nil
         return unless spr
         spr.flash(Color.new((t[:flash_red] || 0) * 8, (t[:flash_green] || 0) * 8,
@@ -4938,7 +5009,7 @@ class RPG2k
         if entry[:target_ally]
           @state.screen.shake(Map::ANIM_SHAKE_POWER, Map::ANIM_SHAKE_SPEED, Map::ANIM_SHAKE_FRAMES)
         else
-          sprites = @ui && @ui[:enemy_sprites]
+          sprites = @ui && @ui.enemy_sprites
           spr = entry[:target_index] && sprites ? sprites[entry[:target_index]] : nil
           spr.flash(Color.new(31 * 8, 31 * 8, 31 * 8, 31 * 8), Map::ANIM_FLASH_FRAMES) if spr
         end
@@ -4954,7 +5025,7 @@ class RPG2k
       # same triple it already fires for the screen
       # case. This codebase's front-view battle has no per-sprite native
       # shake primitive the way Sprite#flash exists for the colour pulse, so
-      # the state is tracked in a plain `@ui[:enemy_shake]` hash
+      # the state is tracked in a plain `@ui.enemy_shake` hash
       # (paralleling `enemy_sprites` by index) and stepped by
       # #update_enemy_shakes every frame -- the same `Shake::NextPosition`
       # sine-wave port Game::Screen#update_shake already drives for the
@@ -4963,10 +5034,10 @@ class RPG2k
       # shake (target_index is nil there, the same gap #fire_target_flash's
       # own comment already documents) -- a silent no-op, not an error.
       def fire_target_shake(target_index)
-        sprites = @ui && @ui[:enemy_sprites]
+        sprites = @ui && @ui.enemy_sprites
         return unless target_index && sprites && sprites[target_index]
-        @ui[:enemy_shake] ||= []
-        @ui[:enemy_shake][target_index] =
+        @ui.enemy_shake ||= []
+        @ui.enemy_shake[target_index] =
           { power: Map::ANIM_SHAKE_POWER, speed: Map::ANIM_SHAKE_SPEED,
             frames: Map::ANIM_SHAKE_FRAMES, offset: 0 }
       end
@@ -4983,10 +5054,10 @@ class RPG2k
       # #reveal_battle_monster, #remove_fled_monster -- is never left
       # offset from a stale base). A slot with nothing active costs nothing.
       def update_enemy_shakes
-        shakes = @ui[:enemy_shake]
+        shakes = @ui.enemy_shake
         return unless shakes
-        sprites = @ui[:enemy_sprites]
-        troop = @ui[:troop]
+        sprites = @ui.enemy_sprites
+        troop = @ui.troop
         shakes.each_index do |i|
           st = shakes[i]
           next unless st

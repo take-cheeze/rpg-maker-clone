@@ -6189,6 +6189,110 @@ class Game::EnemyAi
   def switch?: (untyped) -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rpg
+class RPG2k::Scene::Battle::Ui
+  def allies: () -> untyped
+  def battle: () -> untyped
+  def events: () -> untyped
+  def foes: () -> untyped
+  def troop: () -> untyped
+  def action_win: () -> untyped
+  def action_win=: (untyped) -> untyped
+  def actor_i: () -> untyped
+  def actor_i=: (untyped) -> untyped
+  def actor_sprites: () -> untyped
+  def actor_sprites=: (untyped) -> untyped
+  def ally_i: () -> untyped
+  def ally_i=: (untyped) -> untyped
+  def ally_win: () -> untyped
+  def ally_win=: (untyped) -> untyped
+  def anim_timer: () -> untyped
+  def anim_timer=: (untyped) -> untyped
+  def back_sprite: () -> untyped
+  def back_sprite=: (untyped) -> untyped
+  def banner_pending: () -> untyped
+  def banner_pending=: (untyped) -> untyped
+  def banner_reveal: () -> untyped
+  def banner_reveal=: (untyped) -> untyped
+  def banner_shown: () -> untyped
+  def banner_shown=: (untyped) -> untyped
+  def banner_timer: () -> untyped
+  def banner_timer=: (untyped) -> untyped
+  def battler_boundary: () -> untyped
+  def battler_boundary=: (untyped) -> untyped
+  def cmd: () -> untyped
+  def cmd=: (untyped) -> untyped
+  def cmd_win: () -> untyped
+  def cmd_win=: (untyped) -> untyped
+  def desc_win: () -> untyped
+  def desc_win=: (untyped) -> untyped
+  def enemy_shake: () -> untyped
+  def enemy_shake=: (untyped) -> untyped
+  def enemy_sprites: () -> untyped
+  def enemy_sprites=: (untyped) -> untyped
+  def event_return_phase: () -> untyped
+  def event_return_phase=: (untyped) -> untyped
+  def event_timer: () -> untyped
+  def event_timer=: (untyped) -> untyped
+  def event_win: () -> untyped
+  def event_win=: (untyped) -> untyped
+  def frame: () -> untyped
+  def frame=: (untyped) -> untyped
+  def item_i: () -> untyped
+  def item_i=: (untyped) -> untyped
+  def item_top: () -> untyped
+  def item_top=: (untyped) -> untyped
+  def item_win: () -> untyped
+  def item_win=: (untyped) -> untyped
+  def items: () -> untyped
+  def items=: (untyped) -> untyped
+  def list_arrow_anim: () -> untyped
+  def list_arrow_anim=: (untyped) -> untyped
+  def list_down_arrow: () -> untyped
+  def list_down_arrow=: (untyped) -> untyped
+  def list_down_shown: () -> untyped
+  def list_down_shown=: (untyped) -> untyped
+  def list_up_arrow: () -> untyped
+  def list_up_arrow=: (untyped) -> untyped
+  def list_up_shown: () -> untyped
+  def list_up_shown=: (untyped) -> untyped
+  def opt: () -> untyped
+  def opt=: (untyped) -> untyped
+  def options_shown: () -> untyped
+  def options_shown=: (untyped) -> untyped
+  def pages_run: () -> untyped
+  def pages_run=: (untyped) -> untyped
+  def pending: () -> untyped
+  def pending=: (untyped) -> untyped
+  def phase: () -> untyped
+  def phase=: (untyped) -> untyped
+  def result: () -> untyped
+  def result=: (untyped) -> untyped
+  def result_win: () -> untyped
+  def result_win=: (untyped) -> untyped
+  def skill_i: () -> untyped
+  def skill_i=: (untyped) -> untyped
+  def skill_top: () -> untyped
+  def skill_top=: (untyped) -> untyped
+  def skill_win: () -> untyped
+  def skill_win=: (untyped) -> untyped
+  def skills: () -> untyped
+  def skills=: (untyped) -> untyped
+  def sprite_hues: () -> untyped
+  def sprite_hues=: (untyped) -> untyped
+  def sprite_names: () -> untyped
+  def sprite_names=: (untyped) -> untyped
+  def status_win: () -> untyped
+  def status_win=: (untyped) -> untyped
+  def target_i: () -> untyped
+  def target_i=: (untyped) -> untyped
+  def target_win: () -> untyped
+  def target_win=: (untyped) -> untyped
+  def initialize: () -> untyped
+  def start: (untyped, untyped, untyped, untyped, untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -7775,29 +7879,26 @@ end
 module RPG2k
   module Scene
     class Battle
-      # Writers (both scene classes; RPG2k3::Scene::Battle reuses the ivar): `@ui = {}` in #initialize, so every key
-      # is optional; `@ui.update({...})` in #start, the only writer of :battle (Game::Battle.new), :troop
-      # (`troop = Game::Troop.new(...)`), :events (Game::Interpreter.new), :allies/:foes (block `map`s) and
-      # :pages_run (`{}`, also reset by `@ui[:pages_run] = {}`); `@ui[:enemy_sprites]`/`[:actor_sprites]` are nil or
-      # `Array.new(n) { }`; :pending is nil or a Hash literal. :allies (`party.actors.map { }`), :items
-      # (Party#battle_items), :foes (`troop.members.map { }` on the exact Game::Troop.new) and :skills
-      # (Party#battle_skills through its declared `actor`, see param_types.rbs) are traced through the calls
-      # (RECORD_FIELD_TRACE). The other keys hold method results or arithmetic the checker cannot trace: untyped.
-      @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: Array,
-             ?foes: Array, ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
-             ?actor_sprites: Array[untyped]?,
-             ?phase: untyped, ?options_shown: untyped, ?opt: untyped, ?actor_i: untyped, ?cmd: untyped,
-             ?target_i: untyped, ?skill_i: untyped, ?item_i: untyped, ?ally_i: untyped,
-             ?pending: Hash[untyped, untyped]?, ?skills: Array, ?items: Array, ?status_win: untyped,
-             ?cmd_win: untyped, ?target_win: untyped,
-             ?skill_win: untyped, ?item_win: untyped, ?ally_win: untyped, ?action_win: untyped,
-             ?anim_timer: untyped, ?back_sprite: untyped, ?result_win: untyped, ?result: untyped,
-             ?event_win: untyped, ?battler_boundary: untyped, ?event_return_phase: untyped, ?frame: untyped,
-             ?banner_reveal: untyped, ?banner_shown: untyped, ?banner_timer: untyped, ?banner_pending: untyped,
-             ?sprite_names: untyped, ?sprite_hues: untyped, ?event_timer: untyped, ?desc_win: untyped,
-             ?list_up_arrow: untyped, ?list_down_arrow: untyped, ?list_up_shown: untyped,
-             ?list_down_shown: untyped, ?list_arrow_anim: untyped, ?enemy_shake: untyped, ?skill_top: untyped,
-             ?item_top: untyped }
+      # One writer, `@ui = Ui.new` in #initialize (RPG2k3::Scene::Battle reuses it), before any other method can run.
+      @ui: RPG2k::Scene::Battle::Ui
+
+      # Fields of the fight state; nil until Ui#start sets them, so each is `T?`. Writers: Ui#start's stores
+      # (:battle Game::Battle.new, :troop Game::Troop.new, :events Game::Interpreter.new, :allies/:foes block
+      # `map`s, :pages_run `{}`), `@ui.pages_run = {}` each round, :enemy_sprites/:actor_sprites `Array.new(n) { }`,
+      # :pending nil or a Hash literal, :skills/:items `[]` or Party#battle_skills / #battle_items.
+      class Ui
+        @battle: Game::Battle?
+        @troop: Game::Troop?
+        @events: Game::Interpreter?
+        @allies: Array[untyped]?
+        @foes: Array[untyped]?
+        @pages_run: Hash[untyped, untyped]?
+        @enemy_sprites: Array[untyped]?
+        @actor_sprites: Array[untyped]?
+        @pending: Hash[untyped, untyped]?
+        @skills: Array[untyped]?
+        @items: Array[untyped]?
+      end
     end
 
     class Map
@@ -7825,7 +7926,7 @@ end
 
 # ---- rpg2k_returns.rbs
 # Return hints for methods whose every return path is an Array, each checked against its body in mruby-rpg2k/mrblib.
-# Left out on purpose: Scene::Battle#battle_ally_targets and Scene::SkillMenu#skills (they depend on @ui[:allies] and
+# Left out on purpose: Scene::Battle#battle_ally_targets and Scene::SkillMenu#skills (they depend on @ui.allies and
 # caster.skills, untyped). Runtime-checked returns are in callee_returns.rbs.
 # Scene::Map#blockers_at is declared in receiver_returns.rbs.
 module RPG2k
@@ -7941,10 +8042,10 @@ end
 class RPG2k
   module Scene
     class Battle
-      # Callers pass a `living_allies` element (nil-checked, or past `controllable?`'s @ui[:allies] membership test)
+      # Callers pass a `living_allies` element (nil-checked, or past `controllable?`'s @ui.allies membership test)
       # or the non-nil `ready_combatants.first`.
       def force_ai_actor?: (Game::Battle::Combatant combatant) -> untyped
-      # The one caller iterates #battle_status_gauge_window's `allies`, always @ui[:allies].
+      # The one caller iterates #battle_status_gauge_window's `allies`, always @ui.allies.
       def draw_battle_gauge_card: (untyped c, untyped system2, Game::Battle::Combatant ally, untyped i) -> untyped
     end
     class Menu
@@ -11524,7 +11625,7 @@ end
 
 # bc2cpp-native: typed_returns
 class RPG2k::Scene::Battle
-  def ui: () -> Hash?
+  def ui: () -> RPG2k::Scene::Battle::Ui?
   def owner: () -> Game::Interpreter?
   def map: () -> RPG2k::Scene::Map?
   def actor_placeholder_battler: () -> RGSS::Bitmap
