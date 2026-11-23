@@ -1127,6 +1127,15 @@ if wio
       # footprint wins with no behaviour change -- the same object graph just
       # allocates in smaller, tighter units.
       t.defines << 'MRB_HEAP_PAGE_SIZE=256'
+      # Fixed buffers sized for 192 KB of RAM: mrb_state's tables (12.6 KB at mruby's defaults), a readable IO's read
+      # buffer and the symbol name pool's chunk (4 KB each, STDIN's and the first symbol's at boot). The gray stack
+      # overflows into a heap rescan (gray_overflow), the caches only miss more, the IO buffer grows when a read needs
+      # it and a long symbol name gets a chunk of its own, so results are the same. WIO_STATE_TABLES=default keeps
+      # mruby's sizes.
+      unless ENV['WIO_STATE_TABLES'] == 'default'
+        t.defines << 'MRB_GRAY_STACK_SIZE=256' << 'MRB_METHOD_CACHE_SIZE=64' << 'MRB_ROWS_CACHE_SIZE=16'
+        t.defines << 'MRB_IO_BUF_SIZE=512' << 'MRB_SYM_POOL_CHUNK_SIZE=1024'
+      end
       t.defines << 'KHASH_INITIAL_SIZE=16'
       # Schoolbook-only bigint multiply/square/to_s (mruby-bigint MRB_BIGINT_SCHOOLBOOK): the same results, only
       # operands past ~1000 bits get slower, and the Karatsuba/Toom-3/D&C code is not linked. WIO_BIGINT_FAST=1 keeps it.
