@@ -1583,3 +1583,7 @@ end
 # include/) -- all the bc2cpp CI check jobs need, without the gem build.
 desc 'build only the host bootstrap mrbc'
 task host_mrbc: MRuby.targets['host'].mrbcfile
+
+# PRESYM_COMPACT (3rd/mruby lib/mruby/presym.rb): every build's presym names compressed and decoded on demand;
+# MRB_PRESYM_COMPACT=0 restores the plain table.
+MRuby.targets.each_value { |build| build.presym_compact = ENV['MRB_PRESYM_COMPACT'] != '0' }
