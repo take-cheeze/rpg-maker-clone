@@ -118,6 +118,8 @@ CHECKS = [
   { name: 'rpg2k-scene',        command: %w[scripts/rpg2k/scene_check.rb] },
   { name: 'rpg2k-render',       command: %w[scripts/rpg2k/render_check.rb] },
   { name: 'rpg2k-nofloat',      command: %w[scripts/rpg2k/nofloat_wiring_check.rb] },
+  { name: 'wio-strip-scripts',  command: %w[scripts/wio/strip_scripts_check.rb] },
+  { name: 'wio-dropped-gems',   command: %w[scripts/wio/dropped_gems_check.rb] },
   { name: 'rpg2k-testbed-logic', command: %w[scripts/rpg2k/testbed_logic_check.rb] },
   # Spawns the exporter as a child process; the coverage hook rides RUBYOPT
   # into it, so Game::ChipsetLayout/ChipSet and the LCF readers it drives are
