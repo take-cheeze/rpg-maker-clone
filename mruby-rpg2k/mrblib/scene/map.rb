@@ -1786,7 +1786,7 @@ class RPG2k
       def record_foreground_event_exec
         frames = @interpreter.call_stack_snapshot
         @state.foreground_event_exec =
-          frames && { event_id: @active_event ? @active_event.id : 0, frames: frames }
+          frames && Game::State::ForegroundExec.new(@active_event ? @active_event.id : 0, frames)
       end
 
       # Resume whatever event was mid-execution in the shared foreground
@@ -1809,11 +1809,11 @@ class RPG2k
       # interpreter today (#start_autostart's own `@active_event = nil`).
       def restore_foreground_event_exec
         saved = @state.foreground_event_exec
-        frames = saved && saved[:frames]
+        frames = saved && saved.frames
         return unless frames && !frames.empty?
         @interpreter.restore_call_stack(frames)
         return unless @interpreter.running?
-        ev_id = saved[:event_id]
+        ev_id = saved.event_id
         @active_event = (ev_id && ev_id != 0) ? @events.find { |e| e.id == ev_id } : nil
       end
 

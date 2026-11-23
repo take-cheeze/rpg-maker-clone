@@ -10042,8 +10042,8 @@ module Game
     # occupies the single shared foreground interpreter (Scene::Map's own
     # @interpreter) -- a map event (trigger 0 action key / 1 touch /
     # Auto-Start) or an Auto-Start Common Event, both of which run on that
-    # one shared interpreter (see Scene::Map#start_autostart). A Hash
-    # `{ event_id:, frames: }` (`frames` is #call_stack_snapshot's own return
+    # one shared interpreter (see Scene::Map#start_autostart). A ForegroundExec
+    # (`frames` is #call_stack_snapshot's own return
     # value; `event_id` is the map event id it belongs to, or 0 for a common
     # event / no map character) when there is something mid-execution there,
     # nil otherwise -- true the overwhelming majority of the time a save
@@ -10065,6 +10065,16 @@ module Game
     # #restore_call_stack). Round-trips through a real `.lsd`'s chunk 113
     # (LCF::Schema::SAVE_FOREGROUND_EVENT), as of cycle #191.
     attr_accessor :foreground_event_exec
+
+    # #foreground_event_exec's value: the map event id the frames belong to (0: a common event or no character).
+    class ForegroundExec
+      attr_reader :event_id, :frames
+
+      def initialize(event_id, frames)
+        @event_id = event_id
+        @frames = frames
+      end
+    end
     # Full `Game::Interpreter` call-stack snapshots of every currently-
     # running Common Event Parallel Process (Scene::Map's own @parallels,
     # the `common_event_id`-non-nil entries only -- a Map Event's own

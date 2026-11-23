@@ -11447,7 +11447,7 @@ check 'to_lsd/from_lsd round-trips a foreground and a common-event call-stack sn
   fg_it.event_id = 42
   fg_it.triggered_by_decision_key = true
   fg_it.update # parks on the Wait
-  st.foreground_event_exec = { event_id: 42, frames: fg_it.call_stack_snapshot }
+  st.foreground_event_exec = Game::State::ForegroundExec.new(42, fg_it.call_stack_snapshot)
 
   ce_it = Game::Interpreter.new(Game::State.new(Game::Party.new(db), 1, 0, 0))
   called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0]), FakeCmd.new(IC::WAIT, [1])]
@@ -11461,10 +11461,10 @@ check 'to_lsd/from_lsd round-trips a foreground and a common-event call-stack sn
 
   fg = round.foreground_event_exec
   ok !fg.nil?, 'chunk 113 came back'
-  eq 42, fg[:event_id]
-  eq 1, fg[:frames].size
-  eq 1, fg[:frames][0].current_command, 'parked right after the Wait'
-  eq true, fg[:frames][0].triggered_by_decision_key
+  eq 42, fg.event_id
+  eq 1, fg.frames.size
+  eq 1, fg.frames[0].current_command, 'parked right after the Wait'
+  eq true, fg.frames[0].triggered_by_decision_key
 
   ce_frames = round.common_event_exec[7]
   ok !ce_frames.nil?, 'chunk 114 carries an entry for common event 7'

@@ -895,8 +895,8 @@ module Game
       # mid-execution there at save time -- see #foreground_event_exec's own
       # comment for when that is genuinely reachable. Absent otherwise,
       # matching every other "nothing to restore" chunk in this method.
-      if @foreground_event_exec && @foreground_event_exec[:frames]
-        save[113] = self.class.build_event_exec_state(@foreground_event_exec[:frames])
+      if @foreground_event_exec && @foreground_event_exec.frames
+        save[113] = self.class.build_event_exec_state(@foreground_event_exec.frames)
       end
 
       # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
@@ -1639,7 +1639,7 @@ module Game
       # itself only decodes the chunk onto Game::State, it does not touch a
       # live interpreter (there is none to touch here).
       fg_frames = read_foreground_frames(save)
-      state.foreground_event_exec = fg_frames && { event_id: fg_frames.first.event_id, frames: fg_frames }
+      state.foreground_event_exec = fg_frames && ForegroundExec.new(fg_frames.first.event_id, fg_frames)
       # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
       # Event Parallel Process -- see #common_event_exec's own comment.
       # Absent, or missing individual ids, on a save written before cycle

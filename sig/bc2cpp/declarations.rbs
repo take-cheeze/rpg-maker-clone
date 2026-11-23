@@ -6299,6 +6299,12 @@ class Game::Interpreter::Frame
   def triggered_by_decision_key: () -> untyped
   def initialize: (untyped, untyped, untyped, untyped) -> untyped
 end
+# bc2cpp-native: base_rpg
+class Game::State::ForegroundExec
+  def event_id: () -> untyped
+  def frames: () -> untyped
+  def initialize: (untyped, untyped) -> untyped
+end
 
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
@@ -7245,7 +7251,7 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def rebuild_tile_cache: (untyped, untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
-  def record_foreground_event_exec: () -> (Hash | nil)
+  def record_foreground_event_exec: () -> (Game::State::ForegroundExec | nil)
   %a{bc2cpp:hint}
   def refresh_player_graphic: () -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
@@ -7939,6 +7945,14 @@ module Game
     class Frame
       @current_command: Integer
       @event_id: Integer
+    end
+  end
+  # Game::State::ForegroundExec: built by Scene::Map#record_foreground_event_exec (an event id or 0, and
+  # #call_stack_snapshot's Array) and State.from_lsd (the first Frame's event id and .read_event_exec_frames' Array).
+  class State
+    class ForegroundExec
+      @event_id: Integer
+      @frames: Array[untyped]
     end
   end
 end
