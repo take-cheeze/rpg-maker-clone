@@ -65,7 +65,10 @@ unit and no function of it has its address taken; gems printing the same group s
 (`tools/bc2cpp/cross_gem_share.rb`, `BC2CPP_CROSS_GEM_SHARE=0` turns it off). A shared helper's owner call names
 its method by presym id and is dated by one program-wide owner epoch (`tools/bc2cpp/runtime/bc2cpp_program_state.hxx`,
 `BC2CPP_HELPER_PROGRAM_SITES=0`), so the numeric slow paths print alike in every gem. `extern "C"` prototypes move with
-their callers (`BC2CPP_CROSS_GEM_C_PROTOTYPE=0`).
+their callers (`BC2CPP_CROSS_GEM_C_PROTOTYPE=0`). The owner-class slots are one table for the program,
+numbered from the class universe every gem sees alike (`bc2cpp_pw_classes_<digest>.hxx`,
+`BC2CPP_PROGRAM_CLASS_SLOTS=0`). So the index helpers print alike too, and a helper calling the gem's own compiled method
+moves (`BC2CPP_CROSS_GEM_METHOD_PROTOTYPE=0`).
 
 ## Grouping
 
