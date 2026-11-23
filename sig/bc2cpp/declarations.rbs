@@ -6467,6 +6467,8 @@ module Game
     @pauses: Array[Game::Message::PauseMarker]
     @speeds: Array[Game::Message::SpeedMarker]
     @instants: Array[Array[untyped]]
+    # #initialize's `0`, then only #release_pause's `+= 1`.
+    @released: Integer
   end
   class Actor
     def equipped_weapons: () -> Array
@@ -13699,6 +13701,9 @@ class Game::Interpreter
   # #start / #enter_called_list / #return_from_call store an event's, common event's or saved frame's command list:
   # LCF.parse_event_commands' `EventCommand.new` values (and a synthesized LCF::EventCommand), `[]` when absent.
   @list: Array[LCF::EventCommand]
+  # Every writer stores 0, `@list.size`, a scanned position (`j`, `j + 1`, a find_*_option result behind `if target`),
+  # `+= 1`/`-= 1`, or a saved frame's `current_command` behind `>= 0`, so `@list[@index]` is an element read.
+  @index: Integer
 end
 class Game::Troop
   # `[]` in #initialize, then only `<<` of #build_member's `Enemy.new`.
