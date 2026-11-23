@@ -55,15 +55,21 @@
  * backs its canvases with LV_COLOR_FORMAT_ARGB8888 or, for opaque 3-channel
  * decoded images, RGB888 -- mruby-rgss/src/lib.cxx; the display itself is
  * plain RGB565, wio.cxx's own lv_display_set_color_format call, no swap).
- * I1 (1-bit canvases), byte-swapped RGB565, and premultiplied-alpha ARGB8888
+ * I1 (1-bit canvases), byte-swapped RGB565, premultiplied-alpha and XRGB8888
  * are never requested by any of that, so their backends are pure dead
- * weight here -- unlike A8/L8/AL88 (LVGL's own font-glyph and image-mask
- * decoding paths reach those internally, confirmed by grepping
- * 3rd/lvgl/src for each format outside this dispatcher) or RGB888/ARGB8888/
- * RGB565 (all three used directly above). */
+ * weight here. A8/L8/AL88 gate the same dispatch (an A8/L8/AL88 layer, which
+ * LVGL itself only makes for drop shadows, unreachable with
+ * LV_DRAW_SW_COMPLEX 0) plus L8/AL88 *source* images, which nothing here
+ * creates; font glyphs are blended as masks, not through these. A host render
+ * of an RGSS-shaped scene through the RGB565 display path is byte-identical
+ * with all of them off, and adding an L8 canvas makes it differ. */
 #define LV_DRAW_SW_SUPPORT_I1 0
 #define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED 0
 #define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 0
+#define LV_DRAW_SW_SUPPORT_XRGB8888 0
+#define LV_DRAW_SW_SUPPORT_A8 0
+#define LV_DRAW_SW_SUPPORT_L8 0
+#define LV_DRAW_SW_SUPPORT_AL88 0
 
 /* LV_DRAW_SW_COMPLEX gates the software renderer's rounded corners,
  * gradients, box shadows, arcs, lines, triangles and the lv_draw_sw_mask
@@ -133,6 +139,14 @@
 #define LV_USE_CANVAS     1
 #define LV_USE_IMAGE      1
 #define LV_USE_LABEL      1
+
+/* The bring-up labels are short, fixed, unselectable ASCII in a font that has
+ * every glyph they use, so text selection, the long-text redraw hint, the
+ * missing-glyph box and widgets' default text are never reached. */
+#define LV_LABEL_TEXT_SELECTION 0
+#define LV_LABEL_LONG_TXT_HINT 0
+#define LV_USE_FONT_PLACEHOLDER 0
+#define LV_WIDGETS_HAS_DEFAULT_VALUE 0
 
 #define LV_USE_ANIMIMG    0
 #define LV_USE_ARC        0
