@@ -710,6 +710,11 @@ module LCF
   # NoMethodError for module LCF.
 
   class Array1D
+    # An empty, writable record over +elements+ (a schema constant), to fill through #[]= and #to_lcf.
+    def self.blank_record elements
+      Array1D.new '', { elements: elements }
+    end
+
     def initialize s, schema
       s = StringIO.new s if s.is_a? String
 
@@ -904,6 +909,11 @@ module LCF
   end
 
   class Array2D
+    # An empty, writable table over +elements+ (a schema constant), to fill through #[]= and #to_lcf.
+    def self.blank_table elements
+      Array2D.new '', { elements: elements }
+    end
+
     def initialize s, schema
       s = StringIO.new s if s.is_a? String
 
