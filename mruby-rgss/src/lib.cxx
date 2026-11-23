@@ -243,7 +243,8 @@ mrb_value zlib_inflate_native_body(mrb_state* M,
     raw = stbi_zlib_decode_noheader_malloc(ptr, (int)len, &outlen);
   if (!raw)
     mrb_raisef(M,
-               mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "RGSSError"),
+               mrb_class_get_under_id(M, mrb_module_get_id(M, MRB_SYM(RGSS)),
+                                      MRB_SYM(RGSSError)),
                "zlib inflate failed: %s", stbi_failure_reason());
   mrb_value out = mrb_str_new(M, raw, outlen < 0 ? 0 : outlen);
   stbi_image_free(raw);
@@ -1572,20 +1573,19 @@ mrb_value bmp_init_copy_native_body(mrb_state* M, V self, mrb_value other) {
   dst = src;
   dst.dirty = true;
 
-  const mrb_sym font_iv = mrb_intern_lit(M, "@font");
+  const mrb_sym font_iv = MRB_IVSYM(font);
   const V font = mrb_iv_get(M, self, font_iv);
   if (!mrb_nil_p(font)) {
     // Font defines no dup: while Kernel#dup (kernel.c's mrb_obj_dup) answers
     // it, call that function; a script's own Font#dup is still called.
     struct RClass* fc = mrb_class(M, font);
-    const mrb_method_t dup =
-        mrb_method_search_vm(M, &fc, mrb_intern_lit(M, "dup"));
+    const mrb_method_t dup = mrb_method_search_vm(M, &fc, MRB_SYM(dup));
     const bool kernel_dup = !MRB_METHOD_UNDEF_P(dup) &&
                             MRB_METHOD_FUNC_P(dup) &&
                             MRB_METHOD_FUNC(dup) == mrb_obj_dup;
-    mrb_iv_set(
-        M, self, font_iv,
-        kernel_dup ? mrb_obj_dup(M, font) : mrb_funcall(M, font, "dup", 0));
+    mrb_iv_set(M, self, font_iv,
+               kernel_dup ? mrb_obj_dup(M, font)
+                          : mrb_funcall_id(M, font, MRB_SYM(dup), 0));
   }
   return self;
 }
@@ -1820,8 +1820,9 @@ Bitmap& bmp_self(mrb_state* M, V self) {
 // inherits the right unwrapping for free.
 Bitmap& bmp_require(mrb_state* M, void* p) {
   if (!p) {
-    RClass* mod = mrb_module_get(M, "RGSS");
-    mrb_raise(M, mrb_class_get_under(M, mod, "RGSSError"), "disposed Bitmap");
+    RClass* mod = mrb_module_get_id(M, MRB_SYM(RGSS));
+    mrb_raise(M, mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError)),
+              "disposed Bitmap");
   }
   return **reinterpret_cast<std::shared_ptr<Bitmap>*>(p);
 }
@@ -1907,8 +1908,10 @@ mrb_value bmp_rect(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   const V args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
                     mrb_fixnum_value(b.width), mrb_fixnum_value(b.height)};
-  return mrb_obj_new(
-      M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
+  return mrb_obj_new(M,
+                     mrb_class_get_under_id(
+                         M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Rect)),
+                     4, args);
 }
 
 mrb_value bmp_clear(mrb_state* M, V self) {
@@ -1971,8 +1974,8 @@ mrb_value bmp_tone_blt(mrb_state* M, V self) {
   Tone& t = DataType<Tone>::get(M, tone_v);
 
   if (src.width != dst.width || src.height != dst.height) {
-    RClass* mod = mrb_module_get(M, "RGSS");
-    RClass* err = mrb_class_get_under(M, mod, "RGSSError");
+    RClass* mod = mrb_module_get_id(M, MRB_SYM(RGSS));
+    RClass* err = mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError));
     mrb_raisef(M, err, "tone_blt: size mismatch (self %dx%d, src %dx%d)",
                dst.width, dst.height, src.width, src.height);
   }
@@ -2245,7 +2248,10 @@ mrb_value bmp_get_pixel(mrb_state* M, V self) {
   const V args[] = {rgss::num_value(M, r), rgss::num_value(M, g),
                     rgss::num_value(M, bl), rgss::num_value(M, a)};
   return mrb_obj_new(
-      M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);
+      M,
+      mrb_class_get_under_id(M, mrb_module_get_id(M, MRB_SYM(RGSS)),
+                             MRB_SYM(Color)),
+      4, args);
 }
 
 #if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
@@ -2405,15 +2411,19 @@ mrb_value bmp_blt_quads(mrb_state* M, V self) {
   for (mrb_int i = 0; i < n; ++i) {
     V qv = mrb_ary_ref(M, quads_v, i);
     if (!mrb_array_p(qv) || ary_size(qv) != 6)
-      mrb_raisef(
-          M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "RGSSError"),
-          "blt_quads: each quad must be [qdx, qdy, sx, sy, w, h] (%S)", qv);
+      mrb_raisef(M,
+                 mrb_class_get_under_id(M, mrb_module_get_id(M, MRB_SYM(RGSS)),
+                                        MRB_SYM(RGSSError)),
+                 "blt_quads: each quad must be [qdx, qdy, sx, sy, w, h] (%S)",
+                 qv);
     V nums[6];
     for (int j = 0; j < 6; ++j) {
       nums[j] = mrb_ary_ref(M, qv, j);
       if (!mrb_integer_p(nums[j]))
         mrb_raisef(
-            M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "RGSSError"),
+            M,
+            mrb_class_get_under_id(M, mrb_module_get_id(M, MRB_SYM(RGSS)),
+                                   MRB_SYM(RGSSError)),
             "blt_quads: each quad element must be an Integer (%S)", qv);
     }
     rc.x = mrb_integer(nums[2]);
@@ -2630,8 +2640,8 @@ mrb_value bmp_mosaic_blt(mrb_state* M, V self) {
   Bitmap& src = DataType<Bitmap>::get(M, src_v);
 
   if (src.width != dst.width || src.height != dst.height) {
-    RClass* mod = mrb_module_get(M, "RGSS");
-    RClass* err = mrb_class_get_under(M, mod, "RGSSError");
+    RClass* mod = mrb_module_get_id(M, MRB_SYM(RGSS));
+    RClass* err = mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError));
     mrb_raisef(M, err, "mosaic_blt: size mismatch (self %dx%d, src %dx%d)",
                dst.width, dst.height, src.width, src.height);
   }
@@ -2678,8 +2688,8 @@ mrb_value bmp_wave_blt(mrb_state* M, V self) {
   Bitmap& src = DataType<Bitmap>::get(M, src_v);
 
   if (src.width != dst.width || src.height != dst.height) {
-    RClass* mod = mrb_module_get(M, "RGSS");
-    RClass* err = mrb_class_get_under(M, mod, "RGSSError");
+    RClass* mod = mrb_module_get_id(M, MRB_SYM(RGSS));
+    RClass* err = mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError));
     mrb_raisef(M, err, "wave_blt: size mismatch (self %dx%d, src %dx%d)",
                dst.width, dst.height, src.width, src.height);
   }
@@ -2968,8 +2978,8 @@ std::string find_font_path(mrb_state* M, const std::string& name) {
 // font, whose metrics match RPG_RT's MS Gothic and which the render-parity
 // comparisons are checked against. RPG2000 therefore leaves this nil.
 std::string font_default_path(mrb_state* M) {
-  const V rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
-  const mrb_sym font_sym = mrb_intern_lit(M, "Font");
+  const V rgss_mod = mrb_obj_value(mrb_module_get_id(M, MRB_SYM(RGSS)));
+  const mrb_sym font_sym = MRB_SYM(Font);
   // Font is defined in this gem's mrblib, which is always loaded alongside the
   // native half -- but text must draw, not raise, for an embedder that loaded
   // only the C side.
@@ -2977,7 +2987,7 @@ std::string font_default_path(mrb_state* M) {
     return std::string();
   const V font = mrb_const_get(M, rgss_mod, font_sym);
   // Font.default_path is a class-level attr_accessor (mrblib/lib.rb).
-  V v = mrb_iv_get(M, font, mrb_intern_lit(M, "@default_path"));
+  V v = mrb_iv_get(M, font, MRB_IVSYM(default_path));
   if (!mrb_string_p(v))
     return std::string();
   return std::string(RSTRING_PTR(v), RSTRING_LEN(v));
@@ -3036,12 +3046,12 @@ FontAttr read_font(mrb_state* M, V self) {
 #if !defined(WIO_TERMINAL)
   std::string name;
 #endif
-  const V fv = mrb_iv_get(M, self, mrb_intern_lit(M, "@font"));
+  const V fv = mrb_iv_get(M, self, MRB_IVSYM(font));
   if (!mrb_nil_p(fv)) {
     // Font's attributes are read from their ivars (attr_accessor-backed): an
     // override of a reader is not consulted.
 #if !defined(WIO_TERMINAL)
-    V nv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@name"));
+    V nv = mrb_iv_get(M, fv, MRB_IVSYM(name));
     if (mrb_string_p(nv)) {
       name.assign(RSTRING_PTR(nv), RSTRING_LEN(nv));
     } else if (mrb_array_p(nv) && ary_size(nv) > 0 &&
@@ -3051,22 +3061,22 @@ FontAttr read_font(mrb_state* M, V self) {
       name.assign(RSTRING_PTR(n0), RSTRING_LEN(n0));
     }
 #endif
-    V sv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@size"));
+    V sv = mrb_iv_get(M, fv, MRB_IVSYM(size));
     if (mrb_fixnum_p(sv))
       fa.size = static_cast<double>(mrb_fixnum(sv));
     else if (rgss::num_p(sv))
       fa.size = rgss::num_arg(M, sv);
-    V bv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@bold"));
+    V bv = mrb_iv_get(M, fv, MRB_IVSYM(bold));
     fa.bold = mrb_bool(bv);
-    V iv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@italic"));
+    V iv = mrb_iv_get(M, fv, MRB_IVSYM(italic));
     fa.italic = mrb_bool(iv);
-    V ov = mrb_iv_get(M, fv, mrb_intern_lit(M, "@outline"));
+    V ov = mrb_iv_get(M, fv, MRB_IVSYM(outline));
     fa.outline = mrb_bool(ov);
-    V shv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@shadow"));
+    V shv = mrb_iv_get(M, fv, MRB_IVSYM(shadow));
     fa.shadow = mrb_bool(shv);
-    V cv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@color"));
+    V cv = mrb_iv_get(M, fv, MRB_IVSYM(color));
     color_rgba(M, cv, fa.color);
-    V ocv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@out_color"));
+    V ocv = mrb_iv_get(M, fv, MRB_IVSYM(out_color));
     color_rgba(M, ocv, fa.out_color);
   }
 #if defined(WIO_TERMINAL)
@@ -3654,8 +3664,10 @@ mrb_value bmp_text_size_body(mrb_state* M,
       mrb_fixnum_value(height),
   };
 
-  return mrb_obj_new(
-      M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
+  return mrb_obj_new(M,
+                     mrb_class_get_under_id(
+                         M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Rect)),
+                     4, args);
 }
 
 mrb_value bmp_text_size_native_body(mrb_state* M,
@@ -3696,8 +3708,8 @@ mrb_value obj_dispose(mrb_state* M, mrb_value self) {
 // Viewport's content layer) are ordered among themselves by their `z`.
 // Populated by register_zobj.
 mrb_value zorder_objs(mrb_state* M) {
-  const mrb_value mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
-  const mrb_value ret = mrb_const_get(M, mod, mrb_intern_lit(M, "_zobjs"));
+  const mrb_value mod = mrb_obj_value(mrb_module_get_id(M, MRB_SYM(RGSS)));
+  const mrb_value ret = mrb_const_get(M, mod, MRB_SYM(_zobjs));
   mrb_assert(mrb_array_p(ret));
   return ret;
 }
@@ -3706,8 +3718,8 @@ mrb_value zorder_objs(mrb_state* M) {
 // match the objects' `z` values. Reordering every frame would be wasteful, so
 // callers only mark it dirty when a `z` (or the root set) actually changes.
 void update_z(mrb_state* M) {
-  const mrb_value mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
-  mrb_iv_set(M, mod, mrb_intern_lit(M, "_z_updated"), mrb_true_value());
+  const mrb_value mod = mrb_obj_value(mrb_module_get_id(M, MRB_SYM(RGSS)));
+  mrb_iv_set(M, mod, MRB_SYM(_z_updated), mrb_true_value());
 }
 
 // Drain every backend's buffered key transitions into RGSS::Input. Called from
@@ -3796,9 +3808,9 @@ mrb_value gfx_frame_reset(mrb_state* M, mrb_value self) {
 bool render_due(mrb_state* M) {
   int32_t render_fps = 60;
   if (mrb_const_defined(M, mrb_obj_value(M->object_class),
-                        mrb_intern_lit(M, "RENDER_FPS"))) {
-    const mrb_value v = mrb_const_get(M, mrb_obj_value(M->object_class),
-                                      mrb_intern_lit(M, "RENDER_FPS"));
+                        MRB_SYM(RENDER_FPS))) {
+    const mrb_value v =
+        mrb_const_get(M, mrb_obj_value(M->object_class), MRB_SYM(RENDER_FPS));
     mrb_assert(mrb_fixnum_p(v));
     render_fps = static_cast<int32_t>(mrb_fixnum(v));
   }
@@ -3814,23 +3826,23 @@ bool render_due(mrb_state* M) {
 }
 
 mrb_value gfx_update(mrb_state* M, mrb_value self) {
-  const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
+  const mrb_value rgss_mod = mrb_obj_value(mrb_module_get_id(M, MRB_SYM(RGSS)));
 
   rgss_audio_frame();
 
   if (mrb_const_defined(M, mrb_obj_value(M->object_class),
-                        mrb_intern_lit(M, "TIMEOUT_MS"))) {
-    const mrb_value timeout_ms = mrb_const_get(
-        M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "TIMEOUT_MS"));
+                        MRB_SYM(TIMEOUT_MS))) {
+    const mrb_value timeout_ms =
+        mrb_const_get(M, mrb_obj_value(M->object_class), MRB_SYM(TIMEOUT_MS));
     mrb_assert(mrb_fixnum_p(timeout_ms));
-    const mrb_value start =
-        mrb_const_get(M, rgss_mod, mrb_intern_lit(M, "_game_start"));
+    const mrb_value start = mrb_const_get(M, rgss_mod, MRB_SYM(_game_start));
     mrb_assert(mrb_fixnum_p(start));
 
     if (mrb_fixnum(timeout_ms) > 0 &&
         (lv_tick_get() - mrb_fixnum(start)) > mrb_fixnum(timeout_ms)) {
       mrb_raisef(M,
-                 mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Timeout"),
+                 mrb_class_get_under_id(M, mrb_module_get_id(M, MRB_SYM(RGSS)),
+                                        MRB_SYM(Timeout)),
                  "Timeout");
     }
   }
@@ -3848,7 +3860,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
     // themselves, while the Viewport (and top-level sprites) are ordered
     // against each other on the screen. Disposed objects (null DATA_PTR) are
     // dropped from the set here so it does not grow unbounded.
-    if (mrb_bool(mrb_iv_get(M, rgss_mod, mrb_intern_lit(M, "_z_updated")))) {
+    if (mrb_bool(mrb_iv_get(M, rgss_mod, MRB_SYM(_z_updated)))) {
       ProfilerScope _zscope("gfx.zorder");
       const mrb_value objs = zorder_objs(M);
       const mrb_value live = mrb_ary_new(M);
@@ -3859,7 +3871,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
           continue;
         mrb_ary_push(M, live, v);
         lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
-        const mrb_value z = mrb_iv_get(M, v, mrb_intern_lit(M, "@z"));
+        const mrb_value z = mrb_iv_get(M, v, MRB_IVSYM(z));
         mrb_assert(mrb_fixnum_p(z));
         by_parent[lv_obj_get_parent(obj)].insert({mrb_fixnum(z), obj});
       }
@@ -3867,8 +3879,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
       for (const auto& group : by_parent)
         for (const auto& order : group.second)
           lv_obj_move_foreground(order.second);
-      mrb_iv_set(M, rgss_mod, mrb_intern_lit(M, "_z_updated"),
-                 mrb_false_value());
+      mrb_iv_set(M, rgss_mod, MRB_SYM(_z_updated), mrb_false_value());
     }
 
     // Bitmap mutators write straight into the shared pixel buffer, which LVGL
@@ -3879,7 +3890,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
     {
       ProfilerScope _iscope("gfx.invalidate");
       const mrb_value roots = zorder_objs(M);
-      const mrb_sym bitmap_sym = mrb_intern_lit(M, "@bitmap");
+      const mrb_sym bitmap_sym = MRB_IVSYM(bitmap);
       for (mrb_int i = 0; i < ary_size(roots); ++i) {
         const mrb_value v = ary_items(roots)[i];
         lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
@@ -3924,10 +3935,10 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   }
 
   // Advance Graphics.frame_count, matching RGSS semantics.
-  V gfx = mrb_obj_value(
-      mrb_module_get_under(M, mrb_module_get(M, "RGSS"), "Graphics"));
-  V fc = mrb_iv_get(M, gfx, mrb_intern_lit(M, "@frame_count"));
-  mrb_iv_set(M, gfx, mrb_intern_lit(M, "@frame_count"),
+  V gfx = mrb_obj_value(mrb_module_get_under_id(
+      M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Graphics)));
+  V fc = mrb_iv_get(M, gfx, MRB_IVSYM(frame_count));
+  mrb_iv_set(M, gfx, MRB_IVSYM(frame_count),
              mrb_fixnum_value((mrb_fixnum_p(fc) ? mrb_fixnum(fc) : 0) + 1));
 
   // Frame pacing, against an absolute deadline rather than "sleep whatever is
@@ -3956,9 +3967,9 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   // run's wall-clock time (each frame's own work is a few ms; the wait pads
   // it to a full 1/60s regardless).
   if (!mrb_const_defined(M, mrb_obj_value(M->object_class),
-                         mrb_intern_lit(M, "NO_RENDER_WAIT")) ||
+                         MRB_SYM(NO_RENDER_WAIT)) ||
       !mrb_test(mrb_const_get(M, mrb_obj_value(M->object_class),
-                              mrb_intern_lit(M, "NO_RENDER_WAIT")))) {
+                              MRB_SYM(NO_RENDER_WAIT)))) {
     const uint32_t now = lv_tick_get();
     g_period_acc += 1000;
     const uint32_t period = g_period_acc / 60;
@@ -4006,16 +4017,16 @@ void free_obj(mrb_state* M, void* p) {
 }
 
 lv_display_t* get_display(mrb_state* M) {
-  mrb_value v = mrb_const_get(M, mrb_obj_value(mrb_module_get(M, "RGSS")),
-                              mrb_intern_lit(M, "_display"));
+  mrb_value v = mrb_const_get(
+      M, mrb_obj_value(mrb_module_get_id(M, MRB_SYM(RGSS))), MRB_SYM(_display));
   mrb_assert(mrb_cptr_p(v));
   return reinterpret_cast<lv_display_t*>(mrb_cptr(v));
 }
 
 // Report an unimplemented path through RGSS.warn_stub, which dedupes by name.
 void RGSS_warn_stub(mrb_state* M, const char* name) {
-  mrb_funcall(M, mrb_obj_value(mrb_module_get(M, "RGSS")), "warn_stub", 1,
-              mrb_str_new_cstr(M, name));
+  mrb_funcall_id(M, mrb_obj_value(mrb_module_get_id(M, MRB_SYM(RGSS))),
+                 MRB_SYM(warn_stub), 1, mrb_str_new_cstr(M, name));
 }
 
 // RGSS Graphics.snap_to_bitmap: the rendered screen as a Bitmap.
@@ -4041,8 +4052,8 @@ mrb_value gfx_snap_to_bitmap(mrb_state* M, mrb_value self) {
   }
   const mrb_int w = snap->header.w;
   const mrb_int h = snap->header.h;
-  RClass* bmp_class =
-      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  RClass* bmp_class = mrb_class_get_under_id(
+      M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
   const mrb_value out =
       DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
   Bitmap& b = DataType<Bitmap>::get(M, out);
@@ -4095,9 +4106,9 @@ void wrap_lv_obj(mrb_state* M, mrb_value self, lv_obj_t* obj) {
 lv_obj_t* obj_require(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj) {
-    RClass* mod = mrb_module_get(M, "RGSS");
-    mrb_raisef(M, mrb_class_get_under(M, mod, "RGSSError"), "disposed %s",
-               mrb_obj_classname(M, self));
+    RClass* mod = mrb_module_get_id(M, MRB_SYM(RGSS));
+    mrb_raisef(M, mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError)),
+               "disposed %s", mrb_obj_classname(M, self));
   }
   return obj;
 }
@@ -4147,9 +4158,9 @@ lv_obj_t* parent_object(mrb_state* M, mrb_value vp) {
 // Register a display object for z-ordering and give it a default z of 0.
 void register_zobj(mrb_state* M, mrb_value v) {
   mrb_ary_push(M, zorder_objs(M), v);
-  mrb_iv_set(M, v, mrb_intern_lit(M, "@x"), mrb_fixnum_value(0));
-  mrb_iv_set(M, v, mrb_intern_lit(M, "@y"), mrb_fixnum_value(0));
-  mrb_iv_set(M, v, mrb_intern_lit(M, "@z"), mrb_fixnum_value(0));
+  mrb_iv_set(M, v, MRB_IVSYM(x), mrb_fixnum_value(0));
+  mrb_iv_set(M, v, MRB_IVSYM(y), mrb_fixnum_value(0));
+  mrb_iv_set(M, v, MRB_IVSYM(z), mrb_fixnum_value(0));
   update_z(M);
 }
 
@@ -4161,7 +4172,7 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
   wrap_lv_obj(M, self, p);
   register_zobj(M, self);
   // Keep the viewport alive as long as the sprite refers to it.
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  mrb_iv_set(M, self, MRB_IVSYM(viewport), vp);
   return self;
 }
 
@@ -4205,7 +4216,7 @@ static Tone viewport_tone(mrb_state* M, mrb_value vp) {
   Tone t{};
   if (!mrb_test(vp) || !DATA_PTR(vp))
     return t;
-  const mrb_value tv = mrb_iv_get(M, vp, mrb_intern_lit(M, "@tone"));
+  const mrb_value tv = mrb_iv_get(M, vp, MRB_IVSYM(tone));
   if (mrb_test(tv) && DATA_PTR(tv))
     t = DataType<Tone>::get(M, tv);
   return t;
@@ -4219,15 +4230,14 @@ static Tone viewport_tone(mrb_state* M, mrb_value vp) {
 // sprite that redraws its bitmap, or mutates its tone/color in place, must
 // re-assign bitmap= / tone= / color= to refresh (tracked in the gap doc).
 void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
-  const mrb_value bmp_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmap"));
+  const mrb_value bmp_v = mrb_iv_get(M, self, MRB_IVSYM(bitmap));
   if (mrb_nil_p(bmp_v))
     return;
   Bitmap& src = DataType<Bitmap>::get(M, bmp_v);
 
-  const bool mirror =
-      mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@mirror")));
-  const mrb_value tone_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
-  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  const bool mirror = mrb_test(mrb_iv_get(M, self, MRB_IVSYM(mirror)));
+  const mrb_value tone_v = mrb_iv_get(M, self, MRB_IVSYM(tone));
+  const mrb_value color_v = mrb_iv_get(M, self, MRB_IVSYM(color));
   Tone tn{};
   Color cl{0, 0, 0, 0};
   if (mrb_test(tone_v) && DATA_PTR(tone_v))
@@ -4239,26 +4249,21 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   // The viewport's tone applies to everything it draws, so it is folded into
   // this composite after the sprite's own tone/colour/flash (RGSS tints the
   // viewport's contents, not its sources).
-  const Tone vtn =
-      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  const Tone vtn = viewport_tone(M, mrb_iv_get(M, self, MRB_IVSYM(viewport)));
   const bool has_vp_tone = tone_is_set(vtn);
 
   // bush_depth: the bottom N rows are drawn at half opacity, so a character
   // wading through bushes fades out below the waist.
-  const mrb_value bush_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@bush_depth"));
+  const mrb_value bush_v = mrb_iv_get(M, self, MRB_IVSYM(bush_depth));
   const int bush = mrb_test(bush_v) ? mrb_as_int(M, bush_v) : 0;
 
   // flash: a timed colour pulse (Sprite#flash) that decays over its duration,
   // advanced one frame per Sprite#update. A colour flash overlays that colour
   // at a fading alpha; a nil-colour ("empty") flash instead blinks the sprite
   // out and back in.
-  const mrb_value fcnt_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
-  const mrb_value fdur_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_duration"));
-  const mrb_value fcol_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_color"));
+  const mrb_value fcnt_v = mrb_iv_get(M, self, MRB_IVSYM(flash_count));
+  const mrb_value fdur_v = mrb_iv_get(M, self, MRB_IVSYM(flash_duration));
+  const mrb_value fcol_v = mrb_iv_get(M, self, MRB_IVSYM(flash_color));
   const int flash_count = mrb_test(fcnt_v) ? mrb_as_int(M, fcnt_v) : 0;
   const int flash_dur = mrb_test(fdur_v) ? mrb_as_int(M, fdur_v) : 0;
   const bool flash_on = flash_count > 0 && flash_dur > 0;
@@ -4276,7 +4281,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   // cells set this every frame). A non-default rect crops to (cx, cy, cw, ch).
   int cx = 0, cy = 0, cw = src.width, ch = src.height;
   bool cropped = false;
-  const mrb_value sr_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@src_rect"));
+  const mrb_value sr_v = mrb_iv_get(M, self, MRB_IVSYM(src_rect));
   if (mrb_test(sr_v) && DATA_PTR(sr_v)) {
     Rect& sr = DataType<Rect>::get(M, sr_v);
     if (sr.width > 0 && sr.height > 0 &&
@@ -4294,7 +4299,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
       flash_on) {
     // Reuse the scratch bitmap when its size still matches (src_rect changes
     // every frame, so re-allocating here would churn the GC).
-    mrb_value fx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_fx_bitmap"));
+    mrb_value fx_v = mrb_iv_get(M, self, MRB_IVSYM(_fx_bitmap));
     Bitmap* fxp = nullptr;
     if (mrb_test(fx_v) && DATA_PTR(fx_v)) {
       Bitmap& e = DataType<Bitmap>::get(M, fx_v);
@@ -4302,10 +4307,10 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
         fxp = &e;
     }
     if (!fxp) {
-      RClass* bmp_class =
-          mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+      RClass* bmp_class = mrb_class_get_under_id(
+          M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
       fx_v = DataType<Bitmap>::make(M, bmp_class, cw, ch, src.format);
-      mrb_iv_set(M, self, mrb_intern_lit(M, "@_fx_bitmap"), fx_v);
+      mrb_iv_set(M, self, MRB_IVSYM(_fx_bitmap), fx_v);
       fxp = &DataType<Bitmap>::get(M, fx_v);
     }
     Bitmap& fx = *fxp;
@@ -4341,7 +4346,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     fx.dirty = true;
     lv_canvas_set_buffer(obj, fx.buffer.data(), cw, ch, src.format);
   } else {
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_fx_bitmap"), mrb_nil_value());
+    mrb_iv_set(M, self, MRB_IVSYM(_fx_bitmap), mrb_nil_value());
     lv_canvas_set_buffer(obj, src.buffer.data(), src.width, src.height,
                          src.format);
   }
@@ -4389,11 +4394,11 @@ mrb_value spr_set_opacity_body(mrb_state* M, mrb_value self, mrb_int opa) {
   // display: measured ~13ms of the frame on the Android test device. The
   // mirrored ivar is authoritative (every write goes through here), so an
   // equal value can skip the style set entirely.
-  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@opacity"));
+  mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(opacity));
   if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == opa)
     return self;
   lv_obj_set_style_opa(obj, static_cast<lv_opa_t>(opa), 0);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@opacity"), mrb_fixnum_value(opa));
+  mrb_iv_set(M, self, MRB_IVSYM(opacity), mrb_fixnum_value(opa));
   return self;
 }
 
@@ -4409,7 +4414,7 @@ mrb_value spr_set_zoom_x_native_body(mrb_state* M, mrb_value self, double z) {
     z = 0.0;
   lv_obj_t* obj = obj_require(M, self);
   lv_image_set_scale_x(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), rgss::num_value(M, z));
+  mrb_iv_set(M, self, MRB_IVSYM(zoom_x), rgss::num_value(M, z));
   return self;
 }
 
@@ -4425,7 +4430,7 @@ mrb_value spr_set_zoom_y_native_body(mrb_state* M, mrb_value self, double z) {
     z = 0.0;
   lv_obj_t* obj = obj_require(M, self);
   lv_image_set_scale_y(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), rgss::num_value(M, z));
+  mrb_iv_set(M, self, MRB_IVSYM(zoom_y), rgss::num_value(M, z));
   return self;
 }
 
@@ -4448,13 +4453,13 @@ mrb_value spr_set_angle_native_body(mrb_state* M, mrb_value self, double deg) {
   long tenths = ::lround(-deg * 10.0) % 3600;
   if (tenths < 0)
     tenths += 3600;
-  const mrb_value ox = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
-  const mrb_value oy = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  const mrb_value ox = mrb_iv_get(M, self, MRB_IVSYM(ox));
+  const mrb_value oy = mrb_iv_get(M, self, MRB_IVSYM(oy));
   lv_image_set_pivot(
       obj, mrb_nil_p(ox) ? 0 : static_cast<int32_t>(mrb_as_int(M, ox)),
       mrb_nil_p(oy) ? 0 : static_cast<int32_t>(mrb_as_int(M, oy)));
   lv_image_set_rotation(obj, static_cast<int32_t>(tenths));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@angle"), rgss::num_value(M, deg));
+  mrb_iv_set(M, self, MRB_IVSYM(angle), rgss::num_value(M, deg));
   return self;
 }
 
@@ -4469,7 +4474,7 @@ mrb_value spr_set_angle(mrb_state* M, mrb_value self) {
 // re-binds the canvas to a flipped scratch copy of the bitmap (or back to the
 // bitmap itself) via spr_bind_display.
 mrb_value spr_set_mirror_native_body(mrb_state* M, mrb_value self, mrb_bool m) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@mirror"), mrb_bool_value(m));
+  mrb_iv_set(M, self, MRB_IVSYM(mirror), mrb_bool_value(m));
   lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return self;
@@ -4496,7 +4501,7 @@ mrb_value spr_set_tone(mrb_state* M, mrb_value self) {
 }
 
 mrb_value spr_set_tone_body(mrb_state* M, mrb_value self, mrb_value v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
+  mrb_iv_set(M, self, MRB_IVSYM(tone), v);
   lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return v;
@@ -4512,7 +4517,7 @@ mrb_value spr_set_color(mrb_state* M, mrb_value self) {
 mrb_value spr_set_src_rect_native_body(mrb_state* M,
                                        mrb_value self,
                                        mrb_value v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@src_rect"), v);
+  mrb_iv_set(M, self, MRB_IVSYM(src_rect), v);
   lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return v;
@@ -4534,18 +4539,17 @@ mrb_value spr_update(mrb_state* M, mrb_value self) {
 
   // Advance an active flash: it fades one frame per update and clears (dropping
   // its colour) once the duration runs out.
-  const mrb_value fcnt = mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  const mrb_value fcnt = mrb_iv_get(M, self, MRB_IVSYM(flash_count));
   int fc = mrb_test(fcnt) ? mrb_as_int(M, fcnt) : 0;
   if (fc > 0) {
     --fc;
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
-               mrb_fixnum_value(fc));
+    mrb_iv_set(M, self, MRB_IVSYM(flash_count), mrb_fixnum_value(fc));
     if (fc == 0)
-      mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), mrb_nil_value());
+      mrb_iv_set(M, self, MRB_IVSYM(flash_color), mrb_nil_value());
     recomposite = true;
   }
 
-  const mrb_value sr = mrb_iv_get(M, self, mrb_intern_lit(M, "@src_rect"));
+  const mrb_value sr = mrb_iv_get(M, self, MRB_IVSYM(src_rect));
   if (mrb_test(sr) && DATA_PTR(sr)) {
     Rect& r = DataType<Rect>::get(M, sr);
     if (r.width > 0 && r.height > 0)
@@ -4573,7 +4577,7 @@ mrb_value spr_set_blend_type_native_body(mrb_state* M,
     mode = LV_BLEND_MODE_SUBTRACTIVE;
   lv_obj_t* obj = obj_require(M, self);
   lv_obj_set_style_blend_mode(obj, mode, 0);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@blend_type"), mrb_fixnum_value(t));
+  mrb_iv_set(M, self, MRB_IVSYM(blend_type), mrb_fixnum_value(t));
   return self;
 }
 
@@ -4588,7 +4592,7 @@ mrb_value spr_set_blend_type(mrb_state* M, mrb_value self) {
 mrb_value spr_set_bush_depth_native_body(mrb_state* M,
                                          mrb_value self,
                                          mrb_int d) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@bush_depth"), mrb_fixnum_value(d));
+  mrb_iv_set(M, self, MRB_IVSYM(bush_depth), mrb_fixnum_value(d));
   lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return self;
@@ -4637,7 +4641,7 @@ mrb_value obj_set_visible(mrb_state* M, mrb_value self) {
 }
 
 mrb_value obj_visible(mrb_state* M, mrb_value self) {
-  mrb_value v = mrb_iv_get(M, self, mrb_intern_lit(M, "@visible"));
+  mrb_value v = mrb_iv_get(M, self, MRB_IVSYM(visible));
   return mrb_nil_p(v) ? mrb_true_value() : v;
 }
 
@@ -4654,12 +4658,11 @@ void plane_retile(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
     return;
-  const mrb_value canvas_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_plane_canvas"));
+  const mrb_value canvas_v = mrb_iv_get(M, self, MRB_IVSYM(_plane_canvas));
   if (mrb_nil_p(canvas_v))
     return;
   Bitmap& dst = DataType<Bitmap>::get(M, canvas_v);
-  const mrb_value bmp_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmap"));
+  const mrb_value bmp_v = mrb_iv_get(M, self, MRB_IVSYM(bitmap));
   if (mrb_nil_p(bmp_v)) {
     std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
     lv_obj_invalidate(obj);
@@ -4671,16 +4674,14 @@ void plane_retile(mrb_state* M, mrb_value self) {
     lv_obj_invalidate(obj);
     return;
   }
-  const mrb_int ox =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
-  const mrb_int oy =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+  const mrb_int ox = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(ox)));
+  const mrb_int oy = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(oy)));
 
   // zoom_x/zoom_y scale the tiled pattern (nearest-neighbour): a zoom of 2.0
   // samples the source at half the rate, so the bitmap appears twice as large.
   // A non-positive or absent zoom is treated as 1.0 (the fast integer path).
-  const mrb_value zx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@zoom_x"));
-  const mrb_value zy_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@zoom_y"));
+  const mrb_value zx_v = mrb_iv_get(M, self, MRB_IVSYM(zoom_x));
+  const mrb_value zy_v = mrb_iv_get(M, self, MRB_IVSYM(zoom_y));
   double zx = mrb_test(zx_v) ? rgss::num_arg(M, zx_v) : 1.0;
   double zy = mrb_test(zy_v) ? rgss::num_arg(M, zy_v) : 1.0;
   if (zx <= 0.0)
@@ -4692,8 +4693,8 @@ void plane_retile(mrb_state* M, mrb_value self) {
   // Tone (grey desaturation + RGB offset) and colour overlay are baked into the
   // tiled buffer per pixel, the same way Sprite does — so a tinted fog/parallax
   // Plane renders its tint. (Same maths as spr_bind_display.)
-  const mrb_value tone_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
-  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  const mrb_value tone_v = mrb_iv_get(M, self, MRB_IVSYM(tone));
+  const mrb_value color_v = mrb_iv_get(M, self, MRB_IVSYM(color));
   Tone tn{};
   Color cl{0, 0, 0, 0};
   if (mrb_test(tone_v) && DATA_PTR(tone_v))
@@ -4704,8 +4705,7 @@ void plane_retile(mrb_state* M, mrb_value self) {
   const bool has_color = cl.alpha != 0;
   const int ca = static_cast<int>(cl.alpha);
   // ...and then the viewport's tone over the result, as for a sprite.
-  const Tone vtn =
-      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  const Tone vtn = viewport_tone(M, mrb_iv_get(M, self, MRB_IVSYM(viewport)));
   const bool has_vp_tone = tone_is_set(vtn);
 
   for (int y = 0; y < dst.height; ++y) {
@@ -4743,8 +4743,7 @@ mrb_value plane_init(mrb_state* M, mrb_value self) {
     w = lv_display_get_horizontal_resolution(d);
     h = lv_display_get_vertical_resolution(d);
   } else {
-    Rect& r =
-        DataType<Rect>::get(M, mrb_iv_get(M, vp, mrb_intern_lit(M, "@rect")));
+    Rect& r = DataType<Rect>::get(M, mrb_iv_get(M, vp, MRB_IVSYM(rect)));
     w = r.width;
     h = r.height;
   }
@@ -4758,8 +4757,8 @@ mrb_value plane_init(mrb_state* M, mrb_value self) {
   register_zobj(M, self);
   lv_obj_set_pos(c, 0, 0);
 
-  RClass* bmp_class =
-      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  RClass* bmp_class = mrb_class_get_under_id(
+      M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
   const mrb_value canvas_v =
       DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
   Bitmap& canvas = DataType<Bitmap>::get(M, canvas_v);
@@ -4769,18 +4768,18 @@ mrb_value plane_init(mrb_state* M, mrb_value self) {
 
   // Hold the canvas buffer (a Bitmap) and the viewport on the plane so the GC
   // keeps them alive for its lifetime.
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_plane_canvas"), canvas_v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), mrb_nil_value());
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(_plane_canvas), canvas_v);
+  mrb_iv_set(M, self, MRB_IVSYM(viewport), vp);
+  mrb_iv_set(M, self, MRB_IVSYM(bitmap), mrb_nil_value());
+  mrb_iv_set(M, self, MRB_IVSYM(ox), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(oy), mrb_fixnum_value(0));
   return self;
 }
 
 mrb_value plane_set_bmp_native_body(mrb_state* M,
                                     mrb_value self,
                                     mrb_value bmp) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bmp);
+  mrb_iv_set(M, self, MRB_IVSYM(bitmap), bmp);
   plane_retile(M, self);
   return bmp;
 }
@@ -4797,10 +4796,10 @@ mrb_value plane_set_bmp(mrb_state* M, mrb_value self) {
 // a CPU-side re-composite rather than a cheap draw-time offset, so without
 // this guard a stationary Plane still pays a full retile every frame.
 mrb_value plane_set_ox_native_body(mrb_state* M, mrb_value self, mrb_int ox) {
-  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+  const mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(ox));
   if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == ox)
     return self;
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(ox));
+  mrb_iv_set(M, self, MRB_IVSYM(ox), mrb_fixnum_value(ox));
   plane_retile(M, self);
   return self;
 }
@@ -4812,10 +4811,10 @@ mrb_value plane_set_ox(mrb_state* M, mrb_value self) {
 }
 
 mrb_value plane_set_oy_native_body(mrb_state* M, mrb_value self, mrb_int oy) {
-  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  const mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(oy));
   if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == oy)
     return self;
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(oy));
+  mrb_iv_set(M, self, MRB_IVSYM(oy), mrb_fixnum_value(oy));
   plane_retile(M, self);
   return self;
 }
@@ -4831,7 +4830,7 @@ mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
 mrb_value plane_set_tone_native_body(mrb_state* M,
                                      mrb_value self,
                                      mrb_value v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
+  mrb_iv_set(M, self, MRB_IVSYM(tone), v);
   plane_retile(M, self);
   return v;
 }
@@ -4851,7 +4850,7 @@ mrb_value plane_set_color(mrb_state* M, mrb_value self) {
 // Plane#zoom_x= / #zoom_y= scale the tiled pattern; plane_retile samples the
 // source at the reciprocal rate, so assigning a zoom re-tiles.
 mrb_value plane_set_zoom_x_native_body(mrb_state* M, mrb_value self, double z) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), rgss::num_value(M, z));
+  mrb_iv_set(M, self, MRB_IVSYM(zoom_x), rgss::num_value(M, z));
   plane_retile(M, self);
   return self;
 }
@@ -4864,7 +4863,7 @@ mrb_value plane_set_zoom_x(mrb_state* M, mrb_value self) {
 }
 
 mrb_value plane_set_zoom_y_native_body(mrb_state* M, mrb_value self, double z) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), rgss::num_value(M, z));
+  mrb_iv_set(M, self, MRB_IVSYM(zoom_y), rgss::num_value(M, z));
   plane_retile(M, self);
   return self;
 }
@@ -5303,10 +5302,10 @@ static const int TILEMAP_STRIP_SLOTS = 24;
 // it with the character sprites that share the viewport -- which is the whole
 // point of the exercise.
 Bitmap* tilemap_strip(mrb_state* M, mrb_value self, int b, int w) {
-  mrb_value strips = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_strips"));
+  mrb_value strips = mrb_iv_get(M, self, MRB_IVSYM(_tm_strips));
   if (!mrb_hash_p(strips)) {
     strips = mrb_hash_new(M);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_strips"), strips);
+    mrb_iv_set(M, self, MRB_IVSYM(_tm_strips), strips);
   }
   const int slot =
       ((b % TILEMAP_STRIP_SLOTS) + TILEMAP_STRIP_SLOTS) % TILEMAP_STRIP_SLOTS;
@@ -5316,16 +5315,15 @@ Bitmap* tilemap_strip(mrb_state* M, mrb_value self, int b, int w) {
     // The slot may have been holding a different bucket before the map
     // scrolled; it is reused in place rather than reallocated, so record which
     // bucket it carries now for the placement pass.
-    mrb_iv_set(M, found, mrb_intern_lit(M, "@_bucket"), mrb_fixnum_value(b));
-    return &DataType<Bitmap>::get(
-        M, mrb_iv_get(M, found, mrb_intern_lit(M, "@_bitmap")));
+    mrb_iv_set(M, found, MRB_IVSYM(_bucket), mrb_fixnum_value(b));
+    return &DataType<Bitmap>::get(M, mrb_iv_get(M, found, MRB_IVSYM(_bitmap)));
   }
   if (w <= 0)
     return nullptr;
   // Everything below allocates; keep it out of the GC's way until the strip is
   // reachable from the hash.
   const int arena = mrb_gc_arena_save(M);
-  const mrb_value vp = mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport"));
+  const mrb_value vp = mrb_iv_get(M, self, MRB_IVSYM(viewport));
   const int h = TILEMAP_PRIO_SPAN * TILE_SIZE;
   lv_obj_t* c = lv_canvas_create(parent_object(M, vp));
   lv_obj_set_pos(c, 0, 0);
@@ -5334,15 +5332,15 @@ Bitmap* tilemap_strip(mrb_state* M, mrb_value self, int b, int w) {
   lv_obj_set_user_data(c, mrb_ptr(obj));
   lv_obj_add_event_cb(c, on_lv_delete, LV_EVENT_DELETE, nullptr);
   register_zobj(M, obj);
-  RClass* bmp_class =
-      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  RClass* bmp_class = mrb_class_get_under_id(
+      M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
   const mrb_value bmp_v =
       DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
   Bitmap& bmp = DataType<Bitmap>::get(M, bmp_v);
   std::fill(bmp.buffer.begin(), bmp.buffer.end(), static_cast<uint8_t>(0));
   lv_canvas_set_buffer(c, bmp.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
-  mrb_iv_set(M, obj, mrb_intern_lit(M, "@_bitmap"), bmp_v);
-  mrb_iv_set(M, obj, mrb_intern_lit(M, "@_bucket"), mrb_fixnum_value(b));
+  mrb_iv_set(M, obj, MRB_IVSYM(_bitmap), bmp_v);
+  mrb_iv_set(M, obj, MRB_IVSYM(_bucket), mrb_fixnum_value(b));
   mrb_hash_set(M, strips, key, obj);
   mrb_gc_arena_restore(M, arena);
   return &bmp;
@@ -5354,8 +5352,7 @@ using TilemapStrip = std::pair<int, mrb_value>;
 
 std::vector<TilemapStrip> tilemap_strips(mrb_state* M, mrb_value self) {
   std::vector<TilemapStrip> out;
-  const mrb_value strips =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_strips"));
+  const mrb_value strips = mrb_iv_get(M, self, MRB_IVSYM(_tm_strips));
   if (!mrb_hash_p(strips))
     return out;
   const mrb_value keys = mrb_hash_keys(M, strips);
@@ -5366,7 +5363,7 @@ std::vector<TilemapStrip> tilemap_strips(mrb_state* M, mrb_value self) {
       continue;
     // The bucket the slot currently carries, which is what its position and z
     // are derived from -- not the slot index the hash is keyed by.
-    const mrb_value b = mrb_iv_get(M, v, mrb_intern_lit(M, "@_bucket"));
+    const mrb_value b = mrb_iv_get(M, v, MRB_IVSYM(_bucket));
     out.push_back({mrb_test(b) ? static_cast<int>(mrb_as_int(M, b)) : 0, v});
   }
   return out;
@@ -5411,7 +5408,7 @@ bool tilemap_refresh_vx(mrb_state* M,
                         mrb_int oy,
                         int anim) {
   Table& md = DataType<Table>::get(M, md_v);
-  const mrb_value flags_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@flags"));
+  const mrb_value flags_v = mrb_iv_get(M, self, MRB_IVSYM(flags));
   Table* flags = (mrb_test(flags_v) && DATA_PTR(flags_v))
                      ? &DataType<Table>::get(M, flags_v)
                      : nullptr;
@@ -5522,8 +5519,7 @@ void tilemap_apply_viewport_tone(mrb_state* M,
                                  mrb_value self,
                                  Bitmap& dst,
                                  Bitmap* above) {
-  const Tone tn =
-      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  const Tone tn = viewport_tone(M, mrb_iv_get(M, self, MRB_IVSYM(viewport)));
   if (!tone_is_set(tn))
     return;
   Bitmap* targets[2] = {&dst, above};
@@ -5561,12 +5557,11 @@ void tilemap_apply_viewport_tone(mrb_state* M,
 // shape: created once, held on the tilemap so the GC keeps it alive, torn
 // down by tilemap_dispose exactly as before.
 void tilemap_ensure_above(mrb_state* M, mrb_value self, int w, int h) {
-  const mrb_value existing =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  const mrb_value existing = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_obj));
   if (mrb_test(existing) && DATA_PTR(existing))
     return;
 
-  const mrb_value vp = mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport"));
+  const mrb_value vp = mrb_iv_get(M, self, MRB_IVSYM(viewport));
   lv_obj_t* ac = lv_canvas_create(parent_object(M, vp));
   lv_obj_set_pos(ac, 0, 0);
   const mrb_value above_obj = mrb_obj_value(
@@ -5580,18 +5575,16 @@ void tilemap_ensure_above(mrb_state* M, mrb_value self, int w, int h) {
   // either, so it was trivially right by construction, but a lazy create can
   // now run well after a script has already set `z=`/`visible=` on the
   // tilemap (its first VX-path refresh, not its construction).
-  const mrb_value self_z = mrb_iv_get(M, self, mrb_intern_lit(M, "@z"));
+  const mrb_value self_z = mrb_iv_get(M, self, MRB_IVSYM(z));
   const mrb_int z = mrb_test(self_z) ? mrb_as_int(M, self_z) : 0;
-  mrb_iv_set(M, above_obj, mrb_intern_lit(M, "@z"),
-             mrb_fixnum_value(z + TILEMAP_ABOVE_Z));
-  const mrb_value self_visible =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@visible"));
+  mrb_iv_set(M, above_obj, MRB_IVSYM(z), mrb_fixnum_value(z + TILEMAP_ABOVE_Z));
+  const mrb_value self_visible = mrb_iv_get(M, self, MRB_IVSYM(visible));
   if (!mrb_nil_p(self_visible) && !mrb_test(self_visible))
     lv_obj_add_flag(ac, LV_OBJ_FLAG_HIDDEN);
   update_z(M);
 
-  RClass* bmp_class =
-      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  RClass* bmp_class = mrb_class_get_under_id(
+      M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
   const mrb_value above_canvas_v =
       DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
   Bitmap& above_canvas = DataType<Bitmap>::get(M, above_canvas_v);
@@ -5599,29 +5592,28 @@ void tilemap_ensure_above(mrb_state* M, mrb_value self, int w, int h) {
             static_cast<uint8_t>(0));
   lv_canvas_set_buffer(ac, above_canvas.buffer.data(), w, h,
                        LV_COLOR_FORMAT_ARGB8888);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_above_obj"), above_obj);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_above_canvas"), above_canvas_v);
+  mrb_iv_set(M, self, MRB_IVSYM(_tm_above_obj), above_obj);
+  mrb_iv_set(M, self, MRB_IVSYM(_tm_above_canvas), above_canvas_v);
 }
 
 void tilemap_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
     return;
-  const mrb_value canvas_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_canvas"));
+  const mrb_value canvas_v = mrb_iv_get(M, self, MRB_IVSYM(_tm_canvas));
   if (mrb_nil_p(canvas_v))
     return;
   Bitmap& dst = DataType<Bitmap>::get(M, canvas_v);
   std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
 
-  const mrb_value ts_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tileset"));
-  const mrb_value md_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@map_data"));
+  const mrb_value ts_v = mrb_iv_get(M, self, MRB_IVSYM(tileset));
+  const mrb_value md_v = mrb_iv_get(M, self, MRB_IVSYM(map_data));
 
   // RPG Maker VX / VX Ace address their nine sheets through `bitmaps` instead
   // of XP's single `tileset` + `autotiles`, and describe each tile with the
   // `flags` table rather than `priorities`. A tilemap that has been given any
   // sheet is drawn the VX way; everything below stays the XP path.
-  const mrb_value bmps_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmaps"));
+  const mrb_value bmps_v = mrb_iv_get(M, self, MRB_IVSYM(bitmaps));
   const bool is_vx =
       vx_has_sheets(M, bmps_v) && mrb_test(md_v) && DATA_PTR(md_v);
 
@@ -5631,37 +5623,33 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   // the VX path.
   if (is_vx)
     tilemap_ensure_above(M, self, dst.width, dst.height);
-  const mrb_value above_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_canvas"));
+  const mrb_value above_v = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_canvas));
   Bitmap* above = (mrb_test(above_v) && DATA_PTR(above_v))
                       ? &DataType<Bitmap>::get(M, above_v)
                       : nullptr;
   if (above)
     std::fill(above->buffer.begin(), above->buffer.end(),
               static_cast<uint8_t>(0));
-  const mrb_value above_obj_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  const mrb_value above_obj_v = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_obj));
   lv_obj_t* above_lv = (mrb_test(above_obj_v) && DATA_PTR(above_obj_v))
                            ? reinterpret_cast<lv_obj_t*>(DATA_PTR(above_obj_v))
                            : nullptr;
 
   // Per-tile priority table (0..5 per tile id); tiles with priority >= 1 draw
   // into the above layer. A nil or short table leaves everything at priority 0.
-  const mrb_value pr_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@priorities"));
+  const mrb_value pr_v = mrb_iv_get(M, self, MRB_IVSYM(priorities));
   Table* pr = (mrb_test(pr_v) && DATA_PTR(pr_v))
                   ? &DataType<Table>::get(M, pr_v)
                   : nullptr;
 
   if (is_vx) {
-    const mrb_value anim_v =
-        mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
-    const bool animated = tilemap_refresh_vx(
-        M, self, dst, above, bmps_v, md_v,
-        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"))),
-        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"))),
-        mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
-               mrb_bool_value(animated));
+    const mrb_value anim_v = mrb_iv_get(M, self, MRB_IVSYM(_tm_anim));
+    const bool animated =
+        tilemap_refresh_vx(M, self, dst, above, bmps_v, md_v,
+                           mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(ox))),
+                           mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(oy))),
+                           mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0);
+    mrb_iv_set(M, self, MRB_IVSYM(_tm_animated), mrb_bool_value(animated));
     tilemap_apply_viewport_tone(M, self, dst, above);
     dst.dirty = true;
     if (above)
@@ -5684,12 +5672,9 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   const int cols = ts.width >= TILE_SIZE ? ts.width / TILE_SIZE : TILESET_COLS;
   const int mapw = md.xsize, maph = md.ysize;
   const int layers = md.zsize < 3 ? md.zsize : 3;
-  const mrb_int ox =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
-  const mrb_int oy =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
-  const mrb_value autotiles_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@autotiles"));
+  const mrb_int ox = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(ox)));
+  const mrb_int oy = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(oy)));
+  const mrb_value autotiles_v = mrb_iv_get(M, self, MRB_IVSYM(autotiles));
   const bool have_autotiles = mrb_array_p(autotiles_v);
 
   // Autotile animation: an autotile bitmap wider than one 96px frame holds
@@ -5698,7 +5683,7 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   // counter / 16, mod 4. `any_anim` records whether this map actually has an
   // animated autotile, so tilemap_update can skip the periodic re-tile when the
   // map is static.
-  const mrb_value anim_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
+  const mrb_value anim_v = mrb_iv_get(M, self, MRB_IVSYM(_tm_anim));
   const int anim = mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0;
   const int frame_idx = (anim / 16) % 4;
   bool any_anim = false;
@@ -5707,8 +5692,8 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   // rather than freed, so scrolling back does not reallocate it.
   std::vector<int> used_buckets;
   for (const auto& e : tilemap_strips(M, self)) {
-    Bitmap& b = DataType<Bitmap>::get(
-        M, mrb_iv_get(M, e.second, mrb_intern_lit(M, "@_bitmap")));
+    Bitmap& b =
+        DataType<Bitmap>::get(M, mrb_iv_get(M, e.second, MRB_IVSYM(_bitmap)));
     std::fill(b.buffer.begin(), b.buffer.end(), static_cast<uint8_t>(0));
   }
 
@@ -5790,15 +5775,14 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
       }
     }
   }
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
-             mrb_bool_value(any_anim));
+  mrb_iv_set(M, self, MRB_IVSYM(_tm_animated), mrb_bool_value(any_anim));
   tilemap_apply_viewport_tone(M, self, dst, above);
 
   // Place every strip and give it the z its bucket sorts at. Both depend on oy,
   // so both are refreshed here rather than once at creation -- this runs on
   // every scroll, which is exactly when they move.
   const Tone strip_tone =
-      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+      viewport_tone(M, mrb_iv_get(M, self, MRB_IVSYM(viewport)));
   for (const auto& e : tilemap_strips(M, self)) {
     lv_obj_t* sc = reinterpret_cast<lv_obj_t*>(DATA_PTR(e.second));
     if (!sc)
@@ -5812,11 +5796,11 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
     lv_obj_remove_flag(sc, LV_OBJ_FLAG_HIDDEN);
     const int top_row = e.first - TILEMAP_PRIO_SPAN;
     lv_obj_set_pos(sc, 0, top_row * TILE_SIZE - static_cast<int>(oy));
-    mrb_iv_set(M, e.second, mrb_intern_lit(M, "@z"),
+    mrb_iv_set(M, e.second, MRB_IVSYM(z),
                mrb_fixnum_value(e.first * TILE_SIZE + TILE_SIZE -
                                 static_cast<mrb_int>(oy)));
-    Bitmap& sb = DataType<Bitmap>::get(
-        M, mrb_iv_get(M, e.second, mrb_intern_lit(M, "@_bitmap")));
+    Bitmap& sb =
+        DataType<Bitmap>::get(M, mrb_iv_get(M, e.second, MRB_IVSYM(_bitmap)));
     if (tone_is_set(strip_tone)) {
       for (int y = 0; y < sb.height; ++y) {
         for (int x = 0; x < sb.width; ++x) {
@@ -5852,8 +5836,7 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
     w = lv_display_get_horizontal_resolution(d);
     h = lv_display_get_vertical_resolution(d);
   } else {
-    Rect& r =
-        DataType<Rect>::get(M, mrb_iv_get(M, vp, mrb_intern_lit(M, "@rect")));
+    Rect& r = DataType<Rect>::get(M, mrb_iv_get(M, vp, MRB_IVSYM(rect)));
     w = r.width;
     h = r.height;
   }
@@ -5867,8 +5850,8 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
   register_zobj(M, self);
   lv_obj_set_pos(c, 0, 0);
 
-  RClass* bmp_class =
-      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  RClass* bmp_class = mrb_class_get_under_id(
+      M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
   const mrb_value canvas_v =
       DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
   Bitmap& canvas = DataType<Bitmap>::get(M, canvas_v);
@@ -5876,13 +5859,13 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
             static_cast<uint8_t>(0));
   lv_canvas_set_buffer(c, canvas.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
 
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_canvas"), canvas_v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@tileset"), mrb_nil_value());
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@map_data"), mrb_nil_value());
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_anim"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(_tm_canvas), canvas_v);
+  mrb_iv_set(M, self, MRB_IVSYM(viewport), vp);
+  mrb_iv_set(M, self, MRB_IVSYM(tileset), mrb_nil_value());
+  mrb_iv_set(M, self, MRB_IVSYM(map_data), mrb_nil_value());
+  mrb_iv_set(M, self, MRB_IVSYM(ox), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(oy), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(_tm_anim), mrb_fixnum_value(0));
 
   // Priority "above" layer: no longer created here. It is only ever drawn
   // into by the VX/VX Ace tile model, so it is now allocated lazily on the
@@ -5894,15 +5877,14 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
 // separate LVGL object that obj_dispose on the tilemap would otherwise leave
 // on screen and in the z-order set).
 mrb_value tilemap_dispose(mrb_state* M, mrb_value self) {
-  const mrb_value above =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  const mrb_value above = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_obj));
   if (mrb_test(above) && DATA_PTR(above))
     obj_dispose(M, above);
   // Each priority strip is its own LVGL object in the z set; disposing the
   // tilemap alone would leave them on screen and sorting.
   for (const auto& e : tilemap_strips(M, self))
     obj_dispose(M, e.second);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_strips"), mrb_nil_value());
+  mrb_iv_set(M, self, MRB_IVSYM(_tm_strips), mrb_nil_value());
   return obj_dispose(M, self);
 }
 
@@ -5911,12 +5893,12 @@ mrb_value tilemap_dispose(mrb_state* M, mrb_value self) {
 // frame boundary and needs a re-tile — and only when the map has an animated
 // autotile at all (recorded by tilemap_refresh). A static map does no work.
 mrb_value tilemap_update(mrb_state* M, mrb_value self) {
-  if (!mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_animated"))))
+  if (!mrb_test(mrb_iv_get(M, self, MRB_IVSYM(_tm_animated))))
     return self;
-  const mrb_value anim_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
+  const mrb_value anim_v = mrb_iv_get(M, self, MRB_IVSYM(_tm_anim));
   const int anim = mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0;
   const int next = (anim + 1) % 64;
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_anim"), mrb_fixnum_value(next));
+  mrb_iv_set(M, self, MRB_IVSYM(_tm_anim), mrb_fixnum_value(next));
   if (anim / 16 != next / 16)
     tilemap_refresh(M, self);
   return self;
@@ -5925,7 +5907,7 @@ mrb_value tilemap_update(mrb_state* M, mrb_value self) {
 mrb_value tilemap_set_tileset_native_body(mrb_state* M,
                                           mrb_value self,
                                           mrb_value v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@tileset"), v);
+  mrb_iv_set(M, self, MRB_IVSYM(tileset), v);
   tilemap_refresh(M, self);
   return v;
 }
@@ -5939,7 +5921,7 @@ mrb_value tilemap_set_tileset(mrb_state* M, mrb_value self) {
 mrb_value tilemap_set_map_data_native_body(mrb_state* M,
                                            mrb_value self,
                                            mrb_value v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@map_data"), v);
+  mrb_iv_set(M, self, MRB_IVSYM(map_data), v);
   tilemap_refresh(M, self);
   return v;
 }
@@ -5955,7 +5937,7 @@ mrb_value tilemap_set_map_data(mrb_state* M, mrb_value self) {
 mrb_value tilemap_set_priorities_native_body(mrb_state* M,
                                              mrb_value self,
                                              mrb_value v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@priorities"), v);
+  mrb_iv_set(M, self, MRB_IVSYM(priorities), v);
   tilemap_refresh(M, self);
   return v;
 }
@@ -5971,12 +5953,12 @@ mrb_value tilemap_set_priorities(mrb_state* M, mrb_value self) {
 // Cache.tileset(name)` — so hand back the same Array every time and let the
 // next refresh pick the change up (Spriteset_Map calls #update every frame).
 mrb_value tilemap_bitmaps(mrb_state* M, mrb_value self) {
-  mrb_value a = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmaps"));
+  mrb_value a = mrb_iv_get(M, self, MRB_IVSYM(bitmaps));
   if (!mrb_array_p(a)) {
     a = mrb_ary_new_capa(M, 9);
     for (int i = 0; i < 9; ++i)
       mrb_ary_push(M, a, mrb_nil_value());
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmaps"), a);
+    mrb_iv_set(M, self, MRB_IVSYM(bitmaps), a);
   }
   return a;
 }
@@ -5987,7 +5969,7 @@ mrb_value tilemap_bitmaps(mrb_state* M, mrb_value self) {
 mrb_value tilemap_set_flags_native_body(mrb_state* M,
                                         mrb_value self,
                                         mrb_value v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flags"), v);
+  mrb_iv_set(M, self, MRB_IVSYM(flags), v);
   tilemap_refresh(M, self);
   return v;
 }
@@ -6099,10 +6081,10 @@ mrb_value tilemap_set_z(mrb_state* M, mrb_value self) {
 // value already stored, before the game's own script host ever reaches its
 // first Graphics.update.
 mrb_value tilemap_set_ox_native_body(mrb_state* M, mrb_value self, mrb_int v) {
-  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+  const mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(ox));
   if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == v)
     return self;
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(ox), mrb_fixnum_value(v));
   tilemap_refresh(M, self);
   return self;
 }
@@ -6114,10 +6096,10 @@ mrb_value tilemap_set_ox(mrb_state* M, mrb_value self) {
 }
 
 mrb_value tilemap_set_oy_native_body(mrb_state* M, mrb_value self, mrb_int v) {
-  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  const mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(oy));
   if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == v)
     return self;
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(oy), mrb_fixnum_value(v));
   tilemap_refresh(M, self);
   return self;
 }
@@ -6154,20 +6136,20 @@ Bitmap& window_ensure_canvas(mrb_state* M,
   // explicit Sprite/Viewport/Window setters do (obj_require), rather than
   // silently doing nothing.
   lv_obj_t* obj = obj_require(M, self);
-  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_canvas"));
+  const mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(_win_canvas));
   if (!mrb_nil_p(cur)) {
     Bitmap& c = DataType<Bitmap>::get(M, cur);
     if (c.width == w && c.height == h)
       return c;
   }
-  RClass* bmp_class =
-      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  RClass* bmp_class = mrb_class_get_under_id(
+      M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
   const mrb_value cv =
       DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
   Bitmap& c = DataType<Bitmap>::get(M, cv);
   lv_canvas_set_buffer(obj, c.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
   lv_obj_set_size(obj, w, h);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_win_canvas"), cv);
+  mrb_iv_set(M, self, MRB_IVSYM(_win_canvas), cv);
   return c;
 }
 
@@ -6188,18 +6170,17 @@ mrb_value window_ensure_structural(mrb_state* M,
     w = 1;
   if (h < 1)
     h = 1;
-  const mrb_value cur =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_structural"));
+  const mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(_win_structural));
   if (!mrb_nil_p(cur)) {
     Bitmap& c = DataType<Bitmap>::get(M, cur);
     if (c.width == w && c.height == h)
       return cur;
   }
-  RClass* bmp_class =
-      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  RClass* bmp_class = mrb_class_get_under_id(
+      M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
   const mrb_value sv =
       DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_win_structural"), sv);
+  mrb_iv_set(M, self, MRB_IVSYM(_win_structural), sv);
   return sv;
 }
 
@@ -6218,21 +6199,19 @@ static bool window_structural_dirty(mrb_state* M,
                                     mrb_value self,
                                     mrb_int w,
                                     mrb_int h) {
-  const mrb_value skin = mrb_iv_get(M, self, mrb_intern_lit(M, "@windowskin"));
+  const mrb_value skin = mrb_iv_get(M, self, MRB_IVSYM(windowskin));
   const mrb_int op = clamp_opacity(M, self, "@opacity");
   const mrb_int back = clamp_opacity(M, self, "@back_opacity");
-  const mrb_value st = mrb_iv_get(M, self, mrb_intern_lit(M, "@stretch"));
+  const mrb_value st = mrb_iv_get(M, self, MRB_IVSYM(stretch));
   const bool stretch = mrb_nil_p(st) ? true : mrb_test(st);
-  const mrb_value tv = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const mrb_value tv = mrb_iv_get(M, self, MRB_IVSYM(tone));
   const double tone_key = (mrb_test(tv) && DATA_PTR(tv))
                               ? vp_tone_key(DataType<Tone>::get(M, tv))
                               : 0.0;
-  const mrb_value cont = mrb_iv_get(M, self, mrb_intern_lit(M, "@contents"));
+  const mrb_value cont = mrb_iv_get(M, self, MRB_IVSYM(contents));
   const mrb_int cop = clamp_opacity(M, self, "@contents_opacity");
-  const mrb_int ox =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
-  const mrb_int oy =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+  const mrb_int ox = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(ox)));
+  const mrb_int oy = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(oy)));
   Bitmap* cont_bmp = (mrb_test(cont) && DATA_PTR(cont))
                          ? &DataType<Bitmap>::get(M, cont)
                          : nullptr;
@@ -6246,13 +6225,11 @@ static bool window_structural_dirty(mrb_state* M,
                 tone_key, static_cast<void*>(cont_bmp), (long long)cop,
                 (long long)ox, (long long)oy);
 
-  const mrb_value prev =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_struct_key"));
+  const mrb_value prev = mrb_iv_get(M, self, MRB_IVSYM(_win_struct_key));
   const bool key_changed =
       !mrb_string_p(prev) || std::strcmp(RSTRING_PTR(prev), buf) != 0;
   if (key_changed) {
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_win_struct_key"),
-               mrb_str_new_cstr(M, buf));
+    mrb_iv_set(M, self, MRB_IVSYM(_win_struct_key), mrb_str_new_cstr(M, buf));
   }
   if (content_dirty)
     cont_bmp->dirty = false;
@@ -6280,7 +6257,7 @@ static mrb_int iv_int_or(mrb_state* M,
 // itself, so it tones its own pixels. The per-pixel maths is the shared
 // apply_tone_px, so the three tone paths cannot drift apart.
 static void window_apply_tone(mrb_state* M, mrb_value self, Bitmap& canvas) {
-  const mrb_value tv = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const mrb_value tv = mrb_iv_get(M, self, MRB_IVSYM(tone));
   if (!mrb_test(tv) || !DATA_PTR(tv))
     return;
   const Tone& tn = DataType<Tone>::get(M, tv);
@@ -6338,10 +6315,8 @@ void window_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
     return;
-  const mrb_int w =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@width")));
-  const mrb_int full_h =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@height")));
+  const mrb_int w = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(width)));
+  const mrb_int full_h = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(height)));
   // RGSS2/RGSS3 openness: the window unrolls from its horizontal centre line,
   // so it is drawn at a fraction of its height and shifted down by half of what
   // it lost. Every VX window opens and closes this way (`Window_Base#open`
@@ -6360,21 +6335,20 @@ void window_refresh(mrb_state* M, mrb_value self) {
     return;
   }
   window_ensure_canvas(M, self, w, h);
-  const mrb_value canvas =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_canvas"));
-  const mrb_sym blt = mrb_intern_lit(M, "blt");
-  const mrb_sym sblt = mrb_intern_lit(M, "stretch_blt");
+  const mrb_value canvas = mrb_iv_get(M, self, MRB_IVSYM(_win_canvas));
+  const mrb_sym blt = MRB_SYM(blt);
+  const mrb_sym sblt = MRB_SYM(stretch_blt);
   // The compositing allocates transient Rect values; drop them off the GC arena
   // when done (canvas/skin/contents stay alive via their ivars on self).
   const int arena = mrb_gc_arena_save(M);
 
   const bool structural_dirty = window_structural_dirty(M, self, w, h);
   const mrb_value structural = window_ensure_structural(M, self, w, h);
-  const mrb_value skin = mrb_iv_get(M, self, mrb_intern_lit(M, "@windowskin"));
+  const mrb_value skin = mrb_iv_get(M, self, MRB_IVSYM(windowskin));
   const mrb_int b = WINDOW_PADDING;
 
   if (structural_dirty) {
-    mrb_funcall_argv(M, structural, mrb_intern_lit(M, "clear"), 0, nullptr);
+    mrb_funcall_argv(M, structural, MRB_SYM(clear), 0, nullptr);
 
     if (mrb_test(skin) && DATA_PTR(skin)) {
       const mrb_int op = clamp_opacity(M, self, "@opacity");
@@ -6383,7 +6357,7 @@ void window_refresh(mrb_state* M, mrb_value self) {
       // true) scales that tile over the whole window; when false it is tiled
       // at 1:1, repeating across the window (edge tiles clip against the
       // canvas).
-      const mrb_value st = mrb_iv_get(M, self, mrb_intern_lit(M, "@stretch"));
+      const mrb_value st = mrb_iv_get(M, self, MRB_IVSYM(stretch));
       const bool stretch = mrb_nil_p(st) ? true : mrb_test(st);
       if (stretch) {
         const mrb_value bg[] = {make_rect(M, 0, 0, w, h), skin,
@@ -6454,14 +6428,11 @@ void window_refresh(mrb_state* M, mrb_value self) {
     // Contents is furniture RGSS hides while a window is opening or closing
     // (only the frame animates), same as the cursor and pause arrow below.
     if (openness == 255) {
-      const mrb_value cont =
-          mrb_iv_get(M, self, mrb_intern_lit(M, "@contents"));
+      const mrb_value cont = mrb_iv_get(M, self, MRB_IVSYM(contents));
       if (mrb_test(cont) && DATA_PTR(cont)) {
         const mrb_int cop = clamp_opacity(M, self, "@contents_opacity");
-        const mrb_int ox =
-            mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
-        const mrb_int oy =
-            mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+        const mrb_int ox = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(ox)));
+        const mrb_int oy = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(oy)));
         // Blit the scrolled contents into the content area, inset by
         // WINDOW_PADDING.
         const mrb_value c[] = {mrb_fixnum_value(b), mrb_fixnum_value(b), cont,
@@ -6475,7 +6446,7 @@ void window_refresh(mrb_state* M, mrb_value self) {
   // Copy the (possibly cached) structural composite onto the visible canvas
   // -- one full-size blit standing in for the whole background+frame+contents
   // recomposite above whenever it was skipped this frame.
-  mrb_funcall_argv(M, canvas, mrb_intern_lit(M, "clear"), 0, nullptr);
+  mrb_funcall_argv(M, canvas, MRB_SYM(clear), 0, nullptr);
   const mrb_value full[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
                             structural, make_rect(M, 0, 0, w, h),
                             mrb_fixnum_value(255)};
@@ -6489,8 +6460,7 @@ void window_refresh(mrb_state* M, mrb_value self) {
     return;
   }
 
-  const mrb_int anim =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@_anim")));
+  const mrb_int anim = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(_anim)));
   // Cursor: a blinking highlight from the windowskin cursor region (128,64,
   // 32,32) drawn at cursor_rect (content coords, offset by the padding), when
   // the window is active. It is a 9-slice with 2px corners (matching
@@ -6498,8 +6468,8 @@ void window_refresh(mrb_state* M, mrb_value self) {
   // edges are stretched along one axis and the centre fills the rest. The blink
   // alpha oscillates with @_anim. Redrawn each frame by Window#update because
   // scripts mutate cursor_rect in place.
-  const mrb_value cr_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@cursor_rect"));
-  const mrb_value active_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@active"));
+  const mrb_value cr_v = mrb_iv_get(M, self, MRB_IVSYM(cursor_rect));
+  const mrb_value active_v = mrb_iv_get(M, self, MRB_IVSYM(active));
   const bool active = mrb_nil_p(active_v) ? true : mrb_test(active_v);
   if (mrb_test(skin) && DATA_PTR(skin) && active && mrb_test(cr_v) &&
       DATA_PTR(cr_v)) {
@@ -6554,7 +6524,7 @@ void window_refresh(mrb_state* M, mrb_value self) {
   // Pause arrow: one of four 16x16 frames at (160,64) cycled by @_anim, drawn
   // centred on the bottom edge when the window is paused.
   if (mrb_test(skin) && DATA_PTR(skin) &&
-      mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@pause")))) {
+      mrb_test(mrb_iv_get(M, self, MRB_IVSYM(pause)))) {
     const mrb_int f = (anim / 8) % 4;
     const mrb_value pa[] = {
         mrb_fixnum_value(w / 2 - 8), mrb_fixnum_value(h - 16), skin,
@@ -6573,24 +6543,23 @@ mrb_value window_init(mrb_state* M, mrb_value self) {
   wrap_lv_obj(M, self, c);
   register_zobj(M, self);
   lv_obj_set_pos(c, 0, 0);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  mrb_iv_set(M, self, MRB_IVSYM(viewport), vp);
   // RGSS3's own stock Window_Base#create_contents (every VX Ace project ships
   // it unmodified) calls `contents.dispose` unconditionally as its first line
   // -- real RGSS never leaves a freshly constructed Window's `contents` nil,
   // it starts as a real (if trivial) Bitmap so that always-safe first dispose
   // has something to act on.
-  RClass* initial_contents_bmp_class =
-      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  RClass* initial_contents_bmp_class = mrb_class_get_under_id(
+      M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
   const mrb_value initial_contents = DataType<Bitmap>::make(
       M, initial_contents_bmp_class, 1, 1, LV_COLOR_FORMAT_ARGB8888);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), initial_contents);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@width"), mrb_fixnum_value(0));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@height"), mrb_fixnum_value(0));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents_opacity"),
-             mrb_fixnum_value(255));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_anim"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(contents), initial_contents);
+  mrb_iv_set(M, self, MRB_IVSYM(width), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(height), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(ox), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(oy), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(contents_opacity), mrb_fixnum_value(255));
+  mrb_iv_set(M, self, MRB_IVSYM(_anim), mrb_fixnum_value(0));
   window_ensure_canvas(M, self, 1, 1);
   return self;
 }
@@ -6614,7 +6583,7 @@ mrb_value window_set_height(mrb_state* M, mrb_value self) {
 }
 
 mrb_value window_set_ox_native_body(mrb_state* M, mrb_value self, mrb_int v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(ox), mrb_fixnum_value(v));
   window_refresh(M, self);
   return self;
 }
@@ -6626,7 +6595,7 @@ mrb_value window_set_ox(mrb_state* M, mrb_value self) {
 }
 
 mrb_value window_set_oy_native_body(mrb_state* M, mrb_value self, mrb_int v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(oy), mrb_fixnum_value(v));
   window_refresh(M, self);
   return self;
 }
@@ -6640,8 +6609,7 @@ mrb_value window_set_oy(mrb_state* M, mrb_value self) {
 mrb_value window_set_contents_opacity_native_body(mrb_state* M,
                                                   mrb_value self,
                                                   mrb_int v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents_opacity"),
-             mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(contents_opacity), mrb_fixnum_value(v));
   window_refresh(M, self);
   return self;
 }
@@ -6661,7 +6629,7 @@ mrb_value window_set_skin(mrb_state* M, mrb_value self) {
 mrb_value window_set_opacity_native_body(mrb_state* M,
                                          mrb_value self,
                                          mrb_int v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@opacity"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(opacity), mrb_fixnum_value(v));
   window_refresh(M, self);
   return self;
 }
@@ -6675,7 +6643,7 @@ mrb_value window_set_opacity(mrb_state* M, mrb_value self) {
 mrb_value window_set_back_opacity_native_body(mrb_state* M,
                                               mrb_value self,
                                               mrb_int v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@back_opacity"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(back_opacity), mrb_fixnum_value(v));
   window_refresh(M, self);
   return self;
 }
@@ -6707,7 +6675,7 @@ mrb_value window_set_pause(mrb_state* M, mrb_value self) {
 mrb_value window_set_stretch_native_body(mrb_state* M,
                                          mrb_value self,
                                          mrb_bool v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@stretch"), mrb_bool_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(stretch), mrb_bool_value(v));
   window_refresh(M, self);
   return self;
 }
@@ -6735,7 +6703,7 @@ mrb_value window_set_viewport_native_body(mrb_state* M,
                                           mrb_value vp) {
   lv_obj_t* obj = obj_require(M, self);
   lv_obj_set_parent(obj, parent_object(M, vp));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  mrb_iv_set(M, self, MRB_IVSYM(viewport), vp);
   update_z(M);
   return vp;
 }
@@ -6770,7 +6738,7 @@ mrb_value window_set_openness(mrb_state* M, mrb_value self) {
 
 mrb_value window_set_openness_body(mrb_state* M, mrb_value self, mrb_int v) {
   v = std::min<mrb_int>(255, std::max<mrb_int>(0, v));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@openness"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(openness), mrb_fixnum_value(v));
   window_refresh(M, self);
   return mrb_fixnum_value(v);
 }
@@ -6778,13 +6746,15 @@ mrb_value window_set_openness_body(mrb_state* M, mrb_value self, mrb_int v) {
 // RGSS2/RGSS3 Window#tone, created on first read like the viewport's so
 // `window.tone.set(...)` has something to mutate.
 mrb_value window_tone(mrb_state* M, mrb_value self) {
-  mrb_value t = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  mrb_value t = mrb_iv_get(M, self, MRB_IVSYM(tone));
   if (mrb_nil_p(t)) {
     const mrb_value args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
                               mrb_fixnum_value(0), mrb_fixnum_value(0)};
-    t = mrb_obj_new(
-        M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Tone"), 4, args);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+    t = mrb_obj_new(M,
+                    mrb_class_get_under_id(
+                        M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Tone)),
+                    4, args);
+    mrb_iv_set(M, self, MRB_IVSYM(tone), t);
   }
   return t;
 }
@@ -6804,7 +6774,7 @@ mrb_value window_set_tone(mrb_state* M, mrb_value self) {
 }
 
 mrb_value window_set_tone_body(mrb_state* M, mrb_value self, mrb_value t) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+  mrb_iv_set(M, self, MRB_IVSYM(tone), t);
   window_refresh(M, self);
   return t;
 }
@@ -6814,14 +6784,14 @@ mrb_value window_set_tone_body(mrb_state* M, mrb_value self, mrb_value t) {
 // assignment alone is not enough to notice -- the same reason Viewport#tone is
 // re-checked from its own update. One comparison when it did not move.
 bool window_sync_tone(mrb_state* M, mrb_value self) {
-  const mrb_value tv = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const mrb_value tv = mrb_iv_get(M, self, MRB_IVSYM(tone));
   const double key = (mrb_test(tv) && DATA_PTR(tv))
                          ? vp_tone_key(DataType<Tone>::get(M, tv))
                          : 0.0;
-  const mrb_value prev = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tone_key"));
+  const mrb_value prev = mrb_iv_get(M, self, MRB_IVSYM(_tone_key));
   if (rgss::key_is(M, prev, key))
     return false;
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tone_key"), rgss::key_value(M, key));
+  mrb_iv_set(M, self, MRB_IVSYM(_tone_key), rgss::key_value(M, key));
   return true;
 }
 
@@ -6830,16 +6800,14 @@ bool window_sync_tone(mrb_state* M, mrb_value self) {
 // cursor_rect mutation show. Windows without a cursor or pause need no
 // per-frame work beyond the tone check, which is one comparison.
 mrb_value window_update(mrb_state* M, mrb_value self) {
-  const mrb_int anim =
-      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@_anim")));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_anim"), mrb_fixnum_value(anim + 1));
-  const mrb_value cr = mrb_iv_get(M, self, mrb_intern_lit(M, "@cursor_rect"));
-  const mrb_value active_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@active"));
+  const mrb_int anim = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(_anim)));
+  mrb_iv_set(M, self, MRB_IVSYM(_anim), mrb_fixnum_value(anim + 1));
+  const mrb_value cr = mrb_iv_get(M, self, MRB_IVSYM(cursor_rect));
+  const mrb_value active_v = mrb_iv_get(M, self, MRB_IVSYM(active));
   const bool active = mrb_nil_p(active_v) ? true : mrb_test(active_v);
   const bool has_cursor = active && mrb_test(cr) && DATA_PTR(cr) &&
                           DataType<Rect>::get(M, cr).width > 0;
-  const bool paused =
-      mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@pause")));
+  const bool paused = mrb_test(mrb_iv_get(M, self, MRB_IVSYM(pause)));
   const bool tone_moved = window_sync_tone(M, self);
   if (has_cursor || paused || tone_moved)
     window_refresh(M, self);
@@ -6854,8 +6822,10 @@ mrb_value window_update(mrb_state* M, mrb_value self) {
 mrb_value make_rect(mrb_state* M, mrb_int x, mrb_int y, mrb_int w, mrb_int h) {
   const mrb_value args[] = {mrb_fixnum_value(x), mrb_fixnum_value(y),
                             mrb_fixnum_value(w), mrb_fixnum_value(h)};
-  return mrb_obj_new(
-      M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
+  return mrb_obj_new(M,
+                     mrb_class_get_under_id(
+                         M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Rect)),
+                     4, args);
 }
 
 // Repaint the viewport's colour/flash overlay (defined with the rest of the
@@ -6869,16 +6839,15 @@ void vp_apply(mrb_state* M, mrb_value self) {
   lv_obj_t* outer = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!outer)
     return;
-  Rect& r =
-      DataType<Rect>::get(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@rect")));
+  Rect& r = DataType<Rect>::get(M, mrb_iv_get(M, self, MRB_IVSYM(rect)));
   const mrb_int w = std::max<mrb_int>(r.width, 0);
   const mrb_int h = std::max<mrb_int>(r.height, 0);
   lv_obj_set_pos(outer, r.x, r.y);
   lv_obj_set_size(outer, w, h);
 
   lv_obj_t* inner = viewport_content(outer);
-  const mrb_value ox = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
-  const mrb_value oy = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  const mrb_value ox = mrb_iv_get(M, self, MRB_IVSYM(ox));
+  const mrb_value oy = mrb_iv_get(M, self, MRB_IVSYM(oy));
   lv_obj_set_pos(inner, -(mrb_fixnum_p(ox) ? mrb_fixnum(ox) : 0),
                  -(mrb_fixnum_p(oy) ? mrb_fixnum(oy) : 0));
   lv_obj_set_size(inner, w, h);
@@ -6922,21 +6891,21 @@ mrb_value vp_init(mrb_state* M, mrb_value self) {
 
   wrap_lv_obj(M, self, outer);
   register_zobj(M, self);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@rect"), make_rect(M, x, y, w, h));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_true_value());
+  mrb_iv_set(M, self, MRB_IVSYM(rect), make_rect(M, x, y, w, h));
+  mrb_iv_set(M, self, MRB_IVSYM(ox), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(oy), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, MRB_IVSYM(visible), mrb_true_value());
   vp_apply(M, self);
   return self;
 }
 
 mrb_value vp_rect(mrb_state* M, mrb_value self) {
-  return mrb_iv_get(M, self, mrb_intern_lit(M, "@rect"));
+  return mrb_iv_get(M, self, MRB_IVSYM(rect));
 }
 
 mrb_value vp_set_rect_native_body(mrb_state* M, mrb_value self, mrb_value rv) {
   Rect& r = DataType<Rect>::get(M, rv);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@rect"),
+  mrb_iv_set(M, self, MRB_IVSYM(rect),
              make_rect(M, r.x, r.y, r.width, r.height));
   vp_apply(M, self);
   return rv;
@@ -6949,15 +6918,15 @@ mrb_value vp_set_rect(mrb_state* M, mrb_value self) {
 }
 
 mrb_value vp_ox(mrb_state* M, mrb_value self) {
-  return mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+  return mrb_iv_get(M, self, MRB_IVSYM(ox));
 }
 
 mrb_value vp_oy(mrb_state* M, mrb_value self) {
-  return mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  return mrb_iv_get(M, self, MRB_IVSYM(oy));
 }
 
 mrb_value vp_set_ox_native_body(mrb_state* M, mrb_value self, mrb_int v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(ox), mrb_fixnum_value(v));
   vp_apply(M, self);
   return mrb_fixnum_value(v);
 }
@@ -6969,7 +6938,7 @@ mrb_value vp_set_ox(mrb_state* M, mrb_value self) {
 }
 
 mrb_value vp_set_oy_native_body(mrb_state* M, mrb_value self, mrb_int v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(oy), mrb_fixnum_value(v));
   vp_apply(M, self);
   return mrb_fixnum_value(v);
 }
@@ -7032,18 +7001,15 @@ lv_obj_t* vp_overlay(mrb_state* M, mrb_value self, bool create) {
 // flash out linearly over its duration.
 Color vp_effective_color(mrb_state* M, mrb_value self) {
   Color out{0, 0, 0, 0};
-  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  const mrb_value color_v = mrb_iv_get(M, self, MRB_IVSYM(color));
   if (mrb_test(color_v) && DATA_PTR(color_v))
     out = DataType<Color>::get(M, color_v);
 
-  const mrb_value count_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
-  const mrb_value flash_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_color"));
+  const mrb_value count_v = mrb_iv_get(M, self, MRB_IVSYM(flash_count));
+  const mrb_value flash_v = mrb_iv_get(M, self, MRB_IVSYM(flash_color));
   const mrb_int count = mrb_fixnum_p(count_v) ? mrb_fixnum(count_v) : 0;
   if (count > 0 && mrb_test(flash_v) && DATA_PTR(flash_v)) {
-    const mrb_value dur_v =
-        mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_duration"));
+    const mrb_value dur_v = mrb_iv_get(M, self, MRB_IVSYM(flash_duration));
     const mrb_int duration = mrb_fixnum_p(dur_v) ? mrb_fixnum(dur_v) : count;
     const Color f = DataType<Color>::get(M, flash_v);
     const double fade = duration > 0 ? (double)count / (double)duration : 1.0;
@@ -7071,12 +7037,11 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self) {
     return;
   if (!visible) {
     lv_obj_add_flag(ov, LV_OBJ_FLAG_HIDDEN);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_key"), mrb_nil_value());
+    mrb_iv_set(M, self, MRB_IVSYM(_overlay_key), mrb_nil_value());
     return;
   }
 
-  Rect& r =
-      DataType<Rect>::get(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@rect")));
+  Rect& r = DataType<Rect>::get(M, mrb_iv_get(M, self, MRB_IVSYM(rect)));
   const mrb_int w = std::max<mrb_int>(r.width, 1);
   const mrb_int h = std::max<mrb_int>(r.height, 1);
 
@@ -7089,25 +7054,23 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self) {
           256.0 +
       std::floor(c.alpha);
   const double size_key = (double)w * 65536.0 + (double)h;
-  const mrb_value prev_color =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_key"));
-  const mrb_value prev_size =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_size"));
+  const mrb_value prev_color = mrb_iv_get(M, self, MRB_IVSYM(_overlay_key));
+  const mrb_value prev_size = mrb_iv_get(M, self, MRB_IVSYM(_overlay_size));
   if (rgss::key_is(M, prev_color, color_key) &&
       rgss::key_is(M, prev_size, size_key)) {
     lv_obj_remove_flag(ov, LV_OBJ_FLAG_HIDDEN);
     return;
   }
 
-  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_bmp"));
+  const mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(_overlay_bmp));
   mrb_value bmp_v = cur;
   if (mrb_nil_p(cur) || DataType<Bitmap>::get(M, cur).width != w ||
       DataType<Bitmap>::get(M, cur).height != h) {
-    RClass* bmp_class =
-        mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+    RClass* bmp_class = mrb_class_get_under_id(
+        M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
     bmp_v =
         DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_bmp"), bmp_v);
+    mrb_iv_set(M, self, MRB_IVSYM(_overlay_bmp), bmp_v);
     Bitmap& nb = DataType<Bitmap>::get(M, bmp_v);
     lv_canvas_set_buffer(ov, nb.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
     lv_obj_set_size(ov, w, h);
@@ -7121,10 +7084,8 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self) {
   lv_obj_remove_flag(ov, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(ov);
   lv_obj_invalidate(ov);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_key"),
-             rgss::key_value(M, color_key));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_size"),
-             rgss::key_value(M, size_key));
+  mrb_iv_set(M, self, MRB_IVSYM(_overlay_key), rgss::key_value(M, color_key));
+  mrb_iv_set(M, self, MRB_IVSYM(_overlay_size), rgss::key_value(M, size_key));
 }
 
 // Re-composite every display object that lives in this viewport, so a tone
@@ -7134,18 +7095,18 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self) {
 // them. The z-order registry is the list of live display objects, and each one
 // records the viewport it was created in.
 void vp_refresh_children(mrb_state* M, mrb_value self) {
-  RClass* rgss = mrb_module_get(M, "RGSS");
-  RClass* spr_class = mrb_class_get_under(M, rgss, "Sprite");
+  RClass* rgss = mrb_module_get_id(M, MRB_SYM(RGSS));
+  RClass* spr_class = mrb_class_get_under_id(M, rgss, MRB_SYM(Sprite));
 #if !defined(WIO_TERMINAL)  // Plane is never registered on wio
-  RClass* plane_class = mrb_class_get_under(M, rgss, "Plane");
-  RClass* tilemap_class = mrb_class_get_under(M, rgss, "Tilemap");
+  RClass* plane_class = mrb_class_get_under_id(M, rgss, MRB_SYM(Plane));
+  RClass* tilemap_class = mrb_class_get_under_id(M, rgss, MRB_SYM(Tilemap));
 #endif  // !defined(WIO_TERMINAL)
   const mrb_value objs = zorder_objs(M);
   for (mrb_int i = 0; i < ary_size(objs); ++i) {
     const mrb_value v = ary_items(objs)[i];
     if (!DATA_PTR(v))
       continue;
-    const mrb_value vp = mrb_iv_get(M, v, mrb_intern_lit(M, "@viewport"));
+    const mrb_value vp = mrb_iv_get(M, v, MRB_IVSYM(viewport));
     if (!mrb_obj_equal(M, vp, self))
       continue;
     if (mrb_obj_is_kind_of(M, v, spr_class))
@@ -7175,10 +7136,10 @@ double vp_tone_key(const Tone& t) {
 bool vp_sync_tone(mrb_state* M, mrb_value self) {
   const Tone tn = viewport_tone(M, self);
   const double key = vp_tone_key(tn);
-  const mrb_value prev = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tone_key"));
+  const mrb_value prev = mrb_iv_get(M, self, MRB_IVSYM(_tone_key));
   if (rgss::key_is(M, prev, key))
     return false;
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tone_key"), rgss::key_value(M, key));
+  mrb_iv_set(M, self, MRB_IVSYM(_tone_key), rgss::key_value(M, key));
   vp_refresh_children(M, self);
   return true;
 }
@@ -7189,13 +7150,15 @@ bool vp_sync_tone(mrb_state* M, mrb_value self) {
 // viewport folds it into its own composite instead (see viewport_tone), and
 // this side makes sure they redo that when it changes.
 mrb_value vp_tone(mrb_state* M, mrb_value self) {
-  mrb_value t = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  mrb_value t = mrb_iv_get(M, self, MRB_IVSYM(tone));
   if (mrb_nil_p(t)) {
     const mrb_value args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
                               mrb_fixnum_value(0), mrb_fixnum_value(0)};
-    t = mrb_obj_new(
-        M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Tone"), 4, args);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+    t = mrb_obj_new(M,
+                    mrb_class_get_under_id(
+                        M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Tone)),
+                    4, args);
+    mrb_iv_set(M, self, MRB_IVSYM(tone), t);
   }
   return t;
 }
@@ -7213,19 +7176,21 @@ mrb_value vp_set_tone(mrb_state* M, mrb_value self) {
 }
 
 mrb_value vp_set_tone_body(mrb_state* M, mrb_value self, mrb_value t) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+  mrb_iv_set(M, self, MRB_IVSYM(tone), t);
   vp_sync_tone(M, self);
   return t;
 }
 
 mrb_value vp_color(mrb_state* M, mrb_value self) {
-  mrb_value c = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  mrb_value c = mrb_iv_get(M, self, MRB_IVSYM(color));
   if (mrb_nil_p(c)) {
     const mrb_value args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
                               mrb_fixnum_value(0), mrb_fixnum_value(0)};
-    c = mrb_obj_new(
-        M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), c);
+    c = mrb_obj_new(M,
+                    mrb_class_get_under_id(
+                        M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Color)),
+                    4, args);
+    mrb_iv_set(M, self, MRB_IVSYM(color), c);
   }
   return c;
 }
@@ -7249,10 +7214,9 @@ mrb_value vp_flash(mrb_state* M, mrb_value self) {
 // One frame: advance a running flash and repaint the overlay from the current
 // colour (which the scripts mutate in place).
 mrb_value vp_update(mrb_state* M, mrb_value self) {
-  const mrb_value count_v =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  const mrb_value count_v = mrb_iv_get(M, self, MRB_IVSYM(flash_count));
   if (mrb_fixnum_p(count_v) && mrb_fixnum(count_v) > 0)
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+    mrb_iv_set(M, self, MRB_IVSYM(flash_count),
                mrb_fixnum_value(mrb_fixnum(count_v) - 1));
   vp_refresh_overlay(M, self);
   // The tone is mutated in place by the scripts, so re-read it per frame; the
@@ -7656,7 +7620,7 @@ mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
   lv_obj_t* p = lv_canvas_create(parent_object(M, viewport));
   wrap_lv_obj(M, self, p);
   register_zobj(M, self);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), viewport);
+  mrb_iv_set(M, self, MRB_IVSYM(viewport), viewport);
   return self;
 }
 
@@ -7681,7 +7645,7 @@ mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int w, mrb_int h) {
 mrb_value sprite_bitmap_set_direct(mrb_state* M,
                                    mrb_value self,
                                    mrb_value bitmap) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bitmap);
+  mrb_iv_set(M, self, MRB_IVSYM(bitmap), bitmap);
   lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return bitmap;
@@ -7817,10 +7781,10 @@ mrb_value object_x_set_direct(mrb_state* M, mrb_value self, mrb_int x) {
   // tracks the camera whether or not it moved) and LVGL's setter invalidates
   // without comparing. The mirrored ivar is authoritative -- every write
   // passes through here.
-  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@x"));
+  mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(x));
   if (!mrb_fixnum_p(cur) || mrb_fixnum(cur) != x) {
     lv_obj_set_x(obj, x);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@x"), mrb_fixnum_value(x));
+    mrb_iv_set(M, self, MRB_IVSYM(x), mrb_fixnum_value(x));
   }
   return self;
 }
@@ -7828,16 +7792,16 @@ mrb_value object_x_set_direct(mrb_state* M, mrb_value self, mrb_int x) {
 mrb_value object_y_set_direct(mrb_state* M, mrb_value self, mrb_int y) {
   lv_obj_t* obj = obj_require(M, self);
   // Same-value skip, see object_x_set_direct.
-  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@y"));
+  mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(y));
   if (!mrb_fixnum_p(cur) || mrb_fixnum(cur) != y) {
     lv_obj_set_y(obj, y);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@y"), mrb_fixnum_value(y));
+    mrb_iv_set(M, self, MRB_IVSYM(y), mrb_fixnum_value(y));
   }
   return self;
 }
 
 mrb_value object_z_set_direct(mrb_state* M, mrb_value self, mrb_int z) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@z"), mrb_fixnum_value(z));
+  mrb_iv_set(M, self, MRB_IVSYM(z), mrb_fixnum_value(z));
   update_z(M);
   return self;
 }
@@ -7848,19 +7812,19 @@ mrb_value object_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
   // frame by several draw paths (pictures, vehicles, the battle gate). An unset
   // ivar (fresh sprite) must apply: LVGL objects start visible, and nil here
   // means "never poked", not "hidden".
-  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@visible"));
+  mrb_value cur = mrb_iv_get(M, self, MRB_IVSYM(visible));
   if (mrb_nil_p(cur) || mrb_test(cur) != v) {
     if (v)
       lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
     else
       lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
+    mrb_iv_set(M, self, MRB_IVSYM(visible), mrb_bool_value(v));
   }
   return self;
 }
 
 mrb_value sprite_color_set_direct(mrb_state* M, mrb_value self, mrb_value v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
+  mrb_iv_set(M, self, MRB_IVSYM(color), v);
   lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return v;
@@ -7870,18 +7834,16 @@ mrb_value sprite_flash_direct(mrb_state* M,
                               mrb_value self,
                               mrb_value color,
                               mrb_int duration) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
-             mrb_fixnum_value(duration));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
-             mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, MRB_IVSYM(flash_color), color);
+  mrb_iv_set(M, self, MRB_IVSYM(flash_duration), mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, MRB_IVSYM(flash_count), mrb_fixnum_value(duration));
   lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return mrb_nil_value();
 }
 
 mrb_value viewport_color_set_direct(mrb_state* M, mrb_value self, mrb_value c) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), c);
+  mrb_iv_set(M, self, MRB_IVSYM(color), c);
   vp_refresh_overlay(M, self);
   return c;
 }
@@ -7890,10 +7852,9 @@ mrb_value viewport_flash_direct(mrb_state* M,
                                 mrb_value self,
                                 mrb_value color,
                                 mrb_int duration) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
-             mrb_fixnum_value(duration));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+  mrb_iv_set(M, self, MRB_IVSYM(flash_color), color);
+  mrb_iv_set(M, self, MRB_IVSYM(flash_duration), mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, MRB_IVSYM(flash_count),
              mrb_fixnum_value(mrb_nil_p(color) ? 0 : duration));
   vp_refresh_overlay(M, self);
   return mrb_nil_value();
@@ -7950,19 +7911,19 @@ mrb_value window_tone_direct(mrb_state* M, mrb_value self) {
 mrb_value window_contents_set_direct(mrb_state* M,
                                      mrb_value self,
                                      mrb_value bmp) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), bmp);
+  mrb_iv_set(M, self, MRB_IVSYM(contents), bmp);
   window_refresh(M, self);
   return bmp;
 }
 
 mrb_value window_width_set_direct(mrb_state* M, mrb_value self, mrb_int v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@width"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(width), mrb_fixnum_value(v));
   window_refresh(M, self);
   return self;
 }
 
 mrb_value window_height_set_direct(mrb_state* M, mrb_value self, mrb_int v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@height"), mrb_fixnum_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(height), mrb_fixnum_value(v));
   window_refresh(M, self);
   return self;
 }
@@ -7970,7 +7931,7 @@ mrb_value window_height_set_direct(mrb_state* M, mrb_value self, mrb_int v) {
 mrb_value window_windowskin_set_direct(mrb_state* M,
                                        mrb_value self,
                                        mrb_value skin) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@windowskin"), skin);
+  mrb_iv_set(M, self, MRB_IVSYM(windowskin), skin);
   window_refresh(M, self);
   return skin;
 }
@@ -7978,38 +7939,35 @@ mrb_value window_windowskin_set_direct(mrb_state* M,
 mrb_value window_cursor_rect_set_direct(mrb_state* M,
                                         mrb_value self,
                                         mrb_value rect) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@cursor_rect"), rect);
+  mrb_iv_set(M, self, MRB_IVSYM(cursor_rect), rect);
   window_refresh(M, self);
   return rect;
 }
 
 mrb_value window_active_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@active"), mrb_bool_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(active), mrb_bool_value(v));
   window_refresh(M, self);
   return self;
 }
 
 mrb_value window_pause_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@pause"), mrb_bool_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(pause), mrb_bool_value(v));
   window_refresh(M, self);
   return self;
 }
 
 mrb_value tilemap_z_set_direct(mrb_state* M, mrb_value self, mrb_int z) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@z"), mrb_fixnum_value(z));
-  const mrb_value above =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  mrb_iv_set(M, self, MRB_IVSYM(z), mrb_fixnum_value(z));
+  const mrb_value above = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_obj));
   if (mrb_test(above))
-    mrb_iv_set(M, above, mrb_intern_lit(M, "@z"),
-               mrb_fixnum_value(z + TILEMAP_ABOVE_Z));
+    mrb_iv_set(M, above, MRB_IVSYM(z), mrb_fixnum_value(z + TILEMAP_ABOVE_Z));
   update_z(M);
   return self;
 }
 
 mrb_value tilemap_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
   lv_obj_t* obj = obj_require(M, self);
-  const mrb_value above =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  const mrb_value above = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_obj));
   lv_obj_t* al = (mrb_test(above) && DATA_PTR(above))
                      ? reinterpret_cast<lv_obj_t*>(DATA_PTR(above))
                      : nullptr;
@@ -8022,12 +7980,12 @@ mrb_value tilemap_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
     if (al)
       lv_obj_add_flag(al, LV_OBJ_FLAG_HIDDEN);
   }
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
+  mrb_iv_set(M, self, MRB_IVSYM(visible), mrb_bool_value(v));
   return self;
 }
 
 mrb_value plane_color_set_direct(mrb_state* M, mrb_value self, mrb_value v) {
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
+  mrb_iv_set(M, self, MRB_IVSYM(color), v);
   plane_retile(M, self);
   return v;
 }
@@ -8107,8 +8065,9 @@ mrb_value table_new_direct(mrb_state* M,
 }  // namespace rgss
 
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display) {
-  mrb_assert(!mrb_const_defined(M, mrb_obj_value(mrb_module_get(M, "RGSS")),
-                                mrb_intern_lit(M, "_display")));
+  mrb_assert(
+      !mrb_const_defined(M, mrb_obj_value(mrb_module_get_id(M, MRB_SYM(RGSS))),
+                         MRB_SYM(_display)));
   mrb_const_set(M, mrb_obj_value(mrb_module_get(M, "RGSS")),
                 mrb_intern_lit(M, "_display"), mrb_cptr_value(M, display));
 
@@ -8797,7 +8756,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // here would mark this file a singleton maker
   // (ClosedWorld::NATIVE_SINGLETON).
   mrb_method_t class_new =
-      mrb_method_search(M, M->class_class->c, mrb_intern_lit(M, "new"));
+      mrb_method_search(M, M->class_class->c, MRB_SYM(new));
   if (MRB_METHOD_FUNC_P(class_new)) {
     class_new_orig = MRB_METHOD_FUNC(class_new);
     mrb_define_class_method(M, M->class_class, "new", class_new_warn,

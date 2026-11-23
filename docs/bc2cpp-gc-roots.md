@@ -80,6 +80,13 @@ before the call and uses the local after it holds the only reference, and a coll
   not on the VM stack (the block is called directly), so it roots the element before the call. The arena restore
   after each iteration drops the root.
 
+- `ELEMENT_READ_SUMMARY` (`tools/bc2cpp/keep_summary.rb`): a root the liveness test places carries a marker naming
+  what the calls it guards against call. Once the unit is printed, every function it defines is summarised over its
+  own text and its callees' (unknown code, rooted stores, arena restores, raise-only paths), and a marked root is
+  dropped when every name is safe: a clean function, a store helper that roots what it replaces, an audited pure
+  name, or a raise-only call outside every handler region. `BC2CPP_ELEMENT_READ_SUMMARY=0` keeps every root.
+  A call of a generated name with `$` escapes (`LCF__Array1D_$5b$5d_impl`) is a call too.
+
 ## What it does not cover
 
 The store rule and the caller-side rule see what the generator emits. These are still open:
