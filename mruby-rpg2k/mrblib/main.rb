@@ -1038,7 +1038,7 @@ class RPG2k
       return
     end
 
-    model = battle.ui[:battle]
+    model = battle.ui.battle
     enemies = model.enemies
     hp = enemies.reduce(0) { |s, e| s + e.hp }
     alive = enemies.reject { |e| e.dead? }.size
@@ -1058,7 +1058,7 @@ class RPG2k
     # prints a handful of lines (the phase moves along as each actor/round is
     # resolved), and one that is wedged prints nothing after the first --
     # which is the diagnosis (see mz.rb's identical reasoning).
-    phase = battle.ui[:phase]
+    phase = battle.ui.phase
     if phase != @btl_play_last_phase
       @btl_play_last_phase = phase
       $stderr.puts "[RPG2k-BTLPLAY] phase #{phase}"

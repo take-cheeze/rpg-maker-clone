@@ -355,11 +355,10 @@ def eq(exp, act, msg = nil)
   raise "expected #{exp.inspect}, got #{act.inspect}#{msg ? " (#{msg})" : ''}"
 end
 
-# The fight's own live state (RPG2k::Scene::Battle#ui) is a plain hash again,
-# same shape a check written against the old Scene::Map#@battle_ui already
-# expects -- reached through the scene's own @battle (nil between
-# encounters), so this is the one place a check has to know the fight moved
-# out to its own scene object at all.
+# The fight's own live state (RPG2k::Scene::Battle#ui, a Scene::Battle::Ui) --
+# reached through the scene's own @battle (nil between encounters), so this is
+# the one place a check has to know the fight moved out to its own scene
+# object at all.
 def battle_ui(scene)
   b = scene.instance_variable_get(:@battle)
   b && b.ui
@@ -372,9 +371,16 @@ end
 def fake_battle(scene, ui)
   battle = RPG2k::Scene::Battle.allocate
   battle.instance_variable_set(:@map_scene, scene)
-  battle.instance_variable_set(:@ui, ui)
+  battle.instance_variable_set(:@ui, battle_ui_of(ui))
   scene.instance_variable_set(:@battle, battle)
   battle
+end
+
+# A Scene::Battle::Ui with the given fields set (a check's fabricated fight state).
+def battle_ui_of(fields)
+  ui = RPG2k::Scene::Battle::Ui.new
+  fields.each { |k, v| ui.instance_variable_set(:"@#{k}", v) }
+  ui
 end
 
 # Runs the block with $stderr redirected to a StringIO and returns everything
@@ -7639,11 +7645,11 @@ end
 def battle_attack_to_end(scene, max = 2000)
   max.times do
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :result
+    break if ui && ui.phase == :result
     # A pressed C on :battle_options picks the cursor's default row 0,
     # "Battle" -- dismissing the once-per-battle automatic options window
     # exactly the way a player who ignores Auto Battle/Escape would.
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target battle_options].include?(ui[:phase])
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target battle_options].include?(ui.phase)
     scene.update # a nil ui just means the battle is still opening
     RGSS::Input.triggered = []
   end
@@ -7663,7 +7669,7 @@ def battle_until_phase(scene, phase, max = 120)
   max.times do
     scene.update
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == phase
+    break if ui && ui.phase == phase
   end
   ui
 end
@@ -7820,7 +7826,7 @@ check 'Enemy Encounter scene: opening a battle narrates each visible enemy with 
   # (measured under wine, see that constant), so give it the frames to
   # finish before reading the finished narration off the panel.
   20.times { scene.update }
-  eq ['Slimeがあらわれた！', 'Slimeがあらわれた！'], window_texts(ui[:action_win]),
+  eq ['Slimeがあらわれた！', 'Slimeがあらわれた！'], window_texts(ui.action_win),
      'both troop members are named, once each, using the database term'
 end
 
@@ -7847,7 +7853,7 @@ check 'Enemy Encounter scene: a first-strike encounter appends the special_comba
   # finish before reading the finished narration off the panel.
   20.times { scene.update }
   eq ['Slimeがあらわれた！', 'Slimeがあらわれた！', '先制攻撃！'],
-     window_texts(ui[:action_win]),
+     window_texts(ui.action_win),
      'special_combat trails the per-enemy lines rather than replacing them, ' \
      "matching a reference implementation's own ordering"
 end
@@ -7871,9 +7877,9 @@ check 'Enemy Encounter scene: a hidden troop member gets no encounter line' do
   # (measured under wine, see that constant), so give it the frames to
   # finish before reading the finished narration off the panel.
   20.times { scene.update }
-  eq ['Slimeがあらわれた！'], window_texts(ui[:action_win]),
+  eq ['Slimeがあらわれた！'], window_texts(ui.action_win),
      'only the still-visible Slime is narrated'
-  ok ui[:troop].members[1].hidden, 'and the troop model agrees the second member is hidden'
+  ok ui.troop.members[1].hidden, 'and the troop model agrees the second member is hidden'
 end
 
 # yado.tk: "the built-in random-number operand is a genuine non-seeded RNG --
@@ -7899,7 +7905,7 @@ check "Enemy Encounter scene: battle math reuses the scene's own advancing " \
   2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
   ui = battle_ui(scene)
   rng = scene.instance_variable_get(:@rng)
-  ok ui[:battle].rng.equal?(rng),
+  ok ui.battle.rng.equal?(rng),
      "the battle's own combat math should draw from the scene's single, " \
      'already-advancing RNG object, not a freshly constructed one'
 end
@@ -7914,7 +7920,7 @@ check 'Enemy Encounter scene: rolls already spent by earlier map activity change
   scene_a.instance_variable_get(:@state)
           .instance_variable_set(:@party, BattleStubParty.new)
   battle_attack_to_end(scene_a)
-  log_a = battle_ui(scene_a)[:battle].log.dup
+  log_a = battle_ui(scene_a).battle.log.dup
 
   scene_b = new_scene({ 1 => event(2, 2, auto) })
   scene_b.instance_variable_get(:@state)
@@ -7924,7 +7930,7 @@ check 'Enemy Encounter scene: rolls already spent by earlier map activity change
   # entirely -- all of which draw from this same per-scene RNG stream.
   7.times { scene_b.instance_variable_get(:@rng).next_int }
   battle_attack_to_end(scene_b)
-  log_b = battle_ui(scene_b)[:battle].log.dup
+  log_b = battle_ui(scene_b).battle.log.dup
 
   ok log_a != log_b,
      'a fight reached after other map-side rolls should not replay the exact ' \
@@ -8329,8 +8335,8 @@ check 'Enemy Encounter scene: the Battle/Auto Battle/Escape options window opens
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_until_phase(scene, :battle_options)
   ok ui, 'the battle opened'
-  eq :battle_options, ui[:phase], 'the options window shows before any per-actor command menu'
-  eq 0, ui[:opt], 'the cursor starts on the first row, Battle'
+  eq :battle_options, ui.phase, 'the options window shows before any per-actor command menu'
+  eq 0, ui.opt, 'the cursor starts on the first row, Battle'
   eq %w[Fight AutoBattle Escape].map { |s| s == 'AutoBattle' ? 'Auto Battle' : s },
      scene.instance_variable_get(:@battle).send(:battle_option_rows).map { |r| r[:label] },
      'fake_db leaves the battle_fight/battle_auto/battle_escape terms blank, so these are ' \
@@ -8345,13 +8351,13 @@ check 'Enemy Encounter scene: B/Cancel does nothing while the options window is 
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_until_phase(scene, :battle_options)
-  eq :battle_options, ui[:phase]
+  eq :battle_options, ui.phase
   RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::B]
   scene.update
   RGSS::Input.triggered = []
-  eq :battle_options, ui[:phase], 'B/Cancel is a no-op here -- there is no parent state to cancel to'
-  eq 0, ui[:opt], 'the cursor did not move either'
+  eq :battle_options, ui.phase, 'B/Cancel is a no-op here -- there is no parent state to cancel to'
+  eq 0, ui.opt, 'the cursor did not move either'
   eq [], RGSS::Audio.se_calls, 'and no SE played, matching a real cancel-into-nothing'
 end
 
@@ -8368,8 +8374,8 @@ check 'Enemy Encounter scene: selecting Battle from the options window returns t
   RGSS::Input.triggered = [RGSS::Input::C] # Battle -- the default cursor row 0
   scene.update
   RGSS::Input.triggered = []
-  eq :command, ui[:phase], 'Battle dismisses the window and opens the normal command menu'
-  eq 0, ui[:actor_i], 'still commanding the same first actor'
+  eq :command, ui.phase, 'Battle dismisses the window and opens the normal command menu'
+  eq 0, ui.actor_i, 'still commanding the same first actor'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Decision1' }, 'choosing Battle plays Decision'
 end
 
@@ -8385,12 +8391,12 @@ check "Enemy Encounter scene: B-cancel on the first commandable actor's command 
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss via Battle first
   scene.update
   RGSS::Input.triggered = []
-  eq :command, ui[:phase]
+  eq :command, ui.phase
   RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::B] # cancel on the very first actor
   scene.update
   RGSS::Input.triggered = []
-  eq :battle_options, ui[:phase],
+  eq :battle_options, ui.phase,
      'reopens the options window rather than attempting Escape directly, ' \
      'the deliberate simplification this replaces'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Cancel1' },
@@ -8408,11 +8414,11 @@ check 'Enemy Encounter scene: selecting Escape from the options window runs Esca
   ui = battle_until_phase(scene, :battle_options)
   2.times { RGSS::Input.triggered = [RGSS::Input::DOWN]; scene.update } # Fight -> Auto Battle -> Escape
   RGSS::Input.triggered = []
-  eq 2, ui[:opt], 'the cursor landed on Escape'
+  eq 2, ui.opt, 'the cursor landed on Escape'
   RGSS::Input.triggered = [RGSS::Input::C] # confirm Escape
   scene.update
   RGSS::Input.triggered = []
-  eq :result, ui[:phase], 'a successful flee shows the result window too, like a win or a loss'
+  eq :result, ui.phase, 'a successful flee shows the result window too, like a win or a loss'
   ok !st.switches[2], 'the Escape handler has not run yet -- the result is still up'
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss the result
   scene.update
@@ -8447,12 +8453,12 @@ check 'Enemy Encounter scene: a first-strike encounter always escapes on the ' \
 
   2.times { RGSS::Input.triggered = [RGSS::Input::DOWN]; scene.update } # Fight -> Auto Battle -> Escape
   RGSS::Input.triggered = []
-  eq 2, ui[:opt], 'the cursor landed on Escape'
+  eq 2, ui.opt, 'the cursor landed on Escape'
   RGSS::Input.triggered = [RGSS::Input::C] # confirm Escape
   scene.update
   RGSS::Input.triggered = []
-  eq :result, ui[:phase], 'the escape attempt resolved immediately, no failure banner'
-  eq :escape, ui[:result], 'and it succeeded -- the ambush round guarantees it'
+  eq :result, ui.phase, 'the escape attempt resolved immediately, no failure banner'
+  eq :escape, ui.result, 'and it succeeded -- the ambush round guarantees it'
 end
 
 check 'Enemy Encounter scene: selecting Auto Battle queues the AI pick for every ' \
@@ -8468,17 +8474,17 @@ check 'Enemy Encounter scene: selecting Auto Battle queues the AI pick for every
   RGSS::Input.triggered = [RGSS::Input::DOWN] # Fight -> Auto Battle
   scene.update
   RGSS::Input.triggered = []
-  eq 1, ui[:opt], 'the cursor landed on Auto Battle'
+  eq 1, ui.opt, 'the cursor landed on Auto Battle'
   RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::C] # confirm Auto Battle
   scene.update
   RGSS::Input.triggered = []
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Decision1' }, 'choosing Auto Battle plays Decision'
-  ok ui[:allies][0].action || ui[:allies][0].command,
+  ok ui.allies[0].action || ui.allies[0].command,
      "Game::Battle#choose_auto_battle_command queued the first ally's action"
-  ok ui[:allies][1].action || ui[:allies][1].command,
+  ok ui.allies[1].action || ui.allies[1].command,
      "and the second ally's too -- the whole party, not just one"
-  ok ui[:phase] != :command,
+  ok ui.phase != :command,
      'the round started on its own -- no per-actor command menu was ever shown'
 end
 
@@ -8496,15 +8502,15 @@ check 'Enemy Encounter scene: the options window does not reappear automatically
   RGSS::Input.triggered = [RGSS::Input::C] # Battle
   scene.update
   RGSS::Input.triggered = []
-  eq :command, ui[:phase], 'round 1 command phase, options window already dismissed'
+  eq :command, ui.phase, 'round 1 command phase, options window already dismissed'
   saw_options_again = false
   40.times do
-    RGSS::Input.triggered = [RGSS::Input::C] if %i[command target].include?(ui[:phase])
+    RGSS::Input.triggered = [RGSS::Input::C] if %i[command target].include?(ui.phase)
     scene.update
     ui = battle_ui(scene)
     RGSS::Input.triggered = []
-    saw_options_again ||= ui && ui[:phase] == :battle_options
-    break if ui.nil? || ui[:phase] == :result
+    saw_options_again ||= ui && ui.phase == :battle_options
+    break if ui.nil? || ui.phase == :result
   end
   ok !saw_options_again, 'round 2 (and beyond) opens the command phase directly, never the options window'
 end
@@ -8859,9 +8865,9 @@ check "a Common Event Parallel Process's own Battle Processing now actually open
   battle_attack_to_end(scene) # Attack the Slimes each round until they fall
   ui = battle_ui(scene)
   ok ui, "the parallel process's own Enemy Encounter actually opened a real battle screen"
-  eq :result, ui[:phase]
+  eq :result, ui.phase
   fg = scene.instance_variable_get(:@interpreter)
-  ok !ui[:owner].equal?(fg),
+  ok !scene.instance_variable_get(:@battle).owner.equal?(fg),
      "the parallel process's own interpreter owns this fight, not the (idle) foreground"
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss the Victory result
   scene.update
@@ -12741,11 +12747,11 @@ check 'Enemy Encounter scene: the round animates action by action, not at once' 
   ui = nil
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   # Command the sole hero to Attack the first enemy: C picks Attack, C confirms
   # the target; with one ally that starts the round animation.
@@ -12755,17 +12761,17 @@ check 'Enemy Encounter scene: the round animates action by action, not at once' 
     RGSS::Input.triggered = []
   end
   ui = battle_ui(scene)
-  eq :animate, ui[:phase], 'the commanded round now plays out as an animation'
-  eq 0, ui[:battle].log.length, 'no hit has landed the instant the round starts'
+  eq :animate, ui.phase, 'the commanded round now plays out as an animation'
+  eq 0, ui.battle.log.length, 'no hit has landed the instant the round starts'
 
   RGSS::Audio.reset_se
   scene.update # lands exactly the first action of the round
-  eq 1, ui[:battle].log.length, 'one attack landed on the first animation step'
-  ok ui[:action_win], 'and it is bannered on screen'
+  eq 1, ui.battle.log.length, 'one attack landed on the first animation step'
+  ok ui.action_win, 'and it is bannered on screen'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyHit' }, 'and its damage SE played'
   # The timer holds the next action back, so a mid-timer frame lands nothing more.
   scene.update
-  eq 1, ui[:battle].log.length, 'the next action waits out BATTLE_ANIM_FRAMES'
+  eq 1, ui.battle.log.length, 'the next action waits out BATTLE_ANIM_FRAMES'
 end
 
 # A party whose lone Hero (fast, so it acts first) knows a battle skill and
@@ -12844,11 +12850,11 @@ def battle_to_command(scene)
   ui = nil
   200.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ui
 end
@@ -12869,20 +12875,20 @@ check 'Enemy Encounter scene: casting an attack Skill damages a foe and spends S
   ui = battle_to_command(scene)
 
   press_key(scene, RGSS::Input::DOWN)   # move cursor Attack -> Skill
-  eq 1, ui[:cmd]
+  eq 1, ui.cmd
   press_key(scene, RGSS::Input::C)      # open the skill list
-  eq :skill, ui[:phase]
+  eq :skill, ui.phase
   press_key(scene, RGSS::Input::C)      # choose Fire (enemy-scope) -> target
-  eq :target, ui[:phase]
+  eq :target, ui.phase
   press_key(scene, RGSS::Input::C)      # confirm the first foe -> round animates
-  eq :animate, ui[:phase]
+  eq :animate, ui.phase
 
-  foe_hp = ui[:foes].first.hp
+  foe_hp = ui.foes.first.hp
   scene.update                          # the fast Hero's Fire lands first
-  entry = ui[:battle].log.first
+  entry = ui.battle.log.first
   eq 'Fire', entry[:skill], 'the skill resolved as the Hero\'s action'
-  eq 15, foe_hp - ui[:foes].first.hp, 'the foe took the skill damage'
-  eq 7, ui[:allies].first.mp, 'the caster spent 3 SP (10 -> 7)'
+  eq 15, foe_hp - ui.foes.first.hp, 'the foe took the skill damage'
+  eq 7, ui.allies.first.mp, 'the caster spent 3 SP (10 -> 7)'
 end
 
 # Originally only confirmed against a reference implementation (its
@@ -12911,7 +12917,7 @@ check 'Enemy Encounter scene: holding Down auto-repeats the battle options, ' \
   RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
   scene.update
   RGSS::Input.reset
-  eq 1, ui[:opt], 'a held (repeated, not triggered) Down still moves the options cursor'
+  eq 1, ui.opt, 'a held (repeated, not triggered) Down still moves the options cursor'
 
   RGSS::Input.triggered = [RGSS::Input::UP] # back onto Fight
   scene.update
@@ -12919,12 +12925,12 @@ check 'Enemy Encounter scene: holding Down auto-repeats the battle options, ' \
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss with Fight -> command phase
   scene.update
   RGSS::Input.reset
-  eq :command, ui[:phase]
+  eq :command, ui.phase
 
   RGSS::Input.repeated = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
-  eq 1, ui[:cmd], 'a held (repeated, not triggered) Down still moves the command cursor'
+  eq 1, ui.cmd, 'a held (repeated, not triggered) Down still moves the command cursor'
 
   RGSS::Input.triggered = [RGSS::Input::C] # Skill -> Fire (enemy-scope) -> target
   scene.update
@@ -12932,12 +12938,12 @@ check 'Enemy Encounter scene: holding Down auto-repeats the battle options, ' \
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
-  eq :target, ui[:phase]
+  eq :target, ui.phase
 
   RGSS::Input.repeated = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
-  eq 1, ui[:target_i], 'a held (repeated, not triggered) Down still moves the enemy-target cursor'
+  eq 1, ui.target_i, 'a held (repeated, not triggered) Down still moves the enemy-target cursor'
 end
 
 check 'Enemy Encounter scene: using an Item heals and consumes one from the bag' do
@@ -12952,20 +12958,20 @@ check 'Enemy Encounter scene: using an Item heals and consumes one from the bag'
   press_key(scene, RGSS::Input::DOWN)   # Attack -> Skill
   press_key(scene, RGSS::Input::DOWN)   # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN)   # Defend -> Item
-  eq 3, ui[:cmd]
+  eq 3, ui.cmd
   press_key(scene, RGSS::Input::C)      # open the item list
-  eq :item, ui[:phase]
+  eq :item, ui.phase
   press_key(scene, RGSS::Input::C)      # choose Potion -> ally target
-  eq :ally_target, ui[:phase]
+  eq :ally_target, ui.phase
   press_key(scene, RGSS::Input::C)      # heal the Hero -> round animates
-  eq :animate, ui[:phase]
+  eq :animate, ui.phase
   eq 2, st.party.item_count(5), 'the potion is not spent until the action lands'
 
-  hp_before = ui[:allies].first.hp
+  hp_before = ui.allies.first.hp
   RGSS::Audio.reset_se
   scene.update                          # the Hero uses the Potion first
   eq 1, st.party.item_count(5), 'one potion consumed when the item action landed'
-  eq 20, ui[:allies].first.hp - hp_before, 'the Hero was healed 20 HP'
+  eq 20, ui.allies.first.hp - hp_before, 'the Hero was healed 20 HP'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'ItemUse' }, 'the item SE played too'
 end
 
@@ -12986,11 +12992,11 @@ check 'Enemy Encounter scene: the enemy-attack SE plays for an enemy Attack, ' \
   ui = battle_to_command(scene)
 
   2.times { press_key(scene, RGSS::Input::C) } # Attack -> the first Slime -> animate
-  eq :animate, ui[:phase]
+  eq :animate, ui.phase
 
   RGSS::Audio.reset_se
   scene.update # the (faster) Hero's own attack lands first
-  eq 1, ui[:battle].log.length
+  eq 1, ui.battle.log.length
   ok !RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyAttack' },
      "an ally's own Attack does not play the enemy-attack SE"
 
@@ -12999,10 +13005,10 @@ check 'Enemy Encounter scene: the enemy-attack SE plays for an enemy Attack, ' \
   RGSS::Audio.reset_se
   120.times do
     scene.update
-    break if ui[:battle].log.length >= 2
+    break if ui.battle.log.length >= 2
   end
-  eq 2, ui[:battle].log.length, "the Slime's counter-attack landed"
-  entry = ui[:battle].log.last
+  eq 2, ui.battle.log.length, "the Slime's counter-attack landed"
+  entry = ui.battle.log.last
   eq false, entry[:attacker_ally], 'the attacker is the enemy, not an ally'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyAttack' },
      "and the enemy's own Attack plays the enemy-attack SE"
@@ -13030,23 +13036,23 @@ check 'Enemy Encounter scene: the command/skill/target flow plays cursor, ' \
 
   RGSS::Audio.reset_se
   press_key(scene, RGSS::Input::C) # open the (non-empty) skill list
-  eq :skill, ui[:phase]
+  eq :skill, ui.phase
   eq 'Decision1', RGSS::Audio.se_calls.last[0], 'opening a non-empty skill list plays Decision SE'
 
   RGSS::Audio.reset_se
   press_key(scene, RGSS::Input::C) # choose Fire (affordable) -> enemy target
-  eq :target, ui[:phase]
+  eq :target, ui.phase
   eq 'Decision1', RGSS::Audio.se_calls.last[0],
      'choosing an affordable skill plays Decision SE again'
 
   RGSS::Audio.reset_se
   press_key(scene, RGSS::Input::B) # cancel the target list
-  eq :skill, ui[:phase]
+  eq :skill, ui.phase
   eq 'Cancel1', RGSS::Audio.se_calls.last[0], 'cancelling the target list plays Cancel SE'
 
   RGSS::Audio.reset_se
   press_key(scene, RGSS::Input::B) # cancel the skill list
-  eq :command, ui[:phase]
+  eq :command, ui.phase
   eq 'Cancel1', RGSS::Audio.se_calls.last[0], 'cancelling the skill list plays Cancel SE too'
 end
 
@@ -13063,11 +13069,11 @@ check 'Enemy Encounter scene: confirming an unaffordable skill plays Buzzer, ' \
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
-  eq :skill, ui[:phase]
+  eq :skill, ui.phase
 
   RGSS::Audio.reset_se
   press_key(scene, RGSS::Input::C) # try Fire, can't afford it
-  eq :skill, ui[:phase], 'an unaffordable skill leaves the player on the list'
+  eq :skill, ui.phase, 'an unaffordable skill leaves the player on the list'
   eq 'Buzzer1', RGSS::Audio.se_calls.last[0], 'and plays Buzzer instead of Decision'
 end
 
@@ -13099,17 +13105,17 @@ check 'Enemy Encounter scene: confirming a skill missing its required weapon ' \
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
-  eq :skill, ui[:phase]
+  eq :skill, ui.phase
 
   RGSS::Audio.reset_se
   press_key(scene, RGSS::Input::C) # try Fire, missing the required weapon Attribute
-  eq :skill, ui[:phase], 'a skill missing its weapon Attribute leaves the player on the list'
+  eq :skill, ui.phase, 'a skill missing its weapon Attribute leaves the player on the list'
   eq 'Buzzer1', RGSS::Audio.se_calls.last[0], 'and plays Buzzer instead of Decision'
 
   party.weapon_ready = true # the matching weapon is now equipped
   RGSS::Audio.reset_se
   press_key(scene, RGSS::Input::C) # try Fire again
-  eq :target, ui[:phase], 'the very same skill casts once the weapon requirement is met'
+  eq :target, ui.phase, 'the very same skill casts once the weapon requirement is met'
   eq 'Decision1', RGSS::Audio.se_calls.last[0]
 end
 
@@ -13162,11 +13168,11 @@ check 'Enemy Encounter scene: an item-triggered heal bypasses the weapon-Attribu
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
-  eq :item, ui[:phase]
+  eq :item, ui.phase
   press_key(scene, RGSS::Input::C)    # choose Potion -> ally target
-  eq :ally_target, ui[:phase]
+  eq :ally_target, ui.phase
   press_key(scene, RGSS::Input::C)    # heal the Hero -> round animates
-  eq :animate, ui[:phase], 'the item cast went through with the weapon requirement still unmet'
+  eq :animate, ui.phase, 'the item cast went through with the weapon requirement still unmet'
 end
 
 # A party whose bag also holds a type-9 special item invoking an enemy-scope
@@ -13225,26 +13231,26 @@ check 'Enemy Encounter scene: a special item invoking an enemy-scope skill ' \
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
-  eq :item, ui[:phase]
+  eq :item, ui.phase
   # Potion (id 5, row 0 col 0) -> Fire Bomb (id 7, sorted second, row 0 col 1)
   # -- the battle item list is a two-column grid (BATTLE_LIST_COLUMN_MAX),
   # so with only two items Right crosses to the second one, not Down (there
   # is no second row for two items to wrap across).
   press_key(scene, RGSS::Input::RIGHT)
   press_key(scene, RGSS::Input::C)    # choose the Fire Bomb
-  eq :target, ui[:phase], 'an enemy-scope item skill prompts for an enemy, not an ally'
+  eq :target, ui.phase, 'an enemy-scope item skill prompts for an enemy, not an ally'
 
-  foe_hp = ui[:foes].first.hp
+  foe_hp = ui.foes.first.hp
   press_key(scene, RGSS::Input::C)    # confirm the first foe -> round animates
-  eq :animate, ui[:phase]
+  eq :animate, ui.phase
   eq 2, st.party.item_count(BattleSkillItemParty::BOMB_ID),
      'not spent yet -- an item action is only consumed once it lands'
 
   scene.update                        # the Hero's action lands
-  entry = ui[:battle].log.first
-  eq 25, foe_hp - ui[:foes].first.hp, 'the skill\'s real damage landed, not a 0-effect medicine cast'
+  entry = ui.battle.log.first
+  eq 25, foe_hp - ui.foes.first.hp, 'the skill\'s real damage landed, not a 0-effect medicine cast'
   eq 1, st.party.item_count(BattleSkillItemParty::BOMB_ID), 'one Fire Bomb consumed'
-  eq 10, ui[:allies].first.mp, 'the caster\'s own MP is untouched -- the item paid, not the caster'
+  eq 10, ui.allies.first.mp, 'the caster\'s own MP is untouched -- the item paid, not the caster'
   ok entry[:item_id] == BattleSkillItemParty::BOMB_ID, "the log entry carries the item's id"
 end
 
@@ -13270,7 +13276,7 @@ check 'Enemy Encounter scene: opening Skill with nothing to cast plays Buzzer, '
 
   RGSS::Audio.reset_se
   press_key(scene, RGSS::Input::C)
-  eq :command, ui[:phase], 'no skill list opens'
+  eq :command, ui.phase, 'no skill list opens'
   eq 'Buzzer1', RGSS::Audio.se_calls.last[0], 'Buzzer plays instead of Decision'
 end
 
@@ -13311,9 +13317,9 @@ check 'Enemy Encounter scene: using a switch item skips ally targeting, then ' \
   press_key(scene, RGSS::Input::DOWN)   # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN)   # Defend -> Item
   press_key(scene, RGSS::Input::C)      # open the item list
-  eq :item, ui[:phase]
+  eq :item, ui.phase
   press_key(scene, RGSS::Input::C)      # choose the switch item
-  eq :animate, ui[:phase],
+  eq :animate, ui.phase,
      'a switch item has no target -- it queues straight into the round, unlike the Potion above'
   eq 1, st.party.item_count(BattleSwitchItemParty::SWITCH_ITEM_ID), 'not spent until the action lands'
   ok !st.switches[BattleSwitchItemParty::ITEM_SWITCH_ID], 'not flipped yet either'
@@ -13333,19 +13339,19 @@ check 'Enemy Encounter scene: the command and target cursors wrap around' do
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_to_command(scene)
-  eq 0, ui[:cmd], 'starts on Attack'
+  eq 0, ui.cmd, 'starts on Attack'
   press_key(scene, RGSS::Input::UP)
-  eq 3, ui[:cmd], 'Up from Attack wraps to Item (the last of the four commands)'
+  eq 3, ui.cmd, 'Up from Attack wraps to Item (the last of the four commands)'
   press_key(scene, RGSS::Input::DOWN)
-  eq 0, ui[:cmd], 'Down from Item wraps back to Attack'
+  eq 0, ui.cmd, 'Down from Item wraps back to Attack'
 
   press_key(scene, RGSS::Input::C) # open the enemy target list (2 Slimes)
-  eq :target, ui[:phase]
-  eq 0, ui[:target_i], 'starts on the first foe'
+  eq :target, ui.phase
+  eq 0, ui.target_i, 'starts on the first foe'
   press_key(scene, RGSS::Input::UP)
-  eq 1, ui[:target_i], 'Up from the first foe wraps to the last (2 Slimes)'
+  eq 1, ui.target_i, 'Up from the first foe wraps to the last (2 Slimes)'
   press_key(scene, RGSS::Input::DOWN)
-  eq 0, ui[:target_i], 'Down from the last foe wraps to the first'
+  eq 0, ui.target_i, 'Down from the last foe wraps to the first'
 end
 
 # A troop with more living members than the enemy-target window's own
@@ -13364,11 +13370,11 @@ check 'Enemy Encounter scene: the target cursor is clamped, not wrapped, ' \
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::C) # open the enemy target list (6 Slimes)
-  eq :target, ui[:phase]
-  eq 0, ui[:target_i], 'starts on the first foe'
+  eq :target, ui.phase
+  eq 0, ui.target_i, 'starts on the first foe'
 
   4.times { press_key(scene, RGSS::Input::DOWN) }
-  eq 3, ui[:target_i],
+  eq 3, ui.target_i,
      'Down stops dead at row 4 (the last visible row) -- it does not reach ' \
      'the 5th/6th Slime, and does not wrap back to row 1 either'
 
@@ -13376,7 +13382,7 @@ check 'Enemy Encounter scene: the target cursor is clamped, not wrapped, ' \
   press_key(scene, RGSS::Input::UP)
   press_key(scene, RGSS::Input::UP)
   press_key(scene, RGSS::Input::UP)
-  eq 0, ui[:target_i],
+  eq 0, ui.target_i,
      'Up from row 4 comes back to row 1 the ordinary way, then stops dead ' \
      'there -- it does not wrap forward to the 6th Slime'
 end
@@ -13389,7 +13395,7 @@ check 'Enemy Encounter scene: the command menu is drawn Attack / Skill / Defend 
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_to_command(scene)
-  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  labels = ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   eq %w[Attack Skill Defend Item], labels,
      "a reference implementation's own logic order (ported from that " \
      "source, NOT independently confirmed against genuine RPG_RT under " \
@@ -13406,11 +13412,11 @@ check 'Enemy Encounter scene: cmd 2 commits Defend at once (not the Item list)' 
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
-  eq 2, ui[:cmd]
+  eq 2, ui.cmd
   press_key(scene, RGSS::Input::C)    # Defend commits at once, no sub-menu
   # The lone actor's only command; committing it advances straight past the
   # command phase into the round (Defend never opens a list the way Item does).
-  eq :animate, ui[:phase],
+  eq :animate, ui.phase,
      'Defend at cmd 2 committed and started the round instead of opening Item'
 end
 
@@ -13423,7 +13429,7 @@ check "Enemy Encounter scene: an actor's RPG2000 custom battle command name repl
   st.instance_variable_set(:@party,
     BattleStubParty.new(BattleStubActor.new(rename_skill: true, skill_name: 'Magic')))
   ui = battle_to_command(scene)
-  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  labels = ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   eq %w[Attack Magic Defend Item], labels,
      'database field 66/67 (custom_battle_command / _name) renames just the Skill slot'
 end
@@ -13436,7 +13442,7 @@ check 'Enemy Encounter scene: an actor without the custom name keeps the Skill t
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_to_command(scene)
-  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  labels = ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   eq 'Skill', labels[1], 'no rename set (the default) falls back to the database term'
 end
 
@@ -13451,7 +13457,7 @@ check "Enemy Encounter scene: an actor's RPG2003 skill-only battle-command list 
     battle_command_table: { 10 => BattleCommandDef.new('Cast Magic', Game::Actor::BATTLE_COMMAND_SUBSKILL) })
   st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
   ui = battle_to_command(scene)
-  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  labels = ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   eq ['Cast Magic'], labels,
      "a customized list of just one Subskill entry (plus id 0, Row -- skipped " \
      "within the customizable list itself, see #custom_battle_commands) " \
@@ -13459,7 +13465,7 @@ check "Enemy Encounter scene: an actor's RPG2003 skill-only battle-command list 
      'rpg2003?-flagged, so the appended Row row -- #row_command_available? -- ' \
      'never shows either)'
   press_key(scene, RGSS::Input::C) # the only row, cmd 0, is a Skill-type command
-  eq :skill, ui[:phase], 'a Subskill entry opens the Skill list the same as the generic Skill command'
+  eq :skill, ui.phase, 'a Subskill entry opens the Skill list the same as the generic Skill command'
 end
 
 check "Enemy Encounter scene: an actor's shortened, reordered battle-command list draws in its own order" do
@@ -13476,10 +13482,10 @@ check "Enemy Encounter scene: an actor's shortened, reordered battle-command lis
     })
   st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
   ui = battle_to_command(scene)
-  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  labels = ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   eq %w[Bag Guard], labels, 'Item first then Defense, the database order, not Attack/Skill/Defend/Item'
   press_key(scene, RGSS::Input::C) # cmd 0 here is the Item-type command
-  eq :item, ui[:phase], 'the reordered list still opens the Item sub-menu, not Attack'
+  eq :item, ui.phase, 'the reordered list still opens the Item sub-menu, not Attack'
 end
 
 check "Enemy Encounter scene: a reordered Defense command still commits at once, not just at cmd 2" do
@@ -13497,9 +13503,9 @@ check "Enemy Encounter scene: a reordered Defense command still commits at once,
   st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Bag (cmd 0) -> Guard (cmd 1)
-  eq 1, ui[:cmd]
+  eq 1, ui.cmd
   press_key(scene, RGSS::Input::C)    # Defense commits at once, no sub-menu, despite sitting at cmd 1
-  eq :animate, ui[:phase],
+  eq :animate, ui.phase,
      "cmd 1's own action (:defend) drove this, not the fixed four's cmd-2-is-Defend rule"
 end
 
@@ -13517,7 +13523,7 @@ check 'selecting a battle command records its command id on the acting Combatant
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleCustomCommandParty.new(BattleStubActor.new(agi: 20)))
   ui = battle_to_command(scene)
-  hero = ui[:allies][0]
+  hero = ui.allies[0]
   eq nil, hero.last_battle_action, 'nothing recorded before a command is chosen'
   press_key(scene, RGSS::Input::C) # Attack (cmd 0, the default cursor row)
   eq 1, hero.last_battle_action, 'the fixed Attack row records command id 1'
@@ -13534,7 +13540,7 @@ check 'selecting a customized battle command records its own command-table ref' 
     battle_command_table: { 10 => BattleCommandDef.new('Cast Magic', Game::Actor::BATTLE_COMMAND_SUBSKILL) })
   st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
   ui = battle_to_command(scene)
-  hero = ui[:allies][0]
+  hero = ui.allies[0]
   press_key(scene, RGSS::Input::C) # the only row, cmd 0: the Subskill at ref 10
   eq 10, hero.last_battle_action, 'a customized row records its own db.commands ref'
 end
@@ -13558,16 +13564,16 @@ check "Enemy Encounter scene: a Special battle command draws a row and forfeits 
     battle_command_table: { 12 => BattleCommandDef.new('Stall', Game::Actor::BATTLE_COMMAND_SPECIAL) })
   st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
   ui = battle_to_command(scene)
-  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  labels = ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   eq ['Stall'], labels, 'a customized list with just a Special entry shows that one row, not the fixed four'
-  hero = ui[:allies][0]
+  hero = ui.allies[0]
   press_key(scene, RGSS::Input::C) # the only row, cmd 0: the Special at ref 12
   eq 12, hero.last_battle_action, 'a Special row records its own db.commands ref (never multiplied by a combo)'
-  eq :animate, ui[:phase], 'Special commits at once -- no target/skill/item submenu, like Defend'
+  eq :animate, ui.phase, 'Special commits at once -- no target/skill/item submenu, like Defend'
   # The hero's turn is skipped, so after the round resolves the only log
   # entries are the Slimes' attacks, never a Hero one.
   8.times { scene.update }
-  hero_attacked = ui[:battle].log.any? { |e| e[:attacker] == 'Hero' }
+  hero_attacked = ui.battle.log.any? { |e| e[:attacker] == 'Hero' }
   eq false, hero_attacked, 'the Special turn produced no attack entry for the hero'
 end
 
@@ -13585,14 +13591,14 @@ check "Enemy Encounter scene: an RPG2003 fight offers Row after the fixed four "
   actor = BattleStubActor.new(agi: 20)
   st.instance_variable_set(:@party, BattleStubParty.new(actor, rpg2003: true))
   ui = battle_to_command(scene)
-  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  labels = ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   eq %w[Attack Skill Defend Item Row], labels,
      'a 2003 fight appends the fixed Row row after the ordinary fixed four'
   4.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend -> Item -> Row
-  eq 4, ui[:cmd], 'the cursor lands on the appended Row row'
-  hero = ui[:allies][0]
+  eq 4, ui.cmd, 'the cursor lands on the appended Row row'
+  hero = ui.allies[0]
   press_key(scene, RGSS::Input::C)
-  eq :command, ui[:phase], 'a refused toggle stays on the command menu, not a committed turn'
+  eq :command, ui.phase, 'a refused toggle stays on the command menu, not a committed turn'
   eq Game::Battle::ROW_FRONT, hero.row, 'the sole ally is still front row'
   eq Game::Battle::ROW_FRONT, actor.battle_row, 'the real actor was never written back to either'
 end
@@ -13607,25 +13613,25 @@ check 'Enemy Encounter scene: Row flips a front-row ally to the back and spends 
   a2 = BattleStubActor.new(id: 2, name: 'Ally', agi: 15)
   st.instance_variable_set(:@party, BattleStubParty.new(rpg2003: true, actors: [a1, a2]))
   ui = battle_to_command(scene)
-  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  labels = ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   eq %w[Attack Skill Defend Item Row], labels
   4.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend -> Item -> Row
-  hero = ui[:allies][0]
+  hero = ui.allies[0]
   press_key(scene, RGSS::Input::C)
   # Row commits at once, like Special -- no target/skill/item submenu -- but
   # with a second party member still to command, that only advances to
   # *their* menu, not straight to the round's animation.
-  eq :command, ui[:phase], "Row spends only the acting ally's turn, moving on to the next ally's menu"
+  eq :command, ui.phase, "Row spends only the acting ally's turn, moving on to the next ally's menu"
   eq Game::Battle::ROW_BACK, hero.row, 'the fight-scoped Combatant moved to the back row'
   eq Game::Battle::ROW_BACK, a1.battle_row, 'the real actor is written back so it outlives the battle'
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::C)    # Ally defends, committing the round
-  eq :animate, ui[:phase], "the round animates once both allies have committed"
+  eq :animate, ui.phase, "the round animates once both allies have committed"
   # The row change cost Hero's own turn like Special does: only Ally's
   # attacks show up in the round's log.
   8.times { scene.update }
-  hero_attacked = ui[:battle].log.any? { |e| e[:attacker] == 'Hero' }
+  hero_attacked = ui.battle.log.any? { |e| e[:attacker] == 'Hero' }
   eq false, hero_attacked, 'the Row turn produced no attack entry for the hero'
 end
 
@@ -13638,7 +13644,7 @@ check "Enemy Encounter scene: a battle-command list of Row alone falls back to t
   st.instance_variable_set(:@party,
     BattleStubParty.new(BattleStubActor.new(battle_commands: [0, -1, -1, -1, -1, -1, -1])))
   ui = battle_to_command(scene)
-  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  labels = ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   eq %w[Attack Skill Defend Item], labels,
      'Row alone (the same shape an actor with no customization at all reads from the database) ' \
      'is not a usable list on its own, so this falls back to the fixed four'
@@ -13677,27 +13683,27 @@ check 'Enemy Encounter scene: the skill list cursor is a column-locked ' \
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
-  eq :skill, ui[:phase]
-  eq 0, ui[:skill_i], 'starts on the first skill (row 0, col 0)'
+  eq :skill, ui.phase
+  eq 0, ui.skill_i, 'starts on the first skill (row 0, col 0)'
 
   press_key(scene, RGSS::Input::UP)
-  eq 0, ui[:skill_i], 'Up from row 0 does not move -- there is no row above'
+  eq 0, ui.skill_i, 'Up from row 0 does not move -- there is no row above'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq 1, ui[:skill_i], 'Right moves within the row (col 0 -> col 1)'
+  eq 1, ui.skill_i, 'Right moves within the row (col 0 -> col 1)'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq 2, ui[:skill_i], 'Right crosses the row boundary into row 1 -- flat, no row-edge stop'
+  eq 2, ui.skill_i, 'Right crosses the row boundary into row 1 -- flat, no row-edge stop'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq 2, ui[:skill_i], 'Right at the list\'s own end does not wrap'
+  eq 2, ui.skill_i, 'Right at the list\'s own end does not wrap'
 
   press_key(scene, RGSS::Input::DOWN)
-  eq 2, ui[:skill_i], 'Down does not move -- column 0 (index 2) has nothing below it'
+  eq 2, ui.skill_i, 'Down does not move -- column 0 (index 2) has nothing below it'
 
   press_key(scene, RGSS::Input::LEFT)
   press_key(scene, RGSS::Input::LEFT)
-  eq 0, ui[:skill_i], 'Left flows back across the row boundary the same way'
+  eq 0, ui.skill_i, 'Left flows back across the row boundary the same way'
 end
 
 # Community デフォ戦bot/@2000_battle_bot trivia: the skill-menu cursor
@@ -13718,11 +13724,11 @@ check 'Enemy Encounter scene: reopening the skill list puts the cursor back ' \
 
   actor.last_skill_id = 2 # as if skill id 2 (list index 1) was picked last turn
   battle.send(:open_battle_skill)
-  eq 1, ui[:skill_i], 'reopens on the remembered skill, not index 0'
+  eq 1, ui.skill_i, 'reopens on the remembered skill, not index 0'
 
   actor.last_skill_id = 99 # no longer in the list (forgotten, or never valid)
   battle.send(:open_battle_skill)
-  eq 0, ui[:skill_i], 'falls back to the top when the remembered skill is not in this list'
+  eq 0, ui.skill_i, 'falls back to the top when the remembered skill is not in this list'
 end
 
 # A hero with three battle items, mirroring BattleThreeSkillParty above.
@@ -13747,29 +13753,29 @@ check 'Enemy Encounter scene: the item list cursor is a column-locked ' \
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
-  eq :item, ui[:phase]
-  eq 0, ui[:item_i], 'starts on the first item (row 0, col 0)'
+  eq :item, ui.phase
+  eq 0, ui.item_i, 'starts on the first item (row 0, col 0)'
 
   press_key(scene, RGSS::Input::UP)
-  eq 0, ui[:item_i], 'Up from row 0 does not move -- there is no row above'
+  eq 0, ui.item_i, 'Up from row 0 does not move -- there is no row above'
 
   press_key(scene, RGSS::Input::DOWN)
-  eq 2, ui[:item_i], 'Down crosses into row 1 -- column 0 has a third item below it'
+  eq 2, ui.item_i, 'Down crosses into row 1 -- column 0 has a third item below it'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq 2, ui[:item_i], 'Right at the list\'s own end does not wrap -- row 1 has only one cell'
+  eq 2, ui.item_i, 'Right at the list\'s own end does not wrap -- row 1 has only one cell'
 
   press_key(scene, RGSS::Input::UP)
-  eq 0, ui[:item_i], 'Up flows back to row 0'
+  eq 0, ui.item_i, 'Up flows back to row 0'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq 1, ui[:item_i], 'Right moves within the row (col 0 -> col 1)'
+  eq 1, ui.item_i, 'Right moves within the row (col 0 -> col 1)'
 
   press_key(scene, RGSS::Input::DOWN)
-  eq 1, ui[:item_i], 'Down does not move -- column 1 has nothing below it with only 3 items'
+  eq 1, ui.item_i, 'Down does not move -- column 1 has nothing below it with only 3 items'
 
   press_key(scene, RGSS::Input::LEFT)
-  eq 0, ui[:item_i], 'Left moves back to column 0'
+  eq 0, ui.item_i, 'Left moves back to column 0'
 end
 
 # An exact 4-row/2-column grid (8 items, no overflow) -- the boundary
@@ -13800,21 +13806,21 @@ check 'Enemy Encounter scene: the item grid does not wrap at an exact ' \
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
-  eq :item, ui[:phase]
+  eq :item, ui.phase
 
   press_key(scene, RGSS::Input::DOWN)
   press_key(scene, RGSS::Input::DOWN)
   press_key(scene, RGSS::Input::DOWN)
-  eq 6, ui[:item_i], 'three Downs reach row 3, col 0 (index 6) -- the grid\'s last row'
-
-  press_key(scene, RGSS::Input::RIGHT)
-  eq 7, ui[:item_i], 'Right reaches the grid\'s own last cell (row 3, col 1)'
-
-  press_key(scene, RGSS::Input::DOWN)
-  eq 7, ui[:item_i], 'Down at the last cell does not wrap back to row 0'
+  eq 6, ui.item_i, 'three Downs reach row 3, col 0 (index 6) -- the grid\'s last row'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq 7, ui[:item_i], 'Right at the last cell does not wrap either'
+  eq 7, ui.item_i, 'Right reaches the grid\'s own last cell (row 3, col 1)'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 7, ui.item_i, 'Down at the last cell does not wrap back to row 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 7, ui.item_i, 'Right at the last cell does not wrap either'
 end
 
 # A 9th item past the exact 8-item/4-row grid -- the case
@@ -13847,16 +13853,16 @@ check 'Enemy Encounter scene: the item grid scrolls to reach a 9th item ' \
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
-  eq :item, ui[:phase]
+  eq :item, ui.phase
 
   4.times { press_key(scene, RGSS::Input::DOWN) }
-  eq 8, ui[:item_i], 'four Downs reach the 9th item (index 8), alone in row 4'
+  eq 8, ui.item_i, 'four Downs reach the 9th item (index 8), alone in row 4'
 
   press_key(scene, RGSS::Input::DOWN)
-  eq 8, ui[:item_i], 'Down past the 9th item does not wrap back to row 0'
+  eq 8, ui.item_i, 'Down past the 9th item does not wrap back to row 0'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq 8, ui[:item_i], 'Right off the partial row\'s lone cell does not reach a ' \
+  eq 8, ui.item_i, 'Right off the partial row\'s lone cell does not reach a ' \
                       'phantom cell -- unlike the equip candidate list\'s trailing Remove'
 end
 
@@ -13887,21 +13893,21 @@ check 'Enemy Encounter scene: the skill grid does not wrap at an exact ' \
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
-  eq :skill, ui[:phase]
+  eq :skill, ui.phase
 
   press_key(scene, RGSS::Input::DOWN)
   press_key(scene, RGSS::Input::DOWN)
   press_key(scene, RGSS::Input::DOWN)
-  eq 6, ui[:skill_i], 'three Downs reach row 3, col 0 (index 6) -- the grid\'s last row'
-
-  press_key(scene, RGSS::Input::RIGHT)
-  eq 7, ui[:skill_i], 'Right reaches the grid\'s own last cell (row 3, col 1)'
-
-  press_key(scene, RGSS::Input::DOWN)
-  eq 7, ui[:skill_i], 'Down at the last cell does not wrap back to row 0'
+  eq 6, ui.skill_i, 'three Downs reach row 3, col 0 (index 6) -- the grid\'s last row'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq 7, ui[:skill_i], 'Right at the last cell does not wrap either'
+  eq 7, ui.skill_i, 'Right reaches the grid\'s own last cell (row 3, col 1)'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 7, ui.skill_i, 'Down at the last cell does not wrap back to row 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 7, ui.skill_i, 'Right at the last cell does not wrap either'
 end
 
 # A 9th skill past the exact 8-skill/4-row grid, mirroring
@@ -13930,16 +13936,16 @@ check 'Enemy Encounter scene: the skill grid scrolls to reach a 9th skill ' \
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
-  eq :skill, ui[:phase]
+  eq :skill, ui.phase
 
   4.times { press_key(scene, RGSS::Input::DOWN) }
-  eq 8, ui[:skill_i], 'four Downs reach the 9th skill (index 8), alone in row 4'
+  eq 8, ui.skill_i, 'four Downs reach the 9th skill (index 8), alone in row 4'
 
   press_key(scene, RGSS::Input::DOWN)
-  eq 8, ui[:skill_i], 'Down past the 9th skill does not wrap back to row 0'
+  eq 8, ui.skill_i, 'Down past the 9th skill does not wrap back to row 0'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq 8, ui[:skill_i], 'Right off the partial row\'s lone cell does not reach a ' \
+  eq 8, ui.skill_i, 'Right off the partial row\'s lone cell does not reach a ' \
                        'phantom cell -- unlike the equip candidate list\'s trailing Remove'
 end
 
@@ -13965,24 +13971,24 @@ check 'Enemy Encounter scene: holding Down auto-repeats the battle item ' \
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
-  eq :item, ui[:phase]
+  eq :item, ui.phase
 
   RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
   scene.update
   RGSS::Input.reset
-  eq 2, ui[:item_i], 'a held (repeated, not triggered) Down still moves the item grid cursor'
+  eq 2, ui.item_i, 'a held (repeated, not triggered) Down still moves the item grid cursor'
 
   scene2 = new_scene({ 1 => event(2, 2, auto) })
   scene2.instance_variable_get(:@state).instance_variable_set(:@party, BattleThreeSkillParty.new)
   ui2 = battle_to_command(scene2)
   press_key(scene2, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene2, RGSS::Input::C)    # open the skill list
-  eq :skill, ui2[:phase]
+  eq :skill, ui2.phase
 
   RGSS::Input.repeated = [RGSS::Input::DOWN]
   scene2.update
   RGSS::Input.reset
-  eq 2, ui2[:skill_i], 'a held (repeated, not triggered) Down still moves the skill grid cursor'
+  eq 2, ui2.skill_i, 'a held (repeated, not triggered) Down still moves the skill grid cursor'
 end
 
 # A single held item that #battle_items now lists (a field-only medicine,
@@ -14012,13 +14018,13 @@ check 'Enemy Encounter scene: choosing a listed-but-unusable battle item ' \
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
-  eq :item, ui[:phase]
+  eq :item, ui.phase
 
   RGSS::Audio.reset_se
   press_key(scene, RGSS::Input::C)    # try the one, disabled item
-  eq :item, ui[:phase], 'stays on the item list'
+  eq :item, ui.phase, 'stays on the item list'
   eq 'Buzzer1', RGSS::Audio.se_calls.last&.first, 'Buzzer plays instead of Decision'
-  ok ui[:pending].nil?, 'nothing was queued to cast'
+  ok ui.pending.nil?, 'nothing was queued to cast'
 end
 
 # A two-actor party, so the ally-target cursor (heal skill / medicine) has
@@ -14044,12 +14050,12 @@ check 'Enemy Encounter scene: the ally target cursor wraps around' do
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
-  eq :ally_target, ui[:phase]
-  eq 0, ui[:ally_i], 'starts on the first ally'
+  eq :ally_target, ui.phase
+  eq 0, ui.ally_i, 'starts on the first ally'
   press_key(scene, RGSS::Input::UP)
-  eq 1, ui[:ally_i], 'Up from the first ally wraps to the last (2 actors)'
+  eq 1, ui.ally_i, 'Up from the first ally wraps to the last (2 actors)'
   press_key(scene, RGSS::Input::DOWN)
-  eq 0, ui[:ally_i], 'Down from the last ally wraps to the first'
+  eq 0, ui.ally_i, 'Down from the last ally wraps to the first'
 end
 
 check 'Enemy Encounter scene: Right/Left are dead input on the ally target cursor' do
@@ -14077,17 +14083,17 @@ check 'Enemy Encounter scene: Right/Left are dead input on the ally target curso
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
-  eq 0, ui[:ally_i], 'starts on the first ally'
+  eq 0, ui.ally_i, 'starts on the first ally'
   press_key(scene, RGSS::Input::LEFT)
-  eq 0, ui[:ally_i], 'Left from the first ally is a no-op, unlike Up'
+  eq 0, ui.ally_i, 'Left from the first ally is a no-op, unlike Up'
   press_key(scene, RGSS::Input::RIGHT)
-  eq 0, ui[:ally_i], 'Right from the first ally is also a no-op, unlike Down'
+  eq 0, ui.ally_i, 'Right from the first ally is also a no-op, unlike Down'
   press_key(scene, RGSS::Input::DOWN)
-  eq 1, ui[:ally_i], 'Down still moves the cursor normally'
+  eq 1, ui.ally_i, 'Down still moves the cursor normally'
   press_key(scene, RGSS::Input::RIGHT)
-  eq 1, ui[:ally_i], 'Right from the last ally is a no-op, unlike Down'
+  eq 1, ui.ally_i, 'Right from the last ally is a no-op, unlike Down'
   press_key(scene, RGSS::Input::LEFT)
-  eq 1, ui[:ally_i], 'Left from the last ally is also a no-op, unlike Up'
+  eq 1, ui.ally_i, 'Left from the last ally is also a no-op, unlike Up'
 end
 
 # Two actors (distinct ids) with an item_usable_by? that restricts the
@@ -14117,18 +14123,18 @@ check "Enemy Encounter scene: a restricted item's ally-target picker skips the a
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
-  eq :ally_target, ui[:phase]
-  eq 2, ui[:allies].reject(&:dead?).length, 'both actors are alive and in the fight'
+  eq :ally_target, ui.phase
+  eq 2, ui.allies.reject(&:dead?).length, 'both actors are alive and in the fight'
   targets = scene.instance_variable_get(:@battle).send(:battle_ally_targets)
   eq 1, targets.length, 'the restricted actor never appears as a choice'
   eq 1, targets.first.actor.id, 'only the allowed actor is offered'
-  eq 0, ui[:ally_i], 'starts on the sole remaining candidate'
+  eq 0, ui.ally_i, 'starts on the sole remaining candidate'
   press_key(scene, RGSS::Input::DOWN)
-  eq 0, ui[:ally_i], 'a single candidate has nowhere to move to, unlike the ' \
+  eq 0, ui.ally_i, 'a single candidate has nowhere to move to, unlike the ' \
                      'unrestricted two-actor cursor above'
   press_key(scene, RGSS::Input::C) # confirm -> queues the item on the allowed actor
-  eq :command, ui[:phase], 'hero 2 still has to pick their own action'
-  eq ui[:allies].first, ui[:allies].first.command[:target],
+  eq :command, ui.phase, 'hero 2 still has to pick their own action'
+  eq ui.allies.first, ui.allies.first.command[:target],
      'the queued Item command targets actor 1, never the restricted actor 2'
 end
 
@@ -14156,19 +14162,19 @@ check "Enemy Encounter scene: a downed ally is offered as a Battle Item target, 
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
-  eq :ally_target, ui[:phase]
+  eq :ally_target, ui.phase
   targets = scene.instance_variable_get(:@battle).send(:battle_ally_targets)
   eq 2, targets.length, 'the downed ally is still offered, not excluded from the picker'
   ok targets.any?(&:dead?), 'one of the offered targets is the downed ally'
   press_key(scene, RGSS::Input::DOWN)
-  eq 1, ui[:ally_i], 'the cursor can reach the downed ally, which used to be unreachable'
+  eq 1, ui.ally_i, 'the cursor can reach the downed ally, which used to be unreachable'
   press_key(scene, RGSS::Input::C) # confirm on the downed ally
   # The only other roster slot is the downed ally itself, which never gets a
   # command of its own, so the round starts right away rather than moving to
   # a second actor's command phase (unlike the restricted-item check above,
   # whose second actor is merely restricted, not dead, and still gets a turn).
-  eq :animate, ui[:phase]
-  eq ui[:allies][1], ui[:allies][0].command[:target],
+  eq :animate, ui.phase
+  eq ui.allies[1], ui.allies[0].command[:target],
      'the queued Item command targets the downed ally, not just the living one'
 end
 
@@ -14181,16 +14187,16 @@ check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death'
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_to_command(scene)
 
-  sprites = ui[:enemy_sprites]
+  sprites = ui.enemy_sprites
   eq 2, sprites.compact.length, 'one battler sprite per visible troop member'
-  ok ui[:back_sprite], 'a battle background sprite is drawn behind them'
+  ok ui.back_sprite, 'a battle background sprite is drawn behind them'
   ok sprites.all? { |s| s.visible }, 'both enemies are shown at the start'
   # Centred on the member's troop position (member 1 at x = 100, y = 80).
   eq 100 - sprites[0].bitmap.width / 2, sprites[0].x, 'sprite centred on its x'
   eq 80 - sprites[0].bitmap.height / 2, sprites[0].y, 'sprite centred on its y'
   eq 255, sprites[0].opacity, 'a plain (non-"Appear Transparent") enemy draws fully opaque'
   ok sprites[0].z < 300, 'battlers sit below the UI windows (z >= 300)'
-  ok ui[:back_sprite].z < sprites[0].z, 'the backdrop sits behind the battlers'
+  ok ui.back_sprite.z < sprites[0].z, 'the backdrop sits behind the battlers'
   # yado.tk: troop members are numbered by add-order and the *lower*-numbered
   # one renders in front (closer to camera) -- member 0 here, added first.
   ok sprites[0].z > sprites[1].z, 'the lower-numbered troop member renders on top'
@@ -14217,7 +14223,7 @@ check 'Enemy Encounter scene: the alternative/gauge layout draws a positioned Id
   st.instance_variable_set(:@party, BattleStubParty.new(hero, alternate_layout: true))
   ui = battle_to_command(scene)
 
-  sprites = ui[:actor_sprites]
+  sprites = ui.actor_sprites
   ok sprites, 'built when the layout is alternative/gauge'
   eq 1, sprites.compact.length, 'one sprite for the sole living party member'
   spr = sprites[0]
@@ -14248,7 +14254,7 @@ check "Enemy Encounter scene: a party member already KO'd going into the fight d
   st.instance_variable_set(:@party, BattleStubParty.new(actors: [fallen, alive], alternate_layout: true))
   ui = battle_to_command(scene)
 
-  sprites = ui[:actor_sprites]
+  sprites = ui.actor_sprites
   ok sprites, 'built when the layout is alternative/gauge'
   eq 2, sprites.compact.length, 'both members get a sprite, including the already-fallen one'
   cell = RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
@@ -14285,7 +14291,7 @@ check "Enemy Encounter scene: a living party member carrying a non-death " \
   st.instance_variable_set(:@party, BattleStubParty.new(poisoned, alternate_layout: true))
   ui = battle_to_command(scene)
 
-  sprites = ui[:actor_sprites]
+  sprites = ui.actor_sprites
   ok sprites, 'built when the layout is alternative/gauge'
   cell = RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
   eq RGSS::Rect.new(0, 9 * cell, cell, cell), sprites[0].src_rect,
@@ -14311,7 +14317,7 @@ check 'Enemy Encounter scene: a state naming no pose of its own falls back ' \
   st.instance_variable_set(:@party, BattleStubParty.new(poisoned, alternate_layout: true))
   ui = battle_to_command(scene)
 
-  sprites = ui[:actor_sprites]
+  sprites = ui.actor_sprites
   ok sprites, 'built when the layout is alternative/gauge'
   cell = RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
   eq RGSS::Rect.new(0, 9 * cell, cell, cell), sprites[0].src_rect,
@@ -14326,7 +14332,7 @@ check 'Enemy Encounter scene: the traditional (RPG2000) layout draws no actor sp
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new) # alternate_layout: false, the default
   ui = battle_to_command(scene)
-  eq nil, ui[:actor_sprites], 'no actor-sprite layer at all, matching current (pre-change) behaviour'
+  eq nil, ui.actor_sprites, 'no actor-sprite layer at all, matching current (pre-change) behaviour'
 end
 
 # Out of scope for this step: the pose's `animation_type == 1` (a full
@@ -14345,7 +14351,7 @@ check 'Enemy Encounter scene: an Idle pose using the battle-animation (CBA) form
   st.instance_variable_set(:@party, BattleStubParty.new(hero, alternate_layout: true))
   ui = nil
   out = capture_stderr { ui = battle_to_command(scene) }
-  eq [nil], ui[:actor_sprites], 'no sprite drawn for the unimplemented CBA pose format'
+  eq [nil], ui.actor_sprites, 'no sprite drawn for the unimplemented CBA pose format'
   ok out.include?('[RPG2k]'), 'the gap is reported, not silently invented'
 end
 
@@ -14364,7 +14370,7 @@ check 'Enemy Encounter scene: an actor with no resolvable battle animation entry
   st.instance_variable_set(:@party, BattleStubParty.new(hero, alternate_layout: true))
   ui = battle_to_command(scene)
   ok ui, 'the battle still reaches the command phase without raising'
-  eq [nil], ui[:actor_sprites], 'no sprite for an actor with no battle animation data at all'
+  eq [nil], ui.actor_sprites, 'no sprite for an actor with no battle animation data at all'
 
   anims = { 5 => battle_pose_set(poses: { 0 => battle_pose }) }
   auto2 = page(trigger: 3)
@@ -14375,7 +14381,7 @@ check 'Enemy Encounter scene: an actor with no resolvable battle animation entry
   st2.instance_variable_set(:@party, BattleStubParty.new(hero2, alternate_layout: true))
   ui2 = battle_to_command(scene2)
   ok ui2, 'a dangling id reaches the command phase without raising too'
-  eq [nil], ui2[:actor_sprites], 'no sprite for a battle animation id the table does not define'
+  eq [nil], ui2.actor_sprites, 'no sprite for a battle animation id the table does not define'
 end
 
 # The "Appear Transparent" flag (field 10, `Game::Enemy#transparent`) was
@@ -14398,24 +14404,24 @@ check 'Enemy Encounter scene: an "Appear Transparent" enemy draws at reduced ' \
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_to_command(scene)
-  member = ui[:troop].members[0]
+  member = ui.troop.members[0]
   ok member.transparent, 'the fixture enemy (id 4, Ghost) carries the flag'
-  eq 160, ui[:enemy_sprites][0].opacity,
+  eq 160, ui.enemy_sprites[0].opacity,
      'build_battle_sprites draws it at 160/255 opacity, matching a reference implementation exactly'
 
   # A mid-fight transformation redraw (#rebuild_battler_sprite) keeps the
   # reduced opacity, not just the initial build.
-  ui[:foes][0].battler_name = 'Wraith'
-  ui[:foes][0].name = 'Wraith'
+  ui.foes[0].battler_name = 'Wraith'
+  ui.foes[0].name = 'Wraith'
   scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
-  eq 160, ui[:enemy_sprites][0].opacity,
+  eq 160, ui.enemy_sprites[0].opacity,
      'a transformation redraw keeps the reduced opacity'
 
   # Show Hidden Monster (#reveal_battle_monster) builds a fresh sprite too.
-  ui[:foes][0].hidden = true
-  ui[:troop].members[0].hidden = true
+  ui.foes[0].hidden = true
+  ui.troop.members[0].hidden = true
   scene.instance_variable_get(:@battle).send(:reveal_battle_monster, 0)
-  eq 160, ui[:enemy_sprites][0].opacity,
+  eq 160, ui.enemy_sprites[0].opacity,
      'Show Hidden Monster also draws it at the reduced opacity'
 end
 
@@ -14443,9 +14449,9 @@ check 'Enemy Encounter scene: a battle-graphic hue shift rotates the battler ' \
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_to_command(scene)
-  member = ui[:troop].members[0]
+  member = ui.troop.members[0]
   eq 120, member.battler_hue, 'the fixture enemy (id 5, Red Slime) carries the hue'
-  eq [120], ui[:enemy_sprites][0].bitmap.hue_calls,
+  eq [120], ui.enemy_sprites[0].bitmap.hue_calls,
      'build_battle_sprites rotates the decoded battler bitmap by the database hue'
 
   # The plain (hue 0) Slime shares this same scene's @monster_cache and the
@@ -14459,12 +14465,12 @@ check 'Enemy Encounter scene: a battle-graphic hue shift rotates the battler ' \
   # A mid-fight transformation redraw (#rebuild_battler_sprite) picks up the
   # new hue too, matching a reference implementation's rebuilding on
   # either the sprite name or the hue changing -- not just the initial build.
-  ui[:foes][0].battler_name = 'Slime'
-  ui[:foes][0].battler_hue = 0
-  ui[:foes][0].name = 'Slime'
+  ui.foes[0].battler_name = 'Slime'
+  ui.foes[0].battler_hue = 0
+  ui.foes[0].name = 'Slime'
   scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
-  ok ui[:enemy_sprites][0].bitmap.hue_calls.nil? ||
-     ui[:enemy_sprites][0].bitmap.hue_calls.empty?,
+  ok ui.enemy_sprites[0].bitmap.hue_calls.nil? ||
+     ui.enemy_sprites[0].bitmap.hue_calls.empty?,
      'transforming into the zero-hue battler redraws with no hue rotation'
 end
 
@@ -14476,15 +14482,15 @@ check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_to_command(scene)
-  sprites = ui[:enemy_sprites]
+  sprites = ui.enemy_sprites
   ok sprites[0].visible, 'drawn to begin with'
   # Out of play without being dead — an enemy that ran (its own Escape action or
   # a page's Force Flee), which used to stay on screen because visibility keyed
   # off `dead?` alone.
-  ui[:foes][0].hidden = true
+  ui.foes[0].hidden = true
   scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
   ok !sprites[0].visible, 'a monster that fled is taken off the field'
-  ok !ui[:foes][0].dead?, 'without counting as a kill'
+  ok !ui.foes[0].dead?, 'without counting as a kill'
   ok sprites[1].visible, 'its companion is untouched'
   # #refresh_battle_sprites also mirrors the combatant's `hidden` onto the
   # *troop* member -- the flag #total_exp/#total_gold/#drops actually key off
@@ -14492,8 +14498,8 @@ check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do
   # runs through the interpreter's Force-Flee queue (#remove_fled_monster).
   # Without this a self-fled/self-destructed monster would still pay full
   # rewards on victory.
-  ok ui[:troop].members[0].hidden, 'the troop member is marked hidden too'
-  ok !ui[:troop].members[1].hidden, 'its companion is untouched'
+  ok ui.troop.members[0].hidden, 'the troop member is marked hidden too'
+  ok !ui.troop.members[1].hidden, 'its companion is untouched'
 end
 
 # 2000_battle_bot / デフォ戦bot trivia: 自爆した敵は、経験値・お金・アイテムを落と
@@ -14515,25 +14521,25 @@ check 'Enemy Encounter scene: a self-destructed monster drops no reward and ' \
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_to_command(scene)
-  starting_hp = ui[:foes][0].hp
+  starting_hp = ui.foes[0].hp
   # What Game::Battle#enemy_autodestruct now does to its own caster: hide it,
   # leave its HP untouched (no `b.hp = 0`).
-  ui[:foes][0].hidden = true
+  ui.foes[0].hidden = true
   scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
-  ok !ui[:foes][0].dead?, 'the caster does not die'
-  eq starting_hp, ui[:foes][0].hp,
+  ok !ui.foes[0].dead?, 'the caster does not die'
+  eq starting_hp, ui.foes[0].hp,
      'its HP reads unchanged, exactly as a variable assignment would show in real RPG_RT'
-  ok ui[:troop].members[0].hidden, 'excluded from the troop reward roll'
-  eq [ui[:troop].members[1]], ui[:troop].send(:live_members),
+  ok ui.troop.members[0].hidden, 'excluded from the troop reward roll'
+  eq [ui.troop.members[1]], ui.troop.send(:live_members),
      'only the untouched companion still counts toward EXP/gold/drops'
 
   # "Enemy Appears" (Show Hidden Monster, 13150) targeting the exploded slot
   # brings it right back -- same path a genuinely-fled monster already uses.
   scene.instance_variable_get(:@battle).send(:reveal_battle_monster, 0)
-  ok !ui[:troop].members[0].hidden, 'visible again'
-  ok !ui[:foes][0].hidden, 'back in play'
-  eq starting_hp, ui[:foes][0].hp, 'with the same HP it had before it blew up'
-  eq [ui[:troop].members[0], ui[:troop].members[1]], ui[:troop].send(:live_members),
+  ok !ui.troop.members[0].hidden, 'visible again'
+  ok !ui.foes[0].hidden, 'back in play'
+  eq starting_hp, ui.foes[0].hp, 'with the same HP it had before it blew up'
+  eq [ui.troop.members[0], ui.troop.members[1]], ui.troop.send(:live_members),
      'and it counts toward rewards again, same as any other live member'
 end
 
@@ -14557,19 +14563,19 @@ check 'Scene::Map#flying_offset: RPG2003 + levitate is a +/-4px, 256-frame sine 
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new(rpg2003: true))
   ui = battle_to_command(scene)
-  member = ui[:troop].members[0]
+  member = ui.troop.members[0]
   ok member.levitate, 'the fixture enemy (id 3, Bat) carries the flag'
   member.flying_phase = 0 # pin out the per-member random phase (see
                            # #flying_phase) so this exercises the bare sine
                            # formula against a known, controlled frame count
 
-  ui[:frame] = 0
+  ui.frame = 0
   eq 0, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'frame 0: sin(0) = 0'
-  ui[:frame] = 64 # a quarter period: sin(pi/2) = 1
+  ui.frame = 64 # a quarter period: sin(pi/2) = 1
   eq 4, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'a quarter period in: the +4px peak'
-  ui[:frame] = 128 # half period: sin(pi) = 0
+  ui.frame = 128 # half period: sin(pi) = 0
   eq 0, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'half a period in: back through 0'
-  ui[:frame] = 192 # three-quarter period: sin(3pi/2) = -1
+  ui.frame = 192 # three-quarter period: sin(3pi/2) = -1
   eq(-4, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'three-quarters in: the -4px trough')
 end
 
@@ -14582,13 +14588,13 @@ check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the spr
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new(rpg2003: true))
   ui = battle_to_command(scene)
-  spr = ui[:enemy_sprites][0]
-  member = ui[:troop].members[0]
+  spr = ui.enemy_sprites[0]
+  member = ui.troop.members[0]
   member.flying_phase = 0 # pin out the per-member random phase (see
                            # #flying_phase) for the same reason as the check
                            # just above
   base_y = member.y - spr.bitmap.height / 2
-  frame_before = ui[:frame]
+  frame_before = ui.frame
   # Drive to the next frame landing exactly on a sine peak (frame % 256 ==
   # 64) so the expected offset is an exact, easily-asserted +4 rather than a
   # fraction -- computed from whatever `frame_before` actually is (the
@@ -14599,7 +14605,7 @@ check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the spr
   target = (frame_before / 256) * 256 + 64
   target += 256 while target <= frame_before
   (target - frame_before).times { scene.update }
-  eq target, ui[:frame], 'the per-battle frame counter ticks once per scene.update'
+  eq target, ui.frame, 'the per-battle frame counter ticks once per scene.update'
   eq base_y + 4, spr.y, "the sprite's own y actually moved with it, not just " \
                         '#flying_offset in isolation'
 
@@ -14610,8 +14616,8 @@ check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the spr
   st2 = scene2.instance_variable_get(:@state)
   st2.instance_variable_set(:@party, BattleStubParty.new(rpg2003: false))
   ui2 = battle_to_command(scene2)
-  spr2 = ui2[:enemy_sprites][0]
-  member2 = ui2[:troop].members[0]
+  spr2 = ui2.enemy_sprites[0]
+  member2 = ui2.troop.members[0]
   ok member2.levitate, 'still the same flagged enemy row'
   base_y2 = member2.y - spr2.bitmap.height / 2
   eq base_y2, spr2.y, 'RPG2000: no bob at battle open'
@@ -14636,10 +14642,10 @@ check 'Scene::Map#flying_offset: a member\'s own flying_phase shifts its ' \
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new(rpg2003: true))
   ui = battle_to_command(scene)
-  member = ui[:troop].members[0]
+  member = ui.troop.members[0]
   bat = scene.instance_variable_get(:@battle)
 
-  ui[:frame] = 64 # a quarter period at phase 0: the +4px peak
+  ui.frame = 64 # a quarter period at phase 0: the +4px peak
   member.flying_phase = 0
   eq 4, bat.send(:flying_offset, member), 'phase 0 at frame 64 is the peak, as before'
   member.flying_phase = 64 # a full extra quarter period added on top
@@ -15919,7 +15925,7 @@ check 'a command_actor troop page fires at the acting battler\'s turn in a gauge
   ok ui, 'the gauge battle opened to the ready actor\'s menu'
   eq false, st.switches[5], 'the page has not fired yet'
   press_key(scene, RGSS::Input::C) # Attack -- the fixed-four command id 1
-  eq :target, ui[:phase], 'Attack opens the target cursor'
+  eq :target, ui.phase, 'Attack opens the target cursor'
   press_key(scene, RGSS::Input::C) # the first Slime: the action begins
   # The action's boundary check runs the troop's pages for the acting battler
   # (the hero, who chose Attack = command id 1), so the command_actor page
@@ -15942,14 +15948,14 @@ check "a gauge battle: the Special command spends the ready actor's turn and ret
   st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the gauge battle opened to the ready actor\'s menu'
-  hero = ui[:allies][0]
+  hero = ui.allies[0]
   eq true, hero.gauge_full?, 'the actor\'s gauge is held full while the menu is open'
   press_key(scene, RGSS::Input::C) # the only row: the Special at ref 12
-  eq :animate, ui[:phase], 'Special commits at once -- no target/skill/item submenu'
+  eq :animate, ui.phase, 'Special commits at once -- no target/skill/item submenu'
   scene.update
-  eq :atb, ui[:phase], 'the consumed turn returns to the active-time idle loop'
+  eq :atb, ui.phase, 'the consumed turn returns to the active-time idle loop'
   ok !hero.gauge_full?, 'the Special turn spent the hero\'s held-full gauge (it refills from the ATB loop)'
-  hero_attacked = ui[:battle].log.any? { |e| e[:attacker] == 'Hero' }
+  hero_attacked = ui.battle.log.any? { |e| e[:attacker] == 'Hero' }
   eq false, hero_attacked, 'the Special turn produced no action entry'
 end
 
@@ -16003,7 +16009,7 @@ end
 
 def placement_sprites(scene)
   ui = battle_ui(scene)
-  ui && ui[:actor_sprites]
+  ui && ui.actor_sprites
 end
 
 check 'automatic battler placement seats a lone party member on the grid, not battle_x/battle_y' do
@@ -16044,10 +16050,10 @@ check 'the Row command moves an automatic-placement actor sprite by row_x_offset
   sprites = placement_sprites(scene)
   eq [232, 64], [sprites[0].x, sprites[0].y], 'member 0 starts on its front-row grid slot'
   ui = battle_ui(scene)
-  eq %w[Attack Skill Defend Item Row], ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq %w[Attack Skill Defend Item Row], ui.cmd_win.contents.draw_calls.map { |c| c[4] }
   4.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend -> Item -> Row
   press_key(scene, RGSS::Input::C)
-  hero = ui[:allies][0]
+  hero = ui.allies[0]
   eq Game::Battle::ROW_BACK, hero.row, 'member 0 moved to the back row'
   sprites = placement_sprites(scene)
   eq [256, 64], [sprites[0].x, sprites[0].y],
@@ -16085,7 +16091,7 @@ check 'a defending actor draws the Defend pose, reverting to Idle once the round
   # the sprite -- called directly, the same way other checks drive a scene's
   # private step methods rather than re-proving the whole round machine's
   # own timing here.
-  ui[:allies][1].defending = true # member 1 defends too, without driving its own menu
+  ui.allies[1].defending = true # member 1 defends too, without driving its own menu
   scene.instance_variable_get(:@battle).send(:finish_round_animation)
   sprites = placement_sprites(scene)
   eq [idle_y, idle_y], [sprites[0].src_rect.y, sprites[1].src_rect.y],
@@ -16132,7 +16138,7 @@ check 'a party member killed mid-round switches to the Dead pose once the round 
   eq [idle_y, idle_y], [sprites[0].src_rect.y, sprites[1].src_rect.y], 'both start on the Idle pose'
 
   ui = battle_ui(scene)
-  ui[:allies][1].hp = 0 # felled mid-round
+  ui.allies[1].hp = 0 # felled mid-round
   scene.instance_variable_get(:@battle).send(:finish_round_animation)
   sprites = placement_sprites(scene)
   eq idle_y, sprites[0].src_rect.y, 'the survivor stays on the Idle pose'
@@ -16147,7 +16153,7 @@ check 'a gauge battle: a felled ally switches to the Dead pose too, via the RPG2
   dead_y = 6 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
 
   ui = battle_ui(scene)
-  ui[:allies][0].hp = 0 # the other member stays alive, so the fight (and @ui) survives
+  ui.allies[0].hp = 0 # the other member stays alive, so the fight (and @ui) survives
   scene.instance_variable_get(:@battle).send(:finish_round_animation)
   sprites = placement_sprites(scene)
   eq dead_y, sprites[0].src_rect.y, "the RPG2k3 scene's own override catches the Dead pose up too"
@@ -16169,12 +16175,12 @@ check 'entering a battle with an empty party is instant defeat, not a frozen com
   90.times do
     scene.update
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :result
+    break if ui && ui.phase == :result
   end
   ui = battle_ui(scene)
   ok ui, 'the battle is open'
-  eq :result, ui[:phase], 'no living ally settles the fight immediately instead of stalling in :command'
-  eq :defeat, ui[:result], 'an empty party reads the same as a wipeout'
+  eq :result, ui.phase, 'no living ally settles the fight immediately instead of stalling in :command'
+  eq :defeat, ui.result, 'an empty party reads the same as a wipeout'
 end
 
 check 'entering a battle with an all-KO\'d party is instant defeat too' do
@@ -16183,12 +16189,12 @@ check 'entering a battle with an all-KO\'d party is instant defeat too' do
   90.times do
     scene.update
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :result
+    break if ui && ui.phase == :result
   end
   ui = battle_ui(scene)
   ok ui, 'the battle is open'
-  eq :result, ui[:phase], 'no living ally settles the fight immediately instead of stalling in :command'
-  eq :defeat, ui[:result]
+  eq :result, ui.phase, 'no living ally settles the fight immediately instead of stalling in :command'
+  eq :defeat, ui.result
 end
 
 # Community デフォ戦bot/@2000_battle_bot trivia (docs/TODO.md, デフォ戦botまとめ,
@@ -16210,12 +16216,12 @@ check 'an empty enemy troop skips its own turn-0 battle event and settles as an 
   90.times do
     scene.update
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :result
+    break if ui && ui.phase == :result
   end
   ui = battle_ui(scene)
   ok ui, 'the battle is open'
-  eq :result, ui[:phase], 'an empty troop settles immediately instead of stalling in :command'
-  eq :victory, ui[:result], 'no enemies at all reads the same as defeating them all'
+  eq :result, ui.phase, 'an empty troop settles immediately instead of stalling in :command'
+  eq :victory, ui.result, 'no enemies at all reads the same as defeating them all'
   eq false, st.switches[5], 'the turn-0 page never got a chance to run'
 end
 
@@ -16238,15 +16244,15 @@ check 'an asleep ally is skipped straight to the next commandable one, no comman
   ui = nil
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ok ui, 'the battle opened'
-  eq :command, ui[:phase], 'a still-commandable ally is left to open the prompt'
-  eq ui[:allies][1], scene.instance_variable_get(:@battle).send(:current_actor),
+  eq :command, ui.phase, 'a still-commandable ally is left to open the prompt'
+  eq ui.allies[1], scene.instance_variable_get(:@battle).send(:current_actor),
      'the asleep ally at index 0 was skipped straight to the awake one at index 1'
 end
 
@@ -16258,13 +16264,13 @@ check 'a lone ally under a do-nothing state (asleep) never gets a command prompt
   200.times do
     scene.update
     ui = battle_ui(scene)
-    saw_animate ||= ui && ui[:phase] == :animate
-    break if ui && ui[:phase] == :result
+    saw_animate ||= ui && ui.phase == :animate
+    break if ui && ui.phase == :result
   end
   ok ui, 'the battle opened'
-  ok saw_animate || ui[:phase] == :result,
+  ok saw_animate || ui.phase == :result,
      'the round left :command and started animating on its own -- no player input was ever supplied'
-  ok ui[:phase] != :command, 'the sole ally being asleep does not freeze the command phase forever'
+  ok ui.phase != :command, 'the sole ally being asleep does not freeze the command phase forever'
 end
 
 # 強制AI (mruby-lcf/mrblib/schema.rb, player/job field 23, force_ai) --
@@ -16289,13 +16295,13 @@ check 'a lone Forced-AI ally never gets a command prompt -- the round starts on 
   200.times do
     scene.update
     ui = battle_ui(scene)
-    saw_animate ||= ui && ui[:phase] == :animate
-    break if ui && ui[:phase] == :result
+    saw_animate ||= ui && ui.phase == :animate
+    break if ui && ui.phase == :result
   end
   ok ui, 'the battle opened'
-  ok saw_animate || ui[:phase] == :result,
+  ok saw_animate || ui.phase == :result,
      'the round left :command and started animating on its own -- no player input was ever supplied'
-  ok ui[:phase] != :command, 'a lone Forced-AI ally does not freeze the command phase waiting on a prompt'
+  ok ui.phase != :command, 'a lone Forced-AI ally does not freeze the command phase waiting on a prompt'
 end
 
 check 'a Forced-AI ally is skipped straight to the next manually-commandable one, with its own action already queued' do
@@ -16305,17 +16311,17 @@ check 'a Forced-AI ally is skipped straight to the next manually-commandable one
   ui = nil
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ok ui, 'the battle opened'
-  eq :command, ui[:phase], 'the still-manually-commandable second ally is left to open the prompt'
-  eq ui[:allies][1], scene.instance_variable_get(:@battle).send(:current_actor),
+  eq :command, ui.phase, 'the still-manually-commandable second ally is left to open the prompt'
+  eq ui.allies[1], scene.instance_variable_get(:@battle).send(:current_actor),
      'the Forced-AI ally at index 0 was skipped straight to the manual one at index 1'
-  ok ui[:allies][0].action || ui[:allies][0].command,
+  ok ui.allies[0].action || ui.allies[0].command,
      'the skipped Forced-AI ally already has its own action queued automatically'
 end
 
@@ -16335,11 +16341,11 @@ check 'a turn-0 battle-event page runs as the fight opens' do
   # once-per-battle automatic appearance, the same one a bare encounter with
   # no turn-0 page shows immediately -- not straight to the ordinary
   # per-actor command menu.
-  eq :battle_options, ui[:phase], 'and control returned to the party via the options window'
+  eq :battle_options, ui.phase, 'and control returned to the party via the options window'
   RGSS::Input.triggered = [RGSS::Input::C] # Battle (default cursor row 0)
   scene.update
   RGSS::Input.triggered = []
-  eq :command, ui[:phase], 'dismissing Battle reaches the ordinary per-actor command menu'
+  eq :command, ui.phase, 'dismissing Battle reaches the ordinary per-actor command menu'
 end
 
 check 'a battle page gated on an unmet condition does not fire' do
@@ -16375,12 +16381,12 @@ check 'a battle page conditioned on enemy HP fires mid-round, before the round s
   phase_when_fired = nil
   300.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target battle_options].include?(ui[:phase])
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target battle_options].include?(ui.phase)
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
     if st.switches[20] && phase_when_fired.nil?
-      phase_when_fired = ui && ui[:phase]
+      phase_when_fired = ui && ui.phase
     end
     break if phase_when_fired
   end
@@ -16410,31 +16416,31 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
   scene, st = battle_scene_with_pages(pages)
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ui = battle_ui(scene)
   # Troop member 1 stands in for a placed-but-invisible reinforcement.
-  ui[:foes][1].hidden = true
-  ui[:troop].members[1].hidden = true
+  ui.foes[1].hidden = true
+  ui.troop.members[1].hidden = true
   # The killing blow that ends member 0's HP at exactly 0, matching a 0%..0%
   # Enemy HP page condition -- this build's battle HP is not floor-clamped
   # mid-fight, only written back through Battle#apply_to_party at battle end,
   # so an *overkill* hit landing well past 0 would never satisfy a 0% window;
   # exactly 0 sidesteps that separate, unverified question and isolates the
   # one this check is actually about.
-  ui[:battle].enemy(0).hp = 0
+  ui.battle.enemy(0).hp = 0
   # Simulate the exact moment drive_battle_animate lands right after the
   # battler whose action just landed that blow: the battler-boundary flag it
   # sets (see @battle_ui[:battler_boundary]) is what gives every battle page
   # one more chance to fire before step_action next finds nothing pending and
   # the round settles via #finish_round_animation's own `battle.finished?`
   # check.
-  ui[:phase] = :animate
-  ui[:battler_boundary] = true
+  ui.phase = :animate
+  ui.battler_boundary = true
   revealed_before_victory = nil
   20.times do
     ui = battle_ui(scene)
@@ -16442,8 +16448,8 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
     scene.update
     ui = battle_ui(scene)
     break unless ui
-    next if ui[:foes][1].hidden
-    revealed_before_victory = ui[:phase] != :result
+    next if ui.foes[1].hidden
+    revealed_before_victory = ui.phase != :result
     break
   end
   ok !revealed_before_victory.nil?, 'the reinforcement was revealed within the budget'
@@ -16452,9 +16458,9 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
   # Enemy Appearance targeting an already-appeared enemy is a silent no-op:
   # #reveal_battle_monster returns immediately once `hidden` is already false,
   # so a second reveal neither rebuilds the sprite nor errors.
-  sprite_before = ui[:enemy_sprites][1]
+  sprite_before = ui.enemy_sprites[1]
   scene.instance_variable_get(:@battle).send(:reveal_battle_monster, 1)
-  eq sprite_before, battle_ui(scene)[:enemy_sprites][1],
+  eq sprite_before, battle_ui(scene).enemy_sprites[1],
      'revealing an already-visible member again is a no-op, not a sprite rebuild'
 end
 
@@ -16558,9 +16564,9 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
   end
   ui = battle_ui(scene)
   ok ui, 'the battle opened'
-  ok ui[:back_sprite], 'the fight has a battle background sprite'
-  ok ui[:back_sprite].z < vp.z, 'whose z sits below the map viewport ...'
-  ok ui[:back_sprite].z < upper.z, '... and below the upper-layer viewport'
+  ok ui.back_sprite, 'the fight has a battle background sprite'
+  ok ui.back_sprite.z < vp.z, 'whose z sits below the map viewport ...'
+  ok ui.back_sprite.z < upper.z, '... and below the upper-layer viewport'
   eq false, vp.visible, 'so the map view is hidden the instant the battle screen is up'
   eq false, upper.visible, 'and so is the above-character layer'
   lower_bmp.clear_blt_calls
@@ -16653,14 +16659,14 @@ check 'a page can wound a monster through Change Monster HP' do
   scene, _st = battle_scene_with_pages(pages)
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ui = battle_ui(scene)
-  foe = ui[:battle].enemy(0)
+  foe = ui.battle.enemy(0)
   eq foe.max_hp - 7, foe.hp, 'the page took 7 HP off the first troop member'
 end
 
@@ -16679,14 +16685,14 @@ check 'a page killing a monster through Change Monster HP plays the ' \
   RGSS::Audio.reset_se
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ui = battle_ui(scene)
-  foe = ui[:battle].enemy(0)
+  foe = ui.battle.enemy(0)
   ok foe.dead?, 'the scripted hit killed troop member 0'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyKill' },
      "the scripted kill played the enemy-kill SE, same as an ordinary " \
@@ -16700,16 +16706,16 @@ check 'Change Battle Background from a page rebuilds the backdrop sprite' do
   before = nil
   90.times do
     ui = battle_ui(scene)
-    before ||= ui && ui[:back_sprite]
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    before ||= ui && ui.back_sprite
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ui = battle_ui(scene)
-  ok ui[:back_sprite], 'a backdrop is still in place'
-  ok !ui[:back_sprite].equal?(before), 'and it was rebuilt for the new name'
+  ok ui.back_sprite, 'a backdrop is still in place'
+  ok !ui.back_sprite.equal?(before), 'and it was rebuilt for the new name'
 end
 
 # Show Battle Animation (13260), the battle-page form of 11210 (see
@@ -16737,7 +16743,7 @@ check "a battle page's Show Battle Animation actually holds the page, not resumi
   150.times do
     scene.update
     ui = battle_ui(scene)
-    it = ui && ui[:events]
+    it = ui && ui.events
     break if it && it.waiting? && it.wait_kind == :animation
   end
   ok it && it.wait_kind == :animation, 'the page reached the :animation wait'
@@ -16826,7 +16832,7 @@ check "a battle page's Show Battle Animation draws over the targeted troop membe
   ok ma_seen, 'the request was recorded as a live animation, not silently dropped'
   ok ma_seen[:battle], 'positioned in screen space, like a battle-round animation'
   ui = battle_ui(scene)
-  spr = ui[:enemy_sprites][1]
+  spr = ui.enemy_sprites[1]
    eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
       [ma_seen[:targets][0][:tx], ma_seen[:targets][0][:ty]], "centred on troop member 1's sprite, the command's own target param"
   ok st.switches[22], 'and the page still ran on once it finished'
@@ -16846,9 +16852,9 @@ check "a battle page's Show Battle Animation target-scope flash pulses the named
   150.times do
     scene.update
     ui = battle_ui(scene)
-    next unless ui && ui[:enemy_sprites]
-    target_flashed ||= !!ui[:enemy_sprites][0].flash_color
-    bystander_flashed ||= !!ui[:enemy_sprites][1].flash_color
+    next unless ui && ui.enemy_sprites
+    target_flashed ||= !!ui.enemy_sprites[0].flash_color
+    bystander_flashed ||= !!ui.enemy_sprites[1].flash_color
     break if st.switches[23]
   end
   ok target_flashed, 'the targeted troop member (index 0) was flashed at some point during the play'
@@ -16862,7 +16868,7 @@ end
 # implementation's own show-battle-animation command handling, NOT
 # independently confirmed against genuine RPG_RT under wine) used to be
 # dropped entirely: an "Ally #1" target still indexed straight into
-# `@ui[:enemy_sprites]` -- the troop's own *second* monster in any troop
+# `@ui.enemy_sprites` -- the troop's own *second* monster in any troop
 # with 2+ members, not any party member at all. Fixed by carrying the flag
 # through to #start_battle_page_animation, which now falls back to the same
 # ally-side screen-centre positioning (and no `target_index`, so no enemy
@@ -16879,8 +16885,8 @@ check "a battle page's Show Battle Animation targets the party, not a troop memb
     ui = battle_ui(scene)
     ma = scene.instance_variable_get(:@map_animation)
     ma_seen ||= ma
-    if ui && ui[:enemy_sprites]
-      ui[:enemy_sprites].each { |s| ok !s.flash_color, 'no enemy sprite was flashed -- the target is an ally' }
+    if ui && ui.enemy_sprites
+      ui.enemy_sprites.each { |s| ok !s.flash_color, 'no enemy sprite was flashed -- the target is an ally' }
     end
     break if st.switches[24]
   end
@@ -16905,14 +16911,14 @@ check "a battle page's Show Battle Animation with target -1 plays over every liv
     ui = battle_ui(scene)
     ma = scene.instance_variable_get(:@map_animation)
     ma_seen ||= ma
-    if ui && ui[:enemy_sprites]
-      ui[:enemy_sprites].each_with_index { |s, i| flashed[i] = true if s && s.flash_color }
+    if ui && ui.enemy_sprites
+      ui.enemy_sprites.each_with_index { |s, i| flashed[i] = true if s && s.flash_color }
     end
     break if st.switches[25]
   end
   ok ma_seen, 'the request was recorded as a live animation, not silently dropped'
   ui = battle_ui(scene)
-  living = ui[:enemy_sprites].reject(&:nil?)
+  living = ui.enemy_sprites.reject(&:nil?)
   eq living.size, ma_seen[:targets].size, 'one target descriptor per living enemy sprite'
   ma_seen[:targets].each { |t| ok !t[:index].nil?, 'each whole-side target names a troop-member sprite index' }
   living.each_index { |i| ok flashed[i], "enemy #{i} was flashed by the flash_scope-1 timing" }
@@ -16934,8 +16940,8 @@ check "a battle page's Show Battle Animation with target -1 and the ally flag pl
     ma = scene.instance_variable_get(:@map_animation)
     ma_seen ||= ma
     ui = battle_ui(scene)
-    if ui && ui[:enemy_sprites]
-      ui[:enemy_sprites].each { |s| ok !s.flash_color, 'no enemy sprite flashed -- the ally whole-side targets none' }
+    if ui && ui.enemy_sprites
+      ui.enemy_sprites.each { |s| ok !s.flash_color, 'no enemy sprite flashed -- the ally whole-side targets none' }
     end
     break if st.switches[26]
   end
@@ -16955,17 +16961,17 @@ check 'a battle page shows its message in a battle panel and waits for a key' do
   90.times do
     scene.update
     ui = battle_ui(scene)
-    break if ui && ui[:event_win]
+    break if ui && ui.event_win
   end
   ui = battle_ui(scene)
-  ok ui[:event_win], 'the message panel is up'
+  ok ui.event_win, 'the message panel is up'
   ok !st.switches[15], 'the page is held at the message'
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
   3.times { scene.update }
   ok st.switches[15], 'the button dismissed it and the page ran on'
-  eq nil, battle_ui(scene)[:event_win],
+  eq nil, battle_ui(scene).event_win,
      'the panel closed with the message'
 end
 
@@ -16984,9 +16990,9 @@ check 'a battle-event page message sits at the bottom for RPG2000, the ' \
   90.times do
     scene.update
     ui = battle_ui(scene)
-    break if ui && ui[:event_win]
+    break if ui && ui.event_win
   end
-  win2k = battle_ui(scene)[:event_win]
+  win2k = battle_ui(scene).event_win
   ok win2k, 'the message panel is up'
   eq RPG2k::Scene::Battle::SCREEN_H - win2k.height, win2k.y,
      'RPG2000 sits flush against the bottom edge'
@@ -16999,9 +17005,9 @@ check 'a battle-event page message sits at the bottom for RPG2000, the ' \
   90.times do
     scene3.update
     ui = battle_ui(scene3)
-    break if ui && ui[:event_win]
+    break if ui && ui.event_win
   end
-  win2k3 = battle_ui(scene3)[:event_win]
+  win2k3 = battle_ui(scene3).event_win
   ok win2k3, 'the message panel is up'
   eq RPG2k::Scene::Battle::BATTLE_EVENT_MSG_Y, win2k3.y, 'RPG2003 sits at the top'
 end
@@ -17024,9 +17030,9 @@ check "a battle-event page message panel is RPG_RT's fixed 320x80 rect, " \
   90.times do
     scene.update
     ui = battle_ui(scene)
-    break if ui && ui[:event_win]
+    break if ui && ui.event_win
   end
-  win = battle_ui(scene)[:event_win]
+  win = battle_ui(scene).event_win
   ok win, 'the message panel is up'
   eq 0, win.x, 'flush against the left edge, not inset 10px'
   eq RPG2k::Scene::Battle::SCREEN_W, win.width, 'the fixed 320px width, not 300px'
@@ -17038,25 +17044,25 @@ check 'a hidden troop member is not targetable until it is revealed' do
   scene, _st = battle_scene_with_pages(nil)
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ui = battle_ui(scene)
-  eq 2, ui[:foes].length
+  eq 2, ui.foes.length
   # Hide the second member the way an invisible troop entry would have.
-  ui[:foes][1].hidden = true
-  ui[:troop].members[1].hidden = true
+  ui.foes[1].hidden = true
+  ui.troop.members[1].hidden = true
   targets = scene.instance_variable_get(:@battle).send(:living_foes)
   eq 1, targets.length, 'the target cursor skips the hidden member'
-  ok !targets.include?(ui[:foes][1])
+  ok !targets.include?(ui.foes[1])
 
   scene.instance_variable_get(:@battle).send(:reveal_battle_monster, 1)
-  ok !ui[:foes][1].hidden, 'revealing clears the combatant flag, not just the sprite'
+  ok !ui.foes[1].hidden, 'revealing clears the combatant flag, not just the sprite'
   eq 2, scene.instance_variable_get(:@battle).send(:living_foes).length, 'and it becomes targetable'
-  ok ui[:enemy_sprites][1], 'with a sprite built for it'
+  ok ui.enemy_sprites[1], 'with a sprite built for it'
 end
 
 check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each screen prompt' do
@@ -17825,7 +17831,7 @@ check 'Enemy Encounter scene: the result window shows the database Victory term'
   state.instance_variable_set(:@party, BattleStubParty.new)
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(battle_ui(scene)[:result_win])
+  texts = window_texts(battle_ui(scene).result_win)
   ok texts.any? { |t| t.include?('戦いに勝利した！') }, 'the database term is shown'
   ok !texts.any? { |t| t.include?('Victory!') }, 'not the composed English fallback'
 end
@@ -17850,7 +17856,7 @@ check 'Enemy Encounter scene: the result window composes the database EXP/gold/i
   state.instance_variable_set(:@party, BattleStubParty.new(item_db: db.item))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(battle_ui(scene)[:result_win])
+  texts = window_texts(battle_ui(scene).result_win)
   ok texts.any? { |t| t.include?('10の経験値を得た！') },
      'the EXP term is composed as amount-then-term (GetExperienceGainedMessage)'
   ok texts.any? { |t| t.include?('仲間は 20ゴールドを手に入れた！') },
@@ -17876,7 +17882,7 @@ check 'Enemy Encounter scene: blank database EXP/gold/item received terms draw '
   state.instance_variable_set(:@party, BattleStubParty.new(item_db: db.item))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(battle_ui(scene)[:result_win])
+  texts = window_texts(battle_ui(scene).result_win)
   ok texts.any? { |t| t.include?('10') && !t.include?('EXP') }, 'a blank exp_received term draws blank'
   ok texts.any? { |t| t.include?(' 20G') && !t.include?('Found') },
      'blank gold_received_a/gold_received_b draw blank around the amount and the gold term'
@@ -17904,7 +17910,7 @@ check 'Enemy Encounter scene: the result window announces a level-up and the ski
   state.instance_variable_set(:@party, BattleStubParty.new(actor, skill_db: db.skill))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(battle_ui(scene)[:result_win])
+  texts = window_texts(battle_ui(scene).result_win)
   eq 2, actor.level, 'the EXP gain crossed the one threshold configured'
   ok texts.any? { |t| t.include?('Heroはレベル 2 に上がった！') },
      'the level-up line reads name + level term + number + level_up term ' \
@@ -17927,7 +17933,7 @@ check 'Enemy Encounter scene: blank database level_up/skill_learned terms draw '
   state.instance_variable_set(:@party, BattleStubParty.new(actor, skill_db: db.skill))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(battle_ui(scene)[:result_win])
+  texts = window_texts(battle_ui(scene).result_win)
   ok texts.any? { |t| t == 'Heroは 2 ' }, 'a blank level/level_up term draws blank'
   ok texts.any? { |t| t == 'Meteor' }, 'a blank skill_learned term draws blank'
 end
@@ -17942,7 +17948,7 @@ check 'Enemy Encounter scene: a blank database Victory/Defeat term draws blank, 
                            BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(battle_ui(scene)[:result_win])
+  texts = window_texts(battle_ui(scene).result_win)
   ok texts.include?(''), 'a blank database term draws blank, matching genuine RPG_RT ' \
                          '(cycle #122), not the old composed-English fallback'
   ok !texts.any? { |t| t.include?('defeated') }, 'no composed English substituted'
@@ -17964,8 +17970,8 @@ check 'Enemy Encounter scene: a successful Flee shows the database escape_succes
   RGSS::Input.triggered = [RGSS::Input::C] # confirm Escape
   scene.update
   RGSS::Input.triggered = []
-  eq :result, ui[:phase]
-  texts = window_texts(ui[:result_win])
+  eq :result, ui.phase
+  texts = window_texts(ui.result_win)
   ok texts.any? { |t| t.include?('逃げ出した！') }, 'the database escape_success term is shown'
   # Decision plays first (choosing Escape from the options window is a
   # confirm action), then the dedicated Escape SE right before the battle
@@ -17989,11 +17995,11 @@ check "an enemy's own AI-chosen Escape basic action plays the dedicated " \
   scene, _st = battle_scene_with_pages({})
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   battle = scene.instance_variable_get(:@battle)
   RGSS::Audio.reset_se
@@ -18016,11 +18022,11 @@ check "an enemy's own Auto Destruction basic action plays its own " \
   scene, _st = battle_scene_with_pages({})
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   battle = scene.instance_variable_get(:@battle)
   RGSS::Audio.reset_se
@@ -18041,12 +18047,12 @@ check 'Enemy Encounter scene: Escape forbidden (the default escape_mode 0) plays
   ui = battle_until_phase(scene, :battle_options)
   2.times { RGSS::Input.triggered = [RGSS::Input::DOWN]; scene.update } # Fight -> Auto Battle -> Escape
   RGSS::Input.triggered = []
-  eq 2, ui[:opt], 'the cursor landed on Escape'
+  eq 2, ui.opt, 'the cursor landed on Escape'
   RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::C] # attempt Escape
   scene.update
   RGSS::Input.triggered = []
-  eq :battle_options, ui[:phase], 'the battle is not left -- escape stays refused, the window stays open'
+  eq :battle_options, ui.phase, 'the battle is not left -- escape stays refused, the window stays open'
   eq 'Buzzer1', RGSS::Audio.se_calls.last[0],
      'a disallowed escape attempt plays Buzzer, matching a disallowed Save/Continue elsewhere'
 end
@@ -18059,11 +18065,11 @@ def battle_at_command(pages = nil, party: BattleStubParty.new, battleranimations
   ui = nil
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   [scene, ui]
 end
@@ -18080,7 +18086,7 @@ check 'a skill that names an animation plays it over the targeted enemy' do
   ma = scene.instance_variable_get(:@map_animation)
   ok ma, 'the player was armed'
   ok ma[:battle], 'and flagged as a battle animation'
-  spr = ui[:enemy_sprites][0]
+  spr = ui.enemy_sprites[0]
    eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
       [ma[:targets][0][:tx], ma[:targets][0][:ty]], 'centred on the enemy sprite'
 end
@@ -18094,8 +18100,8 @@ end
 # already exercises on the shared fixture animation.
 check 'a target-scope animation flash pulses the hit enemy, not the screen or a bystander' do
   scene, ui = battle_at_command
-  spr = ui[:enemy_sprites][0]
-  bystander = ui[:enemy_sprites][1]
+  spr = ui.enemy_sprites[0]
+  bystander = ui.enemy_sprites[1]
   timing = OpenStruct.new(frame: 0, flash_scope: 1, flash_red: 31, flash_green: 0,
                           flash_blue: 0, flash_power: 20)
   ma = { frame_i: 0, battle: true, target_index: 0,
@@ -18165,8 +18171,8 @@ end
 # primitive the way Sprite#flash exists for the colour pulse.
 check 'a target-scope animation shake jitters the hit enemy sprite, not a bystander, and settles back' do
   scene, ui = battle_at_command
-  spr = ui[:enemy_sprites][0]
-  bystander = ui[:enemy_sprites][1]
+  spr = ui.enemy_sprites[0]
+  bystander = ui.enemy_sprites[1]
   base_x = spr.x
   bystander_x = bystander.x
   timing = OpenStruct.new(frame: 0, screen_shaking: 1)
@@ -18259,8 +18265,8 @@ end
 # alone.
 check 'a Character Flash concurrent with a battle-round animation on the same enemy is capped, a bystander is not' do
   scene, ui = battle_at_command
-  spr = ui[:enemy_sprites][0]
-  bystander = ui[:enemy_sprites][1]
+  spr = ui.enemy_sprites[0]
+  bystander = ui.enemy_sprites[1]
   spr.flash(Color.new(200, 0, 0, 200), 60)
   bystander.flash(Color.new(0, 200, 0, 200), 60)
   ok spr.flash_color && bystander.flash_color, 'both unrelated flashes are in flight to start with'
@@ -18338,7 +18344,7 @@ end
 
 check 'the round waits for the animation instead of the banner timer' do
   scene, ui = battle_at_command
-  ui[:phase] = :animate
+  ui.phase = :animate
   scene.instance_variable_get(:@battle).send(:start_battle_animation,
              { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
                skill_id: 8, target_index: 0, target_ally: false })
@@ -18400,7 +18406,7 @@ check 'a plain attack with a resolved weapon animation plays it over the targete
   ok scene.instance_variable_get(:@battle).send(:start_battle_animation, entry), 'an animation started, same as a skill would'
   ma = scene.instance_variable_get(:@map_animation)
   ok ma, 'the player was armed'
-  spr = ui[:enemy_sprites][0]
+  spr = ui.enemy_sprites[0]
    eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
       [ma[:targets][0][:tx], ma[:targets][0][:ty]], 'centred on the targeted enemy sprite, same as a skill/item animation'
 end
@@ -18691,31 +18697,31 @@ end
 
 check 'the battle status window shows each ally condition, or the normal term' do
   scene, ui = battle_at_command
-  texts = window_texts(ui[:status_win])
+  texts = window_texts(ui.status_win)
   eq 1, texts.count { |t| t == 'Normal' },
      'the one ally starts clear, showing the database normal term'
 
-  ui[:allies][0].states = [4]                    # Sleep
+  ui.allies[0].states = [4]                    # Sleep
   scene.instance_variable_get(:@battle).send(:refresh_battle_status)
-  texts = window_texts(ui[:status_win])
+  texts = window_texts(ui.status_win)
   ok texts.include?('Sleep'), 'the afflicted ally shows its state'
   # RPG2000 is front-view: ported from a reference implementation, NOT
   # independently confirmed against genuine RPG_RT under wine: its
   # Scene_Battle_Rpg2k builds exactly one Window_BattleStatus, defaulted to
   # `enemy: false` -- the troop is never listed on this panel, only shown
   # through its battler sprites.
-  ok !texts.include?(ui[:foes][0].name), "the enemy troop has no row here"
+  ok !texts.include?(ui.foes[0].name), "the enemy troop has no row here"
 end
 
 check 'the condition shown is the significant state, in the state colour' do
   scene, ui = battle_at_command
   # Sleep (priority 80) outranks Silence (10) whichever order they landed in.
-  ui[:allies][0].states = [4, 5]
+  ui.allies[0].states = [4, 5]
   scene.instance_variable_get(:@battle).send(:refresh_battle_status)
-  ok window_texts(ui[:status_win]).include?('Sleep'), 'the higher priority wins'
-  ui[:allies][0].states = [5, 4]
+  ok window_texts(ui.status_win).include?('Sleep'), 'the higher priority wins'
+  ui.allies[0].states = [5, 4]
   scene.instance_variable_get(:@battle).send(:refresh_battle_status)
-  ok window_texts(ui[:status_win]).include?('Sleep'), 'regardless of order'
+  ok window_texts(ui.status_win).include?('Sleep'), 'regardless of order'
 
   # The state's own palette colour reaches the draw call. This project ships no
   # windowskin in the fake database, so the flat path runs and the colour is
@@ -18756,7 +18762,7 @@ check 'the battle status panel clips each column to the gap before its own neigh
   # offsets measured on genuine RPG_RT under wine (cycle #244) -- the whole
   # run is 54px, so HP fits its 60px column whole and SP, starting 30px
   # before the panel's own inner edge, loses the "/" and the maximum.
-  calls = ui[:status_win].contents.draw_calls
+  calls = ui.status_win.contents.draw_calls
   hp_idx = calls.index { |a| a[4] == 'HP' }
   mp_idx = calls.index { |a| a[4] == 'MP' }
   ok hp_idx, 'the HP segment was drawn'
@@ -18831,10 +18837,10 @@ check 'the status panel swaps sides with whichever 76px window is showing beside
   scene, = battle_scene_with_pages(nil, party: BattleStubParty.new)
   ui = battle_until_phase(scene, :battle_options)
   ok ui, 'the battle opened'
-  eq 0, ui[:cmd_win].x, 'the options window (Fight/Auto Battle/Escape) docks to the left edge'
-  eq battle_mod::BATTLE_CMD_W, ui[:status_win].x,
+  eq 0, ui.cmd_win.x, 'the options window (Fight/Auto Battle/Escape) docks to the left edge'
+  eq battle_mod::BATTLE_CMD_W, ui.status_win.x,
      'the status window is pushed right, out of the options window\'s 76px'
-  eq battle_mod::BATTLE_CMD_W, ui[:cmd_win].width,
+  eq battle_mod::BATTLE_CMD_W, ui.cmd_win.width,
      'the options window keeps the same 76px shape the per-actor command window uses'
 
   # Once an actor is choosing Attack/Skill/Defend/Item instead, the roles
@@ -18842,8 +18848,8 @@ check 'the status panel swaps sides with whichever 76px window is showing beside
   # has, and the status window returns to x=0.
   scene, ui2 = battle_at_command(nil, party: BattleStubParty.new)
   ok ui2, 'the fight reached the per-actor command phase'
-  eq 0, ui2[:status_win].x, 'the status window returns to the left edge, beside the command window'
-  eq battle_mod::BATTLE_STATUS_W, ui2[:cmd_win].x,
+  eq 0, ui2.status_win.x, 'the status window returns to the left edge, beside the command window'
+  eq battle_mod::BATTLE_STATUS_W, ui2.cmd_win.x,
      'the per-actor command window docks to the right edge, unlike the options window'
 end
 
@@ -18852,11 +18858,11 @@ check 'Change Monster Condition on a battle page updates the troop, off-panel' d
   # Inflict state 3 (Poison) on troop member 0 the moment the fight opens.
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_CONDITION, [0, 0, 3])]) }
   scene, ui = battle_at_command(pages)
-  eq true, ui[:foes][0].state?(3), 'the page inflicted the state'
+  eq true, ui.foes[0].state?(3), 'the page inflicted the state'
   # The status window is party-only (see above), so a troop condition change
   # has nowhere to show on it -- RPG_RT has no persistent enemy status panel
   # either, only the battle log's own wording when a state lands.
-  ok !window_texts(ui[:status_win]).include?('Poison'),
+  ok !window_texts(ui.status_win).include?('Poison'),
      'the troop never reaches the party-only status window'
 end
 
@@ -18873,9 +18879,9 @@ end
 check 'battle_type 0 (no gauge layout) still draws the plain text status row' do
   scene, ui = battle_at_command
   ok !scene.instance_variable_get(:@battle).send(:gauge_battle_layout?), 'the plain fixture answers false'
-  texts = window_texts(ui[:status_win])
+  texts = window_texts(ui.status_win)
   ok texts.include?('Hero'), 'the text status row is unchanged'
-  eq [], ui[:status_win].contents.blt_calls || [],
+  eq [], ui.status_win.contents.blt_calls || [],
      'and nothing else touched its contents via #blt (no gauge card drawing)'
 end
 
@@ -18888,7 +18894,7 @@ check 'battle_type 1 (alternative) keeps the unchanged text status row too, ' \
   scene.instance_variable_get(:@battle).send(:refresh_battle_status)
   ok !scene.instance_variable_get(:@battle).send(:gauge_battle_layout?),
      'battle_type 1 answers false to #gauge_battle_layout? -- only 2 does'
-  texts = window_texts(ui[:status_win])
+  texts = window_texts(ui.status_win)
   ok texts.include?('Hero'), 'the text status row is still what battle_type 1 draws'
 end
 
@@ -18900,7 +18906,7 @@ check 'battle_type 2 (gauge) with no System2 graphic falls back to the text ' \
   ok scene.instance_variable_get(:@battle).send(:gauge_battle_layout?), 'the fixture asks for the gauge layout'
   ok !scene.db.system.respond_to?(:system2_name), 'and the database names no System2 graphic'
   scene.instance_variable_get(:@battle).send(:refresh_battle_status)
-  texts = window_texts(ui[:status_win])
+  texts = window_texts(ui.status_win)
   ok texts.include?('Hero'), 'falls back to the plain text row rather than an empty/crashed panel'
 end
 
@@ -18911,9 +18917,9 @@ check 'battle_type 2 (gauge) draws the gauge card: face, HP/SP bars, digit numbe
   scene.db.system.system2_name = 'BattleStatus'
   # A non-full HP (so this same window also exercises the normal, not
   # "full", fill tile) alongside SP's still-full 20/20.
-  ui[:allies][0].hp = 100
+  ui.allies[0].hp = 100
   scene.instance_variable_get(:@battle).send(:refresh_battle_status)
-  win = ui[:status_win]
+  win = ui.status_win
 
   ok window_texts(win).empty?,
      'the gauge card never calls draw_text/blend_text -- it fully replaces the text row'
@@ -19044,14 +19050,14 @@ check 'a gauge battle opens the ready actor\'s command menu on its own -- no Fig
   250.times do
     scene.update
     ui = battle_ui(scene)
-    seen_options = true if ui && ui[:phase] == :battle_options
-    break if ui && ui[:phase] == :command
+    seen_options = true if ui && ui.phase == :battle_options
+    break if ui && ui.phase == :command
   end
   ok ui, 'the battle opened'
   ok scene.instance_variable_get(:@battle).is_a?(RPG2k3::Scene::Battle),
      'the gauge database routes the fight to the 2003 scene'
-  eq :command, ui[:phase], 'the first full-gauge party member\'s menu appears on its own'
-  eq ui[:allies][0], scene.instance_variable_get(:@battle).send(:current_actor),
+  eq :command, ui.phase, 'the first full-gauge party member\'s menu appears on its own'
+  eq ui.allies[0], scene.instance_variable_get(:@battle).send(:current_actor),
      'and it is that ready member being commanded'
   eq false, seen_options, 'the once-per-fight Fight/Auto/Escape window never shows for a gauge battle'
 end
@@ -19061,18 +19067,18 @@ check 'committing the ready actor\'s command starts that one action, consuming i
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
   # Empty every gauge so the fight has nothing else queued behind this action.
-  ui[:battle].all_combatants.each { |c| c.gauge = 0 }
+  ui.battle.all_combatants.each { |c| c.gauge = 0 }
   RGSS::Input.triggered = [RGSS::Input::C] # Attack
   scene.update
   RGSS::Input.triggered = []
   ui = battle_ui(scene)
-  eq :target, ui[:phase], 'Attack opens the target cursor'
+  eq :target, ui.phase, 'Attack opens the target cursor'
   RGSS::Input.triggered = [RGSS::Input::C] # the first Slime
   scene.update
   RGSS::Input.triggered = []
   ui = battle_ui(scene)
-  eq :animate, ui[:phase], 'confirming the target starts the action'
-  eq 0, ui[:battle].all_combatants.first.gauge,
+  eq :animate, ui.phase, 'confirming the target starts the action'
+  eq 0, ui.battle.all_combatants.first.gauge,
      'the committed actor\'s gauge was consumed the moment its turn began'
 end
 
@@ -19081,25 +19087,25 @@ check 'canceling the ready actor\'s menu returns to the active-time idle loop, a
   scene = gauge_battle_scene
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
-  ui[:battle].all_combatants.each { |c| c.gauge = 0 }
+  ui.battle.all_combatants.each { |c| c.gauge = 0 }
   RGSS::Input.triggered = [RGSS::Input::B] # cancel the menu
   scene.update
   RGSS::Input.triggered = []
   ui = battle_ui(scene)
-  eq :atb, ui[:phase], 'cancel returns to the active-time idle loop, not to a Fight/Auto/Escape window'
+  eq :atb, ui.phase, 'cancel returns to the active-time idle loop, not to a Fight/Auto/Escape window'
   # Make a Slime ready: its gauge fires the enemy's action with no menu.
-  ui[:battle].enemy(0).gauge = Game::Battle::GAUGE_MAX
+  ui.battle.enemy(0).gauge = Game::Battle::GAUGE_MAX
   scene.update
   ui = battle_ui(scene)
-  eq :animate, ui[:phase], 'a ready enemy acts immediately instead of opening a menu'
-  eq 0, ui[:battle].enemy(0).gauge, 'the acting enemy\'s gauge was consumed'
+  eq :animate, ui.phase, 'a ready enemy acts immediately instead of opening a menu'
+  eq 0, ui.battle.enemy(0).gauge, 'the acting enemy\'s gauge was consumed'
 end
 
 check 'a ready but restricted (asleep) party member\'s gauge fires a silent no-op, never a command prompt' do
   scene = gauge_battle_scene(BattleStubParty.new(BattleStubActor.new(id: 1, states: [4])))
   ui = battle_until_phase(scene, :atb, 150)
   ok ui, 'the battle opened to the active-time idle loop'
-  hero = ui[:battle].all_combatants.first
+  hero = ui.battle.all_combatants.first
   # The restricted ally never *charges* under the real fill curve (ported
   # from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: its CanAct() gate -- the new
@@ -19137,9 +19143,9 @@ check 'active mode: the command menu keeps every gauge filling, enemy ' \
   eq 0, st.atb_mode, 'active mode is the default, no explicit set needed'
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
-  hero = ui[:allies][0]
+  hero = ui.allies[0]
   eq true, hero.gauge_full?, 'the commanded actor\'s gauge is held full'
-  enemy = ui[:battle].enemy(0)
+  enemy = ui.battle.enemy(0)
   enemy.gauge = Game::Battle::GAUGE_MAX / 2
   20.times { scene.update }
   ok enemy.gauge > Game::Battle::GAUGE_MAX / 2,
@@ -19152,16 +19158,16 @@ check 'active mode: a ready enemy\'s action interrupts the open command menu' do
   st.atb_mode = 0 # active (explicit, mirroring the default check above)
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
-  enemy = ui[:battle].enemy(0)
+  enemy = ui.battle.enemy(0)
   enemy.gauge = Game::Battle::GAUGE_MAX / 2
   20.times { scene.update }
   ui = battle_ui(scene)
-  eq :command, ui[:phase], 'the menu is still up (no interrupt yet -- the enemy is not ready)'
+  eq :command, ui.phase, 'the menu is still up (no interrupt yet -- the enemy is not ready)'
   # Make the enemy ready: in active mode its full gauge fires *now*, mid-menu.
   enemy.gauge = Game::Battle::GAUGE_MAX
   scene.update
   ui = battle_ui(scene)
-  eq :animate, ui[:phase], 'a ready enemy\'s action interrupts the open command menu'
+  eq :animate, ui.phase, 'a ready enemy\'s action interrupts the open command menu'
   eq 0, enemy.gauge, 'the interrupting enemy\'s gauge was consumed'
   # The interrupting turn plays out -- its action banner holds for
   # BATTLE_ANIM_FRAMES (90) frames -- then, because the commanded actor's
@@ -19170,9 +19176,9 @@ check 'active mode: a ready enemy\'s action interrupts the open command menu' do
   150.times do
     scene.update
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
-  eq :command, ui[:phase], 'after the interrupt resolves, the ready actor\'s menu returns'
+  eq :command, ui.phase, 'after the interrupt resolves, the ready actor\'s menu returns'
 end
 
 check 'wait mode: the command menu freezes every gauge, and a ready enemy ' \
@@ -19182,7 +19188,7 @@ check 'wait mode: the command menu freezes every gauge, and a ready enemy ' \
   st.atb_mode = 1 # wait mode
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
-  enemy = ui[:battle].enemy(0)
+  enemy = ui.battle.enemy(0)
   # Park the enemy mid-fill so the freeze is measurable: under wait mode its
   # gauge must not move while the menu stays up.
   enemy.gauge = Game::Battle::GAUGE_MAX / 2
@@ -19193,7 +19199,7 @@ check 'wait mode: the command menu freezes every gauge, and a ready enemy ' \
   enemy.gauge = Game::Battle::GAUGE_MAX
   scene.update
   ui = battle_ui(scene)
-  eq :command, ui[:phase], 'wait mode: a ready enemy does not interrupt the open menu'
+  eq :command, ui.phase, 'wait mode: a ready enemy does not interrupt the open menu'
   eq Game::Battle::GAUGE_MAX, enemy.gauge,
      'and its gauge is left full, waiting for the menu to close'
 end
@@ -19212,7 +19218,7 @@ check 'a battle-page Toggle ATB Mode (5003) flips the live fight to wait' do
   eq 1, st.atb_mode, 'the 5003 page flipped the fight to wait'
   # And the flip is live: the enemy gauge no longer fills behind the menu,
   # the wait-mode behaviour pinned by the checks above.
-  enemy = ui[:battle].enemy(0)
+  enemy = ui.battle.enemy(0)
   enemy.gauge = Game::Battle::GAUGE_MAX / 2
   20.times { scene.update }
   eq Game::Battle::GAUGE_MAX / 2, enemy.gauge,
@@ -19229,15 +19235,15 @@ check 'an RPG2003 battle_type 0 (traditional) fight still runs the round machine
     # The same tap-before-update pattern #battle_at_command uses: dismissing
     # the Fight/Auto/Escape window is the only way the round machine gets to
     # its :command phase, and the tap must survive into the update that reads it.
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
-    seen_atb = true if ui && ui[:phase] == :atb
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
+    seen_atb = true if ui && ui.phase == :atb
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ok ui, 'the battle opened'
-  eq :command, ui[:phase], 'the traditional 2003 fight opens the ordinary round command phase'
+  eq :command, ui.phase, 'the traditional 2003 fight opens the ordinary round command phase'
   eq false, seen_atb, 'and never enters the active-time idle loop'
 end
 
@@ -19262,16 +19268,16 @@ check 'a Change Party Member add on a battle page builds that actor\'s sprite ' 
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_PARTY, [0, 0, 2])]) } # add actor 2
   scene, ui = battle_at_command(pages, party: party, battleranimations: anims)
 
-  eq 2, ui[:allies].length, 'the newcomer joined @battle_ui[:allies] the instant the page ran'
-  newcomer = ui[:allies].find { |c| c.actor && c.actor.id == 2 }
+  eq 2, ui.allies.length, 'the newcomer joined @battle_ui[:allies] the instant the page ran'
+  newcomer = ui.allies.find { |c| c.actor && c.actor.id == 2 }
   ok newcomer, 'as their own Combatant'
   eq 50, newcomer.hp
 
-  sprites = ui[:actor_sprites]
+  sprites = ui.actor_sprites
   eq 2, sprites.length, 'a sprite slot for the newcomer too'
   ok sprites[0] && sprites[1], "both members' idle-pose sprites were built"
 
-  texts = window_texts(ui[:status_win])
+  texts = window_texts(ui.status_win)
   ok texts.include?('Hero') && texts.include?('Ally'), 'both members show in the status window'
 end
 
@@ -19297,34 +19303,34 @@ check 'a Change Party Member remove on a battle page disposes only that ' \
     break if ui
   end
   ok ui, 'the battle opened'
-  eq :encounter_message, ui[:phase], 'still narrating -- the page has not run its command yet'
-  eq 3, ui[:allies].length, 'all three start in @battle_ui[:allies]'
-  hero_sprite, ally_sprite, third_sprite = ui[:actor_sprites]
+  eq :encounter_message, ui.phase, 'still narrating -- the page has not run its command yet'
+  eq 3, ui.allies.length, 'all three start in @battle_ui[:allies]'
+  hero_sprite, ally_sprite, third_sprite = ui.actor_sprites
   ok hero_sprite && ally_sprite && third_sprite, 'all three built a sprite up front'
 
   150.times do
-    RGSS::Input.triggered = [RGSS::Input::C] if ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui[:phase] == :command
+    break if ui.phase == :command
   end
-  eq :command, ui[:phase], 'the page ran (and handed control back) along the way'
+  eq :command, ui.phase, 'the page ran (and handed control back) along the way'
 
-  eq 2, ui[:allies].length, 'the removed member dropped out of @battle_ui[:allies]'
-  ok ui[:allies].none? { |c| c.actor && c.actor.id == 2 }
-  ok ui[:allies].any? { |c| c.actor && c.actor.id == 1 }
-  ok ui[:allies].any? { |c| c.actor && c.actor.id == 3 }
+  eq 2, ui.allies.length, 'the removed member dropped out of @battle_ui[:allies]'
+  ok ui.allies.none? { |c| c.actor && c.actor.id == 2 }
+  ok ui.allies.any? { |c| c.actor && c.actor.id == 1 }
+  ok ui.allies.any? { |c| c.actor && c.actor.id == 3 }
 
-  eq 2, ui[:actor_sprites].length
-  ok ui[:actor_sprites].include?(hero_sprite), "Hero's original sprite object is untouched"
-  ok ui[:actor_sprites].include?(third_sprite), "Third's original sprite object is untouched"
-  ok !ui[:actor_sprites].include?(ally_sprite), "the removed actor's sprite slot is gone"
+  eq 2, ui.actor_sprites.length
+  ok ui.actor_sprites.include?(hero_sprite), "Hero's original sprite object is untouched"
+  ok ui.actor_sprites.include?(third_sprite), "Third's original sprite object is untouched"
+  ok !ui.actor_sprites.include?(ally_sprite), "the removed actor's sprite slot is gone"
   ok ally_sprite.disposed?, "the removed actor's specific sprite was disposed"
   ok !hero_sprite.disposed?, "a bystander's sprite was never disposed"
   ok !third_sprite.disposed?, "a bystander's sprite was never disposed"
 
-  texts = window_texts(ui[:status_win])
+  texts = window_texts(ui.status_win)
   ok !texts.include?('Ally'), 'the removed member dropped off the status window'
   ok texts.include?('Hero') && texts.include?('Third'), 'the remaining members still show'
 end
@@ -19345,16 +19351,16 @@ check 'a Change Party Member add reaches the gauge-card status panel ' \
   ui = nil
   150.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
-  eq :command, ui[:phase]
-  eq 2, ui[:allies].length, 'both members reached the gauge-card roster'
+  eq :command, ui.phase
+  eq 2, ui.allies.length, 'both members reached the gauge-card roster'
 
-  faces = ui[:status_win].contents.blt_calls.select do |call|
+  faces = ui.status_win.contents.blt_calls.select do |call|
     call[2].respond_to?(:load_name) && call[2].load_name.to_s.start_with?('FaceSet/')
   end
   eq [[0, 24], [80, 24]], faces.map { |call| call[0, 2] },
@@ -19370,28 +19376,28 @@ check 'leaving and rejoining the same fight reuses the same Combatant (and ' \
   party = BattleStubParty.new(actors: [hero, ally], alternate_layout: true)
   scene, ui = battle_at_command(nil, party: party, battleranimations: anims)
 
-  eq 2, ui[:allies].length
-  original_combatant = ui[:allies].find { |c| c.actor.id == 2 }
-  original_sprite = ui[:actor_sprites][ui[:allies].index(original_combatant)]
+  eq 2, ui.allies.length
+  original_combatant = ui.allies.find { |c| c.actor.id == 2 }
+  original_sprite = ui.actor_sprites[ui.allies.index(original_combatant)]
   ok original_combatant && original_sprite
 
   original_combatant.states = [5] # an accumulated battle-only status
   scene.instance_variable_get(:@battle).send(:on_battle_party_changed, ally, false) # leaves
-  eq 1, ui[:allies].length, 'dropped from the render roster'
-  ok !ui[:actor_sprites].include?(original_sprite)
+  eq 1, ui.allies.length, 'dropped from the render roster'
+  ok !ui.actor_sprites.include?(original_sprite)
   ok original_sprite.disposed?, 'their sprite was disposed on the way out'
 
   scene.instance_variable_get(:@battle).send(:on_battle_party_changed, ally, true) # rejoins the same fight
-  eq 2, ui[:allies].length, 'back in the render roster, not duplicated'
-  eq 1, ui[:allies].count { |c| c.actor && c.actor.id == 2 }, 'no leaked duplicate Combatant'
-  rejoined_combatant = ui[:allies].find { |c| c.actor.id == 2 }
+  eq 2, ui.allies.length, 'back in the render roster, not duplicated'
+  eq 1, ui.allies.count { |c| c.actor && c.actor.id == 2 }, 'no leaked duplicate Combatant'
+  rejoined_combatant = ui.allies.find { |c| c.actor.id == 2 }
   ok rejoined_combatant.equal?(original_combatant), 'the exact same Combatant object is reused'
   eq [5], rejoined_combatant.states, 'their accumulated battle-only state survived the round trip'
 
-  new_sprite = ui[:actor_sprites][ui[:allies].index(rejoined_combatant)]
+  new_sprite = ui.actor_sprites[ui.allies.index(rejoined_combatant)]
   ok new_sprite, 'a sprite was rebuilt for the rejoin'
   ok !new_sprite.equal?(original_sprite), 'a fresh Sprite object, never the disposed one'
-  eq 2, ui[:actor_sprites].compact.length, 'no leaked extra sprite either'
+  eq 2, ui.actor_sprites.compact.length, 'no leaked extra sprite either'
 end
 
 check 'actor sprite Z stays collision-free across a remove-then-add cycle, ' \
@@ -19405,14 +19411,14 @@ check 'actor sprite Z stays collision-free across a remove-then-add cycle, ' \
   party = BattleStubParty.new(actors: [hero, ally, third], alternate_layout: true,
                               roster_actors: [newcomer])
   scene, ui = battle_at_command(nil, party: party, battleranimations: anims)
-  eq [200, 201, 202], ui[:actor_sprites].map(&:z), 'starting Z per index (#actor_sprite_z)'
+  eq [200, 201, 202], ui.actor_sprites.map(&:z), 'starting Z per index (#actor_sprite_z)'
 
   scene.instance_variable_get(:@battle).send(:on_battle_party_changed, ally, false) # remove the middle member
-  eq [200, 201], ui[:actor_sprites].map(&:z),
+  eq [200, 201], ui.actor_sprites.map(&:z),
      "Third's Z was recomputed for its new index (1), not left stale at 202"
 
   scene.instance_variable_get(:@battle).send(:on_battle_party_changed, newcomer, true) # a brand new member joins
-  zs = ui[:actor_sprites].map(&:z)
+  zs = ui.actor_sprites.map(&:z)
   eq [200, 201, 202], zs
   eq zs.uniq.length, zs.length, 'no two actor sprites end up sharing a Z'
 end
@@ -19783,7 +19789,7 @@ check 'the action banner announces the states an action landed and lifted' do
              { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Venom',
                inflicted: [3], target_ally: false })
   ui = battle_ui(scene)
-  texts = window_texts(ui[:action_win])
+  texts = window_texts(ui.action_win)
   ok texts.any? { |t| t.include?('Venom') }, 'the action itself still reads'
   ok texts.include?('Slime looks ill!'), 'with the enemy wording for the state'
 
@@ -19791,14 +19797,14 @@ check 'the action banner announces the states an action landed and lifted' do
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 7,
                inflicted: [3], target_ally: true })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Hero is poisoned!'), 'and the actor wording for an ally'
 
   # A cure reads the recovery sentence.
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { recover: true, actor: 'Hero', source: 'Antidote', target: 'Hero',
                recover_hp: 0, recover_mp: 0, cured: [3], target_ally: true })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Hero is cured.'), 'the recovery sentence'
 
   # So does a state a blow shook off (`woke`, a state's release_by_attack) --
@@ -19806,7 +19812,7 @@ check 'the action banner announces the states an action landed and lifted' do
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Hero', target: 'Slime', damage: 9,
                woke: [3], target_ally: false })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Slime is cured.'), 'a state shaken off by a blow reads the same'
 end
 
@@ -19817,12 +19823,12 @@ check 'being downed is announced with the death state own sentence' do
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Hero', target: 'Slime', damage: 30,
                defeated: true, target_ally: false })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Slime is struck down!'), 'the enemy wording'
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 30,
                defeated: true, target_ally: true })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Hero falls!'), 'and the actor wording'
 end
 
@@ -19831,13 +19837,13 @@ check 'a status the target already had is announced, in the state own words' do
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 3,
                already: [3], target_ally: true })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Hero is already poisoned!'),
      'one wording, whichever side the target is on'
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Hero', target: 'Slime', damage: 3,
                already: [3], target_ally: false })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Slime is already poisoned!')
 end
 
@@ -19848,7 +19854,7 @@ check 'an already-carried state with no sentence still gets announced' do
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 3,
                already: [4], target_ally: true })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Hero is already Sleep'), 'the scene composes its own wording'
 end
 
@@ -19859,14 +19865,14 @@ check 'a state the database gives no sentence still gets announced' do
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 3,
                inflicted: [5], target_ally: true })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Hero is Silence'), 'the scene composes its own wording'
 
   # An id the table does not define at all still reads as something.
   scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 3,
                inflicted: [99], target_ally: true })
-  ok window_texts(battle_ui(scene)[:action_win])
+  ok window_texts(battle_ui(scene).action_win)
       .include?('Hero is state 99'), 'falling back to the id'
 end
 
@@ -26055,38 +26061,38 @@ check 'a transformed monster is redrawn with its new battler graphic' do
   scene, _st = battle_scene_with_pages(nil)
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ui = battle_ui(scene)
-  before = ui[:enemy_sprites][0]
+  before = ui.enemy_sprites[0]
   ok before, 'the monster is on the field'
   # What Game::Battle's transform action does to the combatant.
-  ui[:foes][0].battler_name = 'Dragon'
-  ui[:foes][0].name = 'Dragon'
+  ui.foes[0].battler_name = 'Dragon'
+  ui.foes[0].name = 'Dragon'
   scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
-  ok !ui[:enemy_sprites][0].equal?(before), 'its sprite is rebuilt'
-  eq 'Dragon', ui[:sprite_names][0], 'and tracked against the new battler'
-  ok ui[:enemy_sprites][0].visible, 'still on the field'
+  ok !ui.enemy_sprites[0].equal?(before), 'its sprite is rebuilt'
+  eq 'Dragon', ui.sprite_names[0], 'and tracked against the new battler'
+  ok ui.enemy_sprites[0].visible, 'still on the field'
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine:
   # it calls `enemy->Flash(31,31,31,31,20)`
   # unconditionally right after the swap -- the near-white "flash of
   # light" that reference's transformation shows, on the 0..31 raw scale this
   # codebase already multiplies by 8 elsewhere (Interpreter::FLASH_SCALE).
-  new_spr = ui[:enemy_sprites][0]
+  new_spr = ui.enemy_sprites[0]
   ok new_spr.flash_color, 'the transform flashes the new sprite'
   eq [248, 248, 248, 248],
      [new_spr.flash_color.red, new_spr.flash_color.green,
       new_spr.flash_color.blue, new_spr.flash_color.alpha],
      'near-white, matching Flash(31,31,31,31,...) scaled by 8'
   # A second refresh with nothing changed must not churn the sprite again.
-  same = ui[:enemy_sprites][0]
+  same = ui.enemy_sprites[0]
   scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
-  ok ui[:enemy_sprites][0].equal?(same), 'an unchanged battler is left alone'
+  ok ui.enemy_sprites[0].equal?(same), 'an unchanged battler is left alone'
 end
 
 # A Transform repoints the combatant at a new database enemy row
@@ -26104,21 +26110,21 @@ check 'a transformed monster pays out its new form\'s EXP/gold/drop, not its ori
   scene, _st = battle_scene_with_pages(nil)
   90.times do
     ui = battle_ui(scene)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui.phase == :battle_options
     scene.update
     RGSS::Input.triggered = []
     ui = battle_ui(scene)
-    break if ui && ui[:phase] == :command
+    break if ui && ui.phase == :command
   end
   ui = battle_ui(scene)
-  member = ui[:troop].members[0]
+  member = ui.troop.members[0]
   eq 5, member.exp, "starts as the default fixture's Slime (id 2)"
   eq 10, member.gold
   # What Game::Battle's transform action does to the combatant: repoint it at
   # enemy id 3, the default fixture's own Bat (exp 4, gold 8, no drop).
-  ui[:foes][0].battler_name = 'Bat'
-  ui[:foes][0].name = 'Bat'
-  ui[:foes][0].enemy_id = 3
+  ui.foes[0].battler_name = 'Bat'
+  ui.foes[0].name = 'Bat'
+  ui.foes[0].enemy_id = 3
   scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
   eq 4, member.exp, "the troop member's own reward fields follow the transform"
   eq 8, member.gold
@@ -26148,7 +26154,7 @@ check 'a random encounter opens a battle with the map-tree node\'s own troop' do
   end
   RGSS::Input.dir_value = 0
   ok ui, 'ordinary walking with a guaranteed roll opened a battle'
-  eq 1, ui[:troop].id, "the map tree node's own troop (id 1, the default Slimes)"
+  eq 1, ui.troop.id, "the map tree node's own troop (id 1, the default Slimes)"
   eq 0, st.encounter_total, 'the accumulator resets once a fight actually starts'
 end
 
@@ -26175,7 +26181,7 @@ check 'RPG2003 never rolls RPG2000\'s 1/32 first-strike chance on a wandering ' 
   3.times { s2003.update }
   ui2003 = battle_ui(s2003)
   ok ui2003, 'the guaranteed roll still opens a battle -- only first_strike is affected'
-  ok !ui2003[:battle].first_strike?, 'RPG2003 never sets it from this roll'
+  ok !ui2003.battle.first_strike?, 'RPG2003 never sets it from this roll'
 
   # Both scenes share the identical hardcoded seed (Scene::Map's own
   # `Game::Rng.new(0x2000)`) and run the identical code path up to the
@@ -26313,7 +26319,7 @@ check 'standing on an Event Touch tile still rolls for a random encounter' do
   scene.update # the roll only queues a :battle wait; a frame turns it into @battle_ui
   ui = battle_ui(scene)
   ok ui, 'an Event Touch event on the tile does not suppress the roll'
-  eq 1, ui[:troop].id, "the map tree node's own troop"
+  eq 1, ui.troop.id, "the map tree node's own troop"
 end
 
 check "a chipset cell whose terrain id has no database row never rolls for a random " \
@@ -27693,7 +27699,7 @@ check 'the battle status panel draws name / condition / HP / SP at the ' \
      'the four column origins are the measured ones, not the old 4/86/142/202'
 
   _, ui = battle_with_skin
-  bc = status_blend(ui[:status_win])
+  bc = status_blend(ui.status_win)
   name = blend_at(bc, 'Hero', 0, 0)
   ok name, "the name draws at contents x=0 on row 0, got #{bc.map { |c| [c[4], c[0], c[1]] }.inspect}"
   eq [0, 48], name[6, 2], 'the name is the default swatch (index 0)'
@@ -27717,7 +27723,7 @@ check 'one battle HP/SP run is label + right-aligned figure + "/" + ' \
   eq 1, battle_mod::STAT_LABEL_COLOR, 'the labels carry the system swatch'
 
   _, ui = battle_with_skin
-  bc = status_blend(ui[:status_win])
+  bc = status_blend(ui.status_win)
   hp_x = battle_mod::STATUS_HP_X
   # BattleStubActor's default is 200/200 HP.
   cur = blend_at(bc, '200', hp_x + 12, 0)
@@ -27766,7 +27772,7 @@ check 'the battle options and per-actor command windows share one 76x80 rect, ' 
   scene, = battle_scene_with_pages(nil, party: BattleStubParty.new)
   ui = battle_until_phase(scene, :battle_options)
   ok ui, 'the battle opened on the party-command phase'
-  opt = ui[:cmd_win]
+  opt = ui.cmd_win
   eq [0, battle_mod::BATTLE_PANEL_Y, battle_mod::BATTLE_CMD_W, battle_mod::BATTLE_PANEL_H],
      [opt.x, opt.y, opt.width, opt.height],
      'the options window is the measured x=0..75, y=160..239 rect'
@@ -27777,11 +27783,11 @@ check 'the battle options and per-actor command windows share one 76x80 rect, ' 
   eq [0], opt_rows.map { |a| a[0] }.uniq, 'every option row draws from contents x=0'
   eq (0...opt_rows.size).map { |i| i * battle_mod::BATTLE_LINE_H },
      opt_rows.map { |a| a[1] }, 'the rows step 16px apart'
-  eq 0, ui[:status_win].cursor_rect.width,
+  eq 0, ui.status_win.cursor_rect.width,
      'no status row is highlighted while the party command window has focus'
 
   _, ui2 = battle_at_command(nil, party: BattleStubParty.new)
-  cmd = ui2[:cmd_win]
+  cmd = ui2.cmd_win
   eq [battle_mod::BATTLE_STATUS_W, battle_mod::BATTLE_PANEL_Y,
       battle_mod::BATTLE_CMD_W, battle_mod::BATTLE_PANEL_H],
      [cmd.x, cmd.y, cmd.width, cmd.height],
@@ -27798,7 +27804,7 @@ check 'the battle options and per-actor command windows share one 76x80 rect, ' 
   # The acting actor's row carries the panel-wide cursor once an actor is
   # choosing -- screen x=4..239 on the reference frame, i.e. the whole 228px
   # contents width plus Game::WindowCursor::OVERHANG on each side.
-  status = ui2[:status_win]
+  status = ui2.status_win
   eq [0, 0, status_inner, battle_mod::BATTLE_LINE_H],
      [status.cursor_rect.x, status.cursor_rect.y,
       status.cursor_rect.width, status.cursor_rect.height],
@@ -27826,7 +27832,7 @@ check 'the fight draws the background the save carried (SAVE_SYSTEM 125), ' \
   st.battle_background = 'light'
   ui = battle_to_command(scene)
   ok ui, 'the fight opened'
-  back = ui[:back_sprite]
+  back = ui.back_sprite
   ok back, 'the backdrop sprite was built'
   eq 'Backdrop/light', back.bitmap.load_name,
      'the carried background is loaded by name'
@@ -27842,7 +27848,7 @@ check 'a carried-but-empty background draws the flat field rather than falling '
   st.battle_background = ''
   ui = battle_to_command(scene)
   ok ui, 'the fight opened'
-  back = ui[:back_sprite]
+  back = ui.back_sprite
   eq nil, back.bitmap.load_name, 'no Backdrop/<name> file was loaded at all'
   eq [320, 240], [back.bitmap.width, back.bitmap.height],
      'the flat field covers the whole screen'
@@ -27877,7 +27883,7 @@ check 'changing map drops the carried background so the next fight resolves ' \
   eq nil, st.battle_background, 'a real map change drops it'
   ui = battle_to_command(scene)
   ok ui, 'the fight opened'
-  eq nil, ui[:back_sprite].bitmap.load_name,
+  eq nil, ui.back_sprite.bitmap.load_name,
      'with nothing carried the map-tree walk answers (the fixture names no backdrop)'
 end
 
@@ -27892,13 +27898,13 @@ check 'the battle backdrop is one static sprite at the screen origin, under ' \
   scene, st = battle_scene_with_pages({})
   st.battle_background = 'light'
   ui = battle_to_command(scene)
-  back = ui[:back_sprite]
+  back = ui.back_sprite
   # The harness Sprite stub starts x/y at nil where the native Sprite starts
   # them at 0, so "never positioned" and "positioned at 0" read alike here --
   # both are the screen origin the reference frame measures.
   eq [0, 0], [back.x.to_i, back.y.to_i], 'drawn at the screen origin'
   eq 5, back.z, 'under everything'
-  sprites = ui[:enemy_sprites].compact
+  sprites = ui.enemy_sprites.compact
   ok sprites.any?, 'the troop sprites were built'
   ok sprites.all? { |s| s.z > back.z }, 'every troop sprite draws over the backdrop'
 end
@@ -27911,7 +27917,7 @@ check 'a troop member sits centred on its database x/y, both axes' do
   # measured in the reference frame. So the stored position is the bitmap\'s
   # centre -- not its top-left, and not its feet.
   battle = RPG2k::Scene::Battle.allocate
-  battle.instance_variable_set(:@ui, { frame: 0 })
+  battle.instance_variable_set(:@ui, battle_ui_of(frame: 0))
   bmp = RGSS::Bitmap.new(84, 36)
   [[114, 72], [206, 164]].each do |db_x, expected_x|
     member = OpenStruct.new(x: db_x, y: 130, levitate: false, flying_phase: 0)
@@ -27927,8 +27933,8 @@ check 'every troop sprite is seated on that same centred rule through the real '
       'build path' do
   scene = battle_scene_with_pages({}).first
   ui = battle_to_command(scene)
-  members = ui[:troop].members
-  ui[:enemy_sprites].each_with_index do |spr, i|
+  members = ui.troop.members
+  ui.enemy_sprites.each_with_index do |spr, i|
     next unless spr
     m = members[i]
     eq m.x - spr.bitmap.width / 2, spr.x, "member #{i} x is centred"
@@ -27942,7 +27948,7 @@ check 'the lower-numbered troop member draws over the higher-numbered one' do
   # member 4 (the full-screen 320x160 body at x=160) in the reference frame.
   battle = RPG2k::Scene::Battle.allocate
   troop = OpenStruct.new(members: Array.new(4) { OpenStruct.new })
-  battle.instance_variable_set(:@ui, { troop: troop })
+  battle.instance_variable_set(:@ui, battle_ui_of(troop: troop))
   zs = (0...4).map { |i| battle.send(:battler_z, i) }
   eq [103, 102, 101, 100], zs,
      'add-order index 0 is closest to the camera, so it carries the highest z'
@@ -28006,9 +28012,9 @@ check 'battle enemy-target list: RPG_RT\'s own 136px box, 16px rows and ' \
   skin = RGSS::Bitmap.new('System/skin')
   scene.instance_variable_set(:@windowskin, skin)
   press_key(scene, RGSS::Input::C) # Attack -> enemy target
-  eq :target, ui[:phase]
+  eq :target, ui.phase
 
-  win = ui[:target_win]
+  win = ui.target_win
   eq [0, 160, 136, 80], [win.x, win.y, win.width, win.height],
      'the enemy list is RPG_RT\'s own (0, 160, 136, 80) box'
   eq [0, 0, 120, 16],
@@ -28038,9 +28044,9 @@ check 'battle Skill grid: 160px column pitch, 144px cells and the ' \
   scene, ui = battle_list_scene(BattleListGridParty.new)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
-  eq :skill, ui[:phase]
+  eq :skill, ui.phase
 
-  win = ui[:skill_win]
+  win = ui.skill_win
   eq [0, 160, 320, 80], [win.x, win.y, win.width, win.height]
   eq [0, 0, 144, 16],
      [win.cursor_rect.x, win.cursor_rect.y, win.cursor_rect.width, win.cursor_rect.height],
@@ -28054,8 +28060,8 @@ check 'battle Skill grid: 160px column pitch, 144px cells and the ' \
 
   press_key(scene, RGSS::Input::RIGHT)
   eq [160, 0, 144, 16],
-     [ui[:skill_win].cursor_rect.x, ui[:skill_win].cursor_rect.y,
-      ui[:skill_win].cursor_rect.width, ui[:skill_win].cursor_rect.height],
+     [ui.skill_win.cursor_rect.x, ui.skill_win.cursor_rect.y,
+      ui.skill_win.cursor_rect.width, ui.skill_win.cursor_rect.height],
      'Right puts the cursor on the second column\'s own cell'
 end
 
@@ -28070,9 +28076,9 @@ check 'battle Item grid: the ":" + right-aligned count column, in the same ' \
   press_key(scene, RGSS::Input::DOWN) # Skill  -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
-  eq :item, ui[:phase]
+  eq :item, ui.phase
 
-  cells = list_text_cells(ui[:item_win])
+  cells = list_text_cells(ui.item_win)
   eq [[0, 120, 'Item1'], [120, 6, ':'], [132, 12, '1']], cells[0, 3]
   eq [[160, 120, 'Item2'], [280, 6, ':'], [292, 12, '2']], cells[3, 3]
 end
@@ -28086,25 +28092,25 @@ check 'battle Skill/Item lists carry RPG_RT\'s description banner, tracking ' \
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
 
-  banner = ui[:desc_win]
+  banner = ui.desc_win
   ok banner, 'the skill list opens a description banner'
   eq [0, 0, 320, 32], [banner.x, banner.y, banner.width, banner.height]
   eq [[0, 304, 'About skill 1']], list_text_cells(banner),
      'the banner shows the highlighted skill\'s description at contents x 0'
 
   press_key(scene, RGSS::Input::RIGHT)
-  eq [[0, 304, 'About skill 2']], list_text_cells(ui[:desc_win]),
+  eq [[0, 304, 'About skill 2']], list_text_cells(ui.desc_win),
      'it follows the cursor onto the next skill'
 
   press_key(scene, RGSS::Input::B) # cancel back to the command window
-  eq :command, ui[:phase]
-  eq nil, ui[:desc_win], 'cancelling the list takes the banner down with it'
+  eq :command, ui.phase
+  eq nil, ui.desc_win, 'cancelling the list takes the banner down with it'
 
   # Cancel leaves the command cursor on Skill (row 1), where it was.
   press_key(scene, RGSS::Input::DOWN) # Skill  -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
-  eq [[0, 304, 'About item 1']], list_text_cells(ui[:desc_win]),
+  eq [[0, 304, 'About item 1']], list_text_cells(ui.desc_win),
      'the item list gets the same banner, from the item\'s own description'
 end
 
@@ -28119,15 +28125,15 @@ check 'battle target cursor keeps the Skill list (and its banner) on screen ' \
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
   press_key(scene, RGSS::Input::C)    # cast Fire -> enemy target
-  eq :target, ui[:phase]
-  ok ui[:skill_win], 'the skill list stays on screen behind the target cursor'
-  ok ui[:desc_win], 'so does its description banner'
-  ok window_z(ui[:skill_win]) < window_z(ui[:target_win]), 'the target list draws over it'
+  eq :target, ui.phase
+  ok ui.skill_win, 'the skill list stays on screen behind the target cursor'
+  ok ui.desc_win, 'so does its description banner'
+  ok window_z(ui.skill_win) < window_z(ui.target_win), 'the target list draws over it'
 
   press_key(scene, RGSS::Input::B)
-  eq :skill, ui[:phase]
-  eq nil, ui[:target_win], 'Cancel closes the target list'
-  ok ui[:skill_win], 'and leaves the skill list up'
+  eq :skill, ui.phase
+  eq nil, ui.target_win, 'Cancel closes the target list'
+  ok ui.skill_win, 'and leaves the skill list up'
 end
 
 check 'battle ally target is a cursor on the party status panel, not a ' \
@@ -28144,9 +28150,9 @@ check 'battle ally target is a cursor on the party status panel, not a ' \
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   press_key(scene, RGSS::Input::C)    # Potion -> ally target
-  eq :ally_target, ui[:phase]
+  eq :ally_target, ui.phase
 
-  win = ui[:ally_win]
+  win = ui.ally_win
   eq [0, 160, 244, 80], [win.x, win.y, win.width, win.height],
      'the ally cursor sits on the status panel\'s own box'
   eq [0, 0, 228, 16],
@@ -28162,13 +28168,13 @@ check 'battle ally target is a cursor on the party status panel, not a ' \
     ok xs.include?(x),
        "it draws the status panel's own name/state/HP/MP columns (missing #{x} in #{xs.sort.inspect})"
   end
-  ok ui[:item_win], 'the item list stays on screen underneath'
-  ok window_z(ui[:item_win]) < window_z(win), 'with the panel drawn over it'
+  ok ui.item_win, 'the item list stays on screen underneath'
+  ok window_z(ui.item_win) < window_z(win), 'with the panel drawn over it'
 
   press_key(scene, RGSS::Input::B)
-  eq :item, ui[:phase]
-  eq nil, ui[:ally_win], 'Cancel closes the ally cursor'
-  ok ui[:item_win], 'and lands back on the item list'
+  eq :item, ui.phase
+  eq nil, ui.ally_win, 'Cancel closes the ally cursor'
+  ok ui.item_win, 'and lands back on the item list'
 end
 
 check 'battle Skill/Item grids: Down off the last full row\'s second column ' \
@@ -28182,14 +28188,14 @@ check 'battle Skill/Item grids: Down off the last full row\'s second column ' \
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
   press_key(scene, RGSS::Input::RIGHT)
-  eq 1, ui[:skill_i]
+  eq 1, ui.skill_i
   3.times { press_key(scene, RGSS::Input::DOWN) }
-  eq 7, ui[:skill_i], 'three Downs walk column 1 to index 7, the last full row'
+  eq 7, ui.skill_i, 'three Downs walk column 1 to index 7, the last full row'
 
   press_key(scene, RGSS::Input::DOWN)
-  eq 8, ui[:skill_i], 'the next Down reaches the ninth skill in the partial row'
+  eq 8, ui.skill_i, 'the next Down reaches the ninth skill in the partial row'
   press_key(scene, RGSS::Input::DOWN)
-  eq 8, ui[:skill_i], 'and blocks there -- no wrap once the list cannot scroll'
+  eq 8, ui.skill_i, 'and blocks there -- no wrap once the list cannot scroll'
 end
 
 # -- battle message flow (cycle #247, measured against genuine RPG_RT under wine)
@@ -28220,18 +28226,18 @@ check 'the encounter banner reveals its lines one per ' \
   bt = RPG2k::Scene::Battle
   scene, ui = encounter_banner_scene
   ok ui, 'the encounter-message phase was reached'
-  eq ['Slimeがあらわれた！'], window_texts(ui[:action_win]),
+  eq ['Slimeがあらわれた！'], window_texts(ui.action_win),
      'the banner opens with its first line alone'
 
   (bt::BATTLE_ENCOUNTER_MSG_LINE_FRAMES - 1).times { scene.update }
-  eq ['Slimeがあらわれた！'], window_texts(battle_ui(scene)[:action_win]),
+  eq ['Slimeがあらわれた！'], window_texts(battle_ui(scene).action_win),
      'still only the first line one frame before the gap runs out'
 
   scene.update
   eq ['Slimeがあらわれた！', 'Slimeがあらわれた！'],
-     window_texts(battle_ui(scene)[:action_win]),
+     window_texts(battle_ui(scene).action_win),
      'the second line joins it in the same panel, in troop order'
-  eq :encounter_message, battle_ui(scene)[:phase],
+  eq :encounter_message, battle_ui(scene).phase,
      'and the banner is still what the screen is doing'
 end
 
@@ -28245,16 +28251,16 @@ check 'the encounter banner holds BATTLE_ENCOUNTER_MSG_FRAMES from its LAST ' \
   scene, ui = encounter_banner_scene
   ok ui, 'the encounter-message phase was reached'
   bt::BATTLE_ENCOUNTER_MSG_LINE_FRAMES.times { scene.update } # the second line lands
-  eq 2, window_texts(battle_ui(scene)[:action_win]).size, 'both lines are up'
+  eq 2, window_texts(battle_ui(scene).action_win).size, 'both lines are up'
 
   (bt::BATTLE_ENCOUNTER_MSG_FRAMES - 1).times { scene.update }
-  eq :encounter_message, battle_ui(scene)[:phase],
+  eq :encounter_message, battle_ui(scene).phase,
      'one frame short of the full hold, the banner is still up'
 
   scene.update
-  ok battle_ui(scene)[:phase] != :encounter_message,
+  ok battle_ui(scene).phase != :encounter_message,
      'the hold ends on its own -- a timer, not a keypress wait'
-  ok battle_ui(scene)[:action_win].nil?, 'and the banner is taken down with it'
+  ok battle_ui(scene).action_win.nil?, 'and the banner is taken down with it'
 end
 
 # Same fight, third run: hammering Decision every 200ms (12 frames) through
@@ -28274,13 +28280,13 @@ check 'Decision skips the encounter banner, but only after ' \
     scene.update
     RGSS::Input.triggered = []
   end
-  eq :encounter_message, battle_ui(scene)[:phase],
+  eq :encounter_message, battle_ui(scene).phase,
      'a Decision inside the gate does not cut the banner short'
 
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  ok battle_ui(scene)[:phase] != :encounter_message,
+  ok battle_ui(scene).phase != :encounter_message,
      'once the gate is past, the very next Decision ends the hold early'
 end
 
@@ -28302,8 +28308,8 @@ check "the battle result panel is RPG_RT's fixed 320x80 bottom rect, waits " \
   st.instance_variable_set(:@party, BattleStubParty.new)
   battle_attack_to_end(scene)
   ui = battle_ui(scene)
-  eq :result, ui[:phase], 'the fight ran through to its result panel'
-  win = ui[:result_win]
+  eq :result, ui.phase, 'the fight ran through to its result panel'
+  win = ui.result_win
   ok win, 'the result panel is up'
   eq 0, win.x, "flush against the screen's left edge"
   eq bt::SCREEN_W, win.width, 'the fixed 320px width'
@@ -28312,7 +28318,7 @@ check "the battle result panel is RPG_RT's fixed 320x80 bottom rect, waits " \
   eq true, win.pause, 'with the blinking keypress arrow RPG_RT shows'
 
   30.times { scene.update }
-  eq :result, battle_ui(scene)[:phase], 'it waits rather than timing out'
+  eq :result, battle_ui(scene).phase, 'it waits rather than timing out'
 
   RGSS::Input.triggered = [RGSS::Input::B]
   scene.update
@@ -28436,9 +28442,9 @@ check 'the in-battle Skill list draws the two windowskin scroll arrows on its ' 
       "own top and bottom frame edges, and only the down one at the list's top" do
   bt = RPG2k::Scene::Battle
   scene, ui, battle = battle_open_list(BattleThirteenSkillParty.new)
-  eq :skill, ui[:phase], 'the 13-skill list is open'
-  up = ui[:list_up_arrow]
-  down = ui[:list_down_arrow]
+  eq :skill, ui.phase, 'the 13-skill list is open'
+  up = ui.list_up_arrow
+  down = ui.list_down_arrow
   ok up && down, 'an overflowing list builds both arrow sprites'
   eq (bt::SCREEN_W - RPG2k::Scene::Base::LIST_ARROW_W) / 2, up.x,
      'the up arrow is centred horizontally (cell x 152)'
@@ -28449,7 +28455,7 @@ check 'the in-battle Skill list draws the two windowskin scroll arrows on its ' 
   eq bt::SCREEN_H - RPG2k::Scene::Base::LIST_ARROW_H, down.y,
      "the down arrow sits on the list window's bottom border (y 232)"
   # Force the blink's "on" half so visibility reads the hidden-row rule alone.
-  ui[:list_arrow_anim] = 0
+  ui.list_arrow_anim = 0
   battle.send(:tick_battle_list_arrows)
   ok !up.visible, 'no row is hidden above the top of the list, so the up arrow is off'
   ok down.visible, 'rows are hidden below it, so the down arrow is on'
@@ -28458,71 +28464,71 @@ end
 check 'the in-battle Skill list keeps a sticky scroll offset: moving back up ' \
       'inside the box does not scroll the box back' do
   scene, ui, battle = battle_open_list(BattleThirteenSkillParty.new)
-  eq 0, ui[:skill_top], 'the list opens at the top'
+  eq 0, ui.skill_top, 'the list opens at the top'
 
   4.times { press_key(scene, RGSS::Input::DOWN) }
-  eq 8, ui[:skill_i], 'four Downs put the cursor on row 4 (index 8)'
-  eq 1, ui[:skill_top], 'which scrolls the 4-row box by exactly one row'
+  eq 8, ui.skill_i, 'four Downs put the cursor on row 4 (index 8)'
+  eq 1, ui.skill_top, 'which scrolls the 4-row box by exactly one row'
 
   press_key(scene, RGSS::Input::UP)
-  eq 6, ui[:skill_i], 'Up steps the cursor back to row 3'
-  eq 1, ui[:skill_top],
+  eq 6, ui.skill_i, 'Up steps the cursor back to row 3'
+  eq 1, ui.skill_top,
      'and the box keeps the row it was scrolled to -- a cursor-derived ' \
      'offset would have snapped back to 0'
   # The same finding read off the drawn window rather than the bookkeeping:
   # row 3 drawn under a top row of 1 puts the cursor frame on the box's
   # *third* line, where a snapped-back offset would put it on the fourth.
-  eq 2 * RPG2k::Scene::Battle::BATTLE_LINE_H, ui[:skill_win].cursor_rect.y,
+  eq 2 * RPG2k::Scene::Battle::BATTLE_LINE_H, ui.skill_win.cursor_rect.y,
      'and the cursor frame sits on the third visible line, not the last'
 
-  ui[:list_arrow_anim] = 0
+  ui.list_arrow_anim = 0
   battle.send(:tick_battle_list_arrows)
-  ok ui[:list_up_arrow].visible, 'mid-list, the up arrow is on'
-  ok ui[:list_down_arrow].visible, 'and so is the down arrow'
+  ok ui.list_up_arrow.visible, 'mid-list, the up arrow is on'
+  ok ui.list_down_arrow.visible, 'and so is the down arrow'
 end
 
 check 'the in-battle Item list scrolls stickily and hides the down arrow once ' \
       'the last row is on screen' do
   scene, ui, battle = battle_open_list(BattleThirteenItemParty.new, item: true)
-  eq :item, ui[:phase], 'the 13-item list is open'
+  eq :item, ui.phase, 'the 13-item list is open'
 
   6.times { press_key(scene, RGSS::Input::DOWN) }
-  eq 12, ui[:item_i], 'six Downs reach the last row (row 6, index 12)'
-  eq 3, ui[:item_top], 'the box is scrolled to its last page (rows 3..6)'
+  eq 12, ui.item_i, 'six Downs reach the last row (row 6, index 12)'
+  eq 3, ui.item_top, 'the box is scrolled to its last page (rows 3..6)'
 
-  ui[:list_arrow_anim] = 0
+  ui.list_arrow_anim = 0
   battle.send(:tick_battle_list_arrows)
-  ok ui[:list_up_arrow].visible, 'rows are hidden above, so the up arrow is on'
-  ok !ui[:list_down_arrow].visible,
+  ok ui.list_up_arrow.visible, 'rows are hidden above, so the up arrow is on'
+  ok !ui.list_down_arrow.visible,
      'the last row is on screen, so the down arrow is off'
 
   press_key(scene, RGSS::Input::UP)
-  eq 10, ui[:item_i], 'Up steps back a row'
-  eq 3, ui[:item_top], 'and the box stays where it was scrolled to'
+  eq 10, ui.item_i, 'Up steps back a row'
+  eq 3, ui.item_top, 'and the box stays where it was scrolled to'
 end
 
 check 'the in-battle Skill list arrows blink on the same 20-on/20-off cycle ' \
       "as the message window's pause arrow, and share one phase" do
   scene, ui, battle = battle_open_list(BattleThirteenSkillParty.new)
   4.times { press_key(scene, RGSS::Input::DOWN) } # mid-list: both arrows apply
-  up = ui[:list_up_arrow]
-  down = ui[:list_down_arrow]
+  up = ui.list_up_arrow
+  down = ui.list_down_arrow
   blink = RPG2k::Scene::Base::LIST_ARROW_BLINK_FRAMES
   eq 20, blink, 'the shared 20-frame half-cycle (0.6667s per full cycle at 60fps)'
 
-  ui[:list_arrow_anim] = 0
+  ui.list_arrow_anim = 0
   battle.send(:tick_battle_list_arrows)
   ok up.visible && down.visible, 'both arrows are on at the start of the cycle'
 
-  ui[:list_arrow_anim] = blink - 2
+  ui.list_arrow_anim = blink - 2
   battle.send(:tick_battle_list_arrows)
   ok up.visible && down.visible, 'still on through frame 19'
 
-  ui[:list_arrow_anim] = blink - 1
+  ui.list_arrow_anim = blink - 1
   battle.send(:tick_battle_list_arrows)
   ok !up.visible && !down.visible, 'both go off together at frame 20'
 
-  ui[:list_arrow_anim] = blink * 2 - 1
+  ui.list_arrow_anim = blink * 2 - 1
   battle.send(:tick_battle_list_arrows)
   ok up.visible && down.visible, 'and both come back together at the 40-frame wrap'
 end
@@ -29394,7 +29400,7 @@ check 'the RPG2003 pose table is 1-based: an entry defining only pose 1 draws th
   hero = BattleStubActor.new(id: 1, battler_animation_id: 5)
   st.instance_variable_set(:@party, BattleStubParty.new(hero, alternate_layout: true))
   ui = battle_to_command(scene)
-  spr = ui[:actor_sprites] && ui[:actor_sprites][0]
+  spr = ui.actor_sprites && ui.actor_sprites[0]
   ok spr, 'pose id 1 is the Idle pose, so the battler is drawn'
   cell = RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
   eq RGSS::Rect.new(0, 2 * cell, cell, cell), spr.src_rect
@@ -29417,7 +29423,7 @@ check 'the RPG2003 gauge card panel is borderless: its contents start at the pan
   scene, ui = battle_at_command(nil, party: party)
   scene.db.system.system2_name = 'BattleStatus'
   scene.instance_variable_get(:@battle).send(:refresh_battle_status)
-  win = ui[:status_win]
+  win = ui.status_win
   status_x = scene.instance_variable_get(:@battle).send(:battle_status_x)
   eq [status_x, battle_mod::BATTLE_PANEL_Y],
      [win.x + RPG2k::Window::BORDER, win.y + RPG2k::Window::BORDER],
@@ -29442,15 +29448,15 @@ check "the RPG2003 gauge layout floats the actor command window above the cards,
   gauge_party = BattleStubParty.new(BattleStubActor.new, gauge_layout: true)
   _, gauge_ui = battle_at_command(nil, party: gauge_party)
   eq [0, battle_mod::BATTLE_PANEL_Y - battle_mod::BATTLE_PANEL_H],
-     [gauge_ui[:cmd_win].x, gauge_ui[:cmd_win].y],
+     [gauge_ui.cmd_win.x, gauge_ui.cmd_win.y],
      'the gauge layout docks the command window at (0, 80)'
   eq [battle_mod::BATTLE_CMD_W, battle_mod::BATTLE_PANEL_H],
-     [gauge_ui[:cmd_win].width, gauge_ui[:cmd_win].height],
+     [gauge_ui.cmd_win.width, gauge_ui.cmd_win.height],
      'same 76x80 shape as everywhere else'
 
   _, plain_ui = battle_at_command(nil, party: BattleStubParty.new)
   eq [battle_mod::BATTLE_STATUS_W, battle_mod::BATTLE_PANEL_Y],
-     [plain_ui[:cmd_win].x, plain_ui[:cmd_win].y],
+     [plain_ui.cmd_win.x, plain_ui.cmd_win.y],
      'the RPG2000 / traditional position is untouched'
 end
 

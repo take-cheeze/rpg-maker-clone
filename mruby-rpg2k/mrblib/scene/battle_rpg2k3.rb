@@ -51,7 +51,7 @@ module RPG2k3
       # command/target/skill/item menu is open, and never during action
       # resolution, the encounter banner or a battle event.
       def atb_accumulating?
-        phase = @ui[:phase]
+        phase = @ui.phase
         return true if phase == :atb
         return active_atb? if ATB_MENU_PHASES.include?(phase)
         false
@@ -62,7 +62,7 @@ module RPG2k3
       # gauge at 0 and runs the inherited update (and with it the whole 2000
       # round machine) untouched.
       def update
-        battle = @ui && @ui[:battle]
+        battle = @ui && @ui.battle
         if battle && battle.battle_type == 2
           battle.advance_gauges if atb_accumulating?
           update_enemy_flashes
@@ -73,7 +73,7 @@ module RPG2k3
           # Scene::Battle#update) -- without this tick they would freeze on
           # whichever half of the blink the last redraw left them in.
           tick_battle_list_arrows
-          case @ui[:phase]
+          case @ui.phase
           when :encounter_message then drive_battle_encounter_message
           # The active-time idle loop -- the phase the gauge battle lives in
           # between actions, and the replacement for the round machine's
@@ -100,7 +100,7 @@ module RPG2k3
       # never set a battle_type reads 0 (false), like every other optional
       # field in this codebase.
       def gauge_battle?
-        battle = @ui && @ui[:battle]
+        battle = @ui && @ui.battle
         !!(battle && battle.battle_type == 2)
       end
 
@@ -113,7 +113,7 @@ module RPG2k3
       # once per acting battler the way the round machine checks them between
       # battlers, and a decided fight settles to its result.
       def drive_battle_atb
-        battle = @ui[:battle]
+        battle = @ui.battle
         return if run_battle_events(:atb)
         if battle.finished?
           # #finish_round_animation settles the result before returning here,
@@ -129,12 +129,12 @@ module RPG2k3
         return unless b
         if controllable?(b)
           # Point the command flow at the ready actor (`current_actor` reads
-          # @ui[:actor_i]) and open its menu; the gauge stays full while the
+          # @ui.actor_i) and open its menu; the gauge stays full while the
           # player chooses.
           idx = living_allies.index(b)
-          @ui[:actor_i] = idx if idx
-          @ui[:cmd] = 0
-          @ui[:phase] = :command
+          @ui.actor_i = idx if idx
+          @ui.cmd = 0
+          @ui.phase = :command
           draw_battle_command
         else
           # A Forced-AI actor's ready gauge gets the same AI pick the round
@@ -209,7 +209,7 @@ module RPG2k3
       # automatically -- i.e. not the actor whose menu is up and not one a
       # controllable party member whose own menu would simply wait its turn.
       def interrupting_ready_combatant
-        battle = @ui[:battle]
+        battle = @ui.battle
         cur = current_actor
         battle.ready_combatants.find { |c| c != cur && !controllable?(c) }
       end
@@ -226,14 +226,14 @@ module RPG2k3
       # check on a set boundary, and a fresh gauge action has none of its own
       # yet (the flag is normally set by the *previous* action's step_action).
       def start_gauge_action(b)
-        if @ui[:cmd_win]
-          @ui[:cmd_win].dispose
-          @ui[:cmd_win] = nil
+        if @ui.cmd_win
+          @ui.cmd_win.dispose
+          @ui.cmd_win = nil
         end
-        @ui[:battle].begin_gauge_turn(b)
-        @ui[:battler_boundary] = true
-        @ui[:phase] = :animate
-        @ui[:anim_timer] = 0 # land the action next frame
+        @ui.battle.begin_gauge_turn(b)
+        @ui.battler_boundary = true
+        @ui.phase = :animate
+        @ui.anim_timer = 0 # land the action next frame
       end
 
       # A gauge action is its own "round": when the queue empties, return to
@@ -242,22 +242,22 @@ module RPG2k3
       # reset -- each battler's turn re-arms the troop's pages.
       def finish_round_animation
         return super unless gauge_battle?
-        battle = @ui[:battle]
+        battle = @ui.battle
         # See the base #finish_round_animation's identical comment: snapshot
         # who is showing the Defend pose before `end_round` clears the flag,
         # so their sprite can revert to Idle, and catch up anyone felled
         # this action onto the Dead pose.
-        defenders = @ui[:allies].select { |a| a.defending }
+        defenders = @ui.allies.select { |a| a.defending }
         battle.end_round
-        (defenders + @ui[:allies].select { |a| a.dead? }).uniq { |a| a.object_id }
+        (defenders + @ui.allies.select { |a| a.dead? }).uniq { |a| a.object_id }
           .each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
         if battle.finished?
           enter_battle_result(battle.result)
         else
-          @ui[:actor_i] = 0
-          @ui[:cmd] = 0
-          @ui[:pages_run] = {}
+          @ui.actor_i = 0
+          @ui.cmd = 0
+          @ui.pages_run = {}
           enter_atb_phase
         end
       end
@@ -269,7 +269,7 @@ module RPG2k3
       # the next command window. #drive_battle_atb runs the page/finished/ready
       # checks itself, so this just points the phase at it.
       def enter_atb_phase
-        @ui[:phase] = :atb
+        @ui.phase = :atb
         return if settle_already_finished_battle
         drive_battle_atb
       end
@@ -283,8 +283,8 @@ module RPG2k3
       # action automatically instead of pausing the fight for a prompt the
       # action resolution would discard or override anyway.
       def controllable?(b)
-        return false unless @ui[:allies].include?(b)
-        battle = @ui[:battle]
+        return false unless @ui.allies.include?(b)
+        battle = @ui.battle
         !battle.command_restricted?(b) && !force_ai_actor?(b)
       end
     end
