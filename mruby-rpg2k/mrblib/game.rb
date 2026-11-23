@@ -520,6 +520,8 @@ module Game
     # confirmed against genuine RPG_RT under wine).
     def initialize(lines, revealed = 0, pauses = [], auto_close = false,
                    instants = [], speeds = [])
+      # Set before the first block runs, so no read can see it unset (@released: Integer, sig).
+      @released = 0 # how many leading pauses the owner has let through
       @lines = lines || []
       @total = 0
       @lines.each { |l| @total += l.length }
@@ -530,7 +532,6 @@ module Game
       @auto_close = auto_close ? true : false
       @instants = instants || []
       @speeds = (speeds || []).sort { |a, b| a.at <=> b.at }
-      @released = 0 # how many leading pauses the owner has let through
       @carry = 0 # fractional per-frame budget banked while a \s[] slowdown is
                  # in effect, so a sub-1-character-per-frame rate still lands
                  # on whole characters over several frames instead of rounding
@@ -8914,14 +8915,6 @@ module Game
       finish_move if @frames == 0
     end
 
-    # The fixed-point state a save writes from, read directly (no pixel truncation).
-    def save_fixed
-      { x: @x, y: @y, show_x: @show_x, show_y: @show_y, zoom: @zoom, opacity: @opacity,
-        red: @red, green: @green, blue: @blue, saturation: @saturation,
-        tx: @tx, ty: @ty, tzoom: @tzoom, topacity: @topacity,
-        tred: @tred, tgreen: @tgreen, tblue: @tblue, tsat: @tsat }
-    end
-
     def moving?; @frames > 0; end
 
     # Erase Picture (11130): turns #shown? false (so nothing draws --
@@ -10042,8 +10035,8 @@ module Game
     # occupies the single shared foreground interpreter (Scene::Map's own
     # @interpreter) -- a map event (trigger 0 action key / 1 touch /
     # Auto-Start) or an Auto-Start Common Event, both of which run on that
-    # one shared interpreter (see Scene::Map#start_autostart). A Hash
-    # `{ event_id:, frames: }` (`frames` is #call_stack_snapshot's own return
+    # one shared interpreter (see Scene::Map#start_autostart). A ForegroundExec
+    # (`frames` is #call_stack_snapshot's own return
     # value; `event_id` is the map event id it belongs to, or 0 for a common
     # event / no map character) when there is something mid-execution there,
     # nil otherwise -- true the overwhelming majority of the time a save
@@ -10065,6 +10058,16 @@ module Game
     # #restore_call_stack). Round-trips through a real `.lsd`'s chunk 113
     # (LCF::Schema::SAVE_FOREGROUND_EVENT), as of cycle #191.
     attr_accessor :foreground_event_exec
+
+    # #foreground_event_exec's value: the map event id the frames belong to (0: a common event or no character).
+    class ForegroundExec
+      attr_reader :event_id, :frames
+
+      def initialize(event_id, frames)
+        @event_id = event_id
+        @frames = frames
+      end
+    end
     # Full `Game::Interpreter` call-stack snapshots of every currently-
     # running Common Event Parallel Process (Scene::Map's own @parallels,
     # the `common_event_id`-non-nil entries only -- a Map Event's own

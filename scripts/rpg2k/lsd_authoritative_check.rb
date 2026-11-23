@@ -412,8 +412,36 @@ def seeded_state(db, map_id, x, y)
   st
 end
 
+# Call Event resolver for running_snapshot: common events by id.
+class SnapshotResolver
+  def initialize(common) = (@common = common)
+  def common_event_commands(id) = @common[id]
+  def map_event_commands(_id, _page) = nil
+end
+
+# An interpreter's live #call_stack_snapshot, parked on a Wait (inside Call Event when +nested+).
+def running_snapshot(st, event_id, nested:, decision: false)
+  wait = LCF::EventCommand.new(11410, 0, '', [5])
+  called = [LCF::EventCommand.new(11410, 0, '', [1]), wait]
+  it = Game::Interpreter.new(st)
+  it.resolver = SnapshotResolver.new({ 3 => called })
+  it.start(nested ? [LCF::EventCommand.new(12330, 0, '', [0, 3, 0]), wait] : [wait, wait])
+  it.event_id = event_id
+  it.triggered_by_decision_key = decision
+  it.update
+  it.call_stack_snapshot
+end
+
 SCENARIOS = {
   'rich state (every field)' => -> { rich_state },
+  'events mid-execution' => lambda do
+    st = seeded_state(rich_party_db, 2, 1, 1)
+    st.foreground_event_exec = Game::State::ForegroundExec.new(4, running_snapshot(st, 4, nested: true, decision: true))
+    st.map_event_exec[1] = running_snapshot(st, 1, nested: false)
+    st.common_event_exec[2] = running_snapshot(st, 0, nested: true)
+    st.common_event_progress[2] = st.common_event_exec[2].first.current_command # what a load derives
+    st
+  end,
   'default new party' => lambda do
     db = rich_party_db
     st = Game::State.new(Game::Party.new(db), 1, 0, 0)
@@ -552,16 +580,16 @@ end
 check 'legacy wrapped foreground frames still load' do
   db = rich_party_db
   st = rich_state(db)
-  frame = { commands: [LCF::EventCommand.new(11410, 0, '', [1])], current_command: 1, event_id: 5 }
-  st.foreground_event_exec = { frames: [frame] }
+  frame = Game::Interpreter::Frame.new([LCF::EventCommand.new(11410, 0, '', [1])], 1, 5, false)
+  st.foreground_event_exec = Game::State::ForegroundExec.new(nil, [frame])
   save = st.to_lsd(nil, nil, 1, db)
   wrapper = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_LEGACY_FOREGROUND_EVENT })
   wrapper[1] = save[113]
   save[113] = wrapper
   save[:lsd_ext] = [0, 1, 1]
   loaded = Game::State.from_lsd(db, save)
-  eq 5, loaded.foreground_event_exec[:event_id]
-  eq 1, loaded.foreground_event_exec[:frames][0][:current_command]
+  eq 5, loaded.foreground_event_exec.event_id
+  eq 1, loaded.foreground_event_exec.frames[0].current_command
 end
 
 check 'cursor-only common progress requires a database command list' do
@@ -686,6 +714,29 @@ SCENARIOS.each do |label, build|
   end
 end
 
+# -- 6. real saves --------------------------------------------------------------
+
+# RPG2K_LSD_GAME_DIR names a game directory (RPG_RT.ldb, RPG_RT.lmt, Save*.lsd): every save loads, and from its
+# re-save on, loading and saving again gives the same bytes and the same state. (The first re-save is not that fixed
+# point for the state: it writes the database's vehicle graphics, which the reload then takes as the vehicles' own.)
+if (game_dir = ENV['RPG2K_LSD_GAME_DIR'])
+  real_db = LCF::Database.new(File.open(File.join(game_dir, 'RPG_RT.ldb'), 'rb'))
+  real_tree = LCF::MapTree.new(File.open(File.join(game_dir, 'RPG_RT.lmt'), 'rb'))
+  real_saves = Dir[File.join(game_dir, 'Save*.lsd')].sort
+  check("#{game_dir} has saves") { ok !real_saves.empty?, 'no Save*.lsd' }
+  resave = ->(st) { st.to_lsd(st.save_count, 44_000.5, 2, real_db, real_tree).to_lcf }
+  load_bytes = ->(bytes) { Game::State.from_lsd(real_db, LCF::SaveData.new(StringIO.new(bytes))) }
+  real_saves.each do |path|
+    check "a real save re-saves stably: #{File.basename(path)}" do
+      bytes = resave.call(load_bytes.call(File.binread(path)))
+      again = load_bytes.call(bytes)
+      again_bytes = resave.call(again)
+      eq bytes, again_bytes
+      eq native_snapshot(again), native_snapshot(load_bytes.call(again_bytes)), 'state after a reload'
+    end
+  end
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
@@ -698,6 +749,7 @@ end
 
 # LSD SECTION PINS
 # rich state (every field) = 100:7fb66f3c7830 101:2e9b1c28c343 102:cff29ee14d34 103:e7a1bcf959ca 104:e600fb919435 105:69b9444412c7 106:d2cab57c460a 107:c3175ccfef74 108:87aa0ea70e4f 109:6fde676e73e8 110:bff10d898426 111:1bf1e231a40b 114:8bd34b4cc198
+# events mid-execution = 100:26412bed622e 101:df110ac63e2c 102:6e340b9cffb3 103:d4dba6883206 104:e0b0113d9cc4 105:d176a7426269 106:d2cab57c460a 107:90f4256011a7 108:3b3b6828d3da 109:58c870685097 110:fb50dc0717ff 111:571b84036bb2 113:75844b15b387 114:d780daf22833
 # default new party = 100:26412bed622e 101:df110ac63e2c 102:6e340b9cffb3 103:d4dba6883206 104:77ddc1fb4236 105:d176a7426269 106:d2cab57c460a 107:90f4256011a7 108:3b3b6828d3da 109:58c870685097 110:fb50dc0717ff
 # live moving picture and flash = 100:26412bed622e 101:df110ac63e2c 102:6e340b9cffb3 103:db77635b1048 104:51761e305d4c 105:d176a7426269 106:d2cab57c460a 107:90f4256011a7 108:3b3b6828d3da 109:58c870685097 110:fb50dc0717ff
 # boat boarded = 100:26412bed622e 101:df110ac63e2c 102:6e340b9cffb3 103:d4dba6883206 104:f37da8eb87d4 105:d176a7426269 106:d2cab57c460a 107:90f4256011a7 108:3b3b6828d3da 109:58c870685097 110:fb50dc0717ff
