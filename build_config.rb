@@ -1145,6 +1145,9 @@ if wio
       # allocates in smaller, tighter units.
       t.defines << 'MRB_HEAP_PAGE_SIZE=256'
       t.defines << 'KHASH_INITIAL_SIZE=16'
+      # Schoolbook-only bigint multiply/square/to_s (mruby-bigint MRB_BIGINT_SCHOOLBOOK): the same results, only
+      # operands past ~1000 bits get slower, and the Karatsuba/Toom-3/D&C code is not linked. WIO_BIGINT_FAST=1 keeps it.
+      t.defines << 'MRB_BIGINT_SCHOOLBOOK' unless ENV['WIO_BIGINT_FAST'] == '1'
       # No lv/debug_info fields in mrb_irep: this build already compiles its
       # Ruby without -g and strips lv (above), and links no compiler/binding.
       # 8 bytes of flash per irep.
