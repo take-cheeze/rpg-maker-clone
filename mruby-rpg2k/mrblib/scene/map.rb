@@ -11,6 +11,22 @@ class RPG2k
     # the map per their page's movement type (random / vertical / horizontal /
     # toward or away from the hero) or run a custom move route.
     class Map < Base
+      # One Parallel Process in @parallels (#new_parallel): its interpreter and command list, the gate switch (nil:
+      # none), the map event (nil for a common event) or common event id, and the Wait countdown (nil: not waiting).
+      class Parallel
+        attr_reader :interp, :commands, :gate_switch, :common_event_id
+        attr_accessor :event, :wait_timer
+
+        def initialize(interp, commands, gate_switch, event, common_event_id)
+          @interp = interp
+          @commands = commands
+          @gate_switch = gate_switch
+          @wait_timer = nil
+          @event = event
+          @common_event_id = common_event_id
+        end
+      end
+
       TILE = Game::TILE
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -707,8 +723,8 @@ class RPG2k
       # page/conditions currently pick something else). Diagnostics only --
       # RPG2k#dump_bug_report is the one caller today.
       def parallel_interpreter_for(id)
-        p = @parallels.find { |pp| pp[:event] && pp[:event].id == id }
-        p && p[:interp]
+        p = @parallels.find { |pp| pp.event && pp.event.id == id }
+        p && p.interp
       end
 
       # Services Scene::Battle calls back into ----------------------------
@@ -1786,7 +1802,7 @@ class RPG2k
       def record_foreground_event_exec
         frames = @interpreter.call_stack_snapshot
         @state.foreground_event_exec =
-          frames && { event_id: @active_event ? @active_event.id : 0, frames: frames }
+          frames && Game::State::ForegroundExec.new(@active_event ? @active_event.id : 0, frames)
       end
 
       # Resume whatever event was mid-execution in the shared foreground
@@ -1809,11 +1825,11 @@ class RPG2k
       # interpreter today (#start_autostart's own `@active_event = nil`).
       def restore_foreground_event_exec
         saved = @state.foreground_event_exec
-        frames = saved && saved[:frames]
+        frames = saved && saved.frames
         return unless frames && !frames.empty?
         @interpreter.restore_call_stack(frames)
         return unless @interpreter.running?
-        ev_id = saved[:event_id]
+        ev_id = saved.event_id
         @active_event = (ev_id && ev_id != 0) ? @events.find { |e| e.id == ev_id } : nil
       end
 
@@ -2179,10 +2195,10 @@ class RPG2k
         previous_common = {}
         previous_map = {}
         (@parallels || []).each do |p|
-          if p[:common_event_id]
-            previous_common[p[:common_event_id]] = p
-          elsif preserve_map_events && p[:event]
-            previous_map[p[:event].id] = p
+          if p.common_event_id
+            previous_common[p.common_event_id] = p
+          elsif preserve_map_events && p.event
+            previous_map[p.event.id] = p
           end
         end
         @parallels = []
@@ -2211,12 +2227,12 @@ class RPG2k
           next unless e.trigger == TRIGGER_PARALLEL && e.commands
           live_map_ids[e.id] = true
           prior = previous_map[e.id]
-          if prior && prior[:commands].equal?(e.commands)
+          if prior && prior.commands.equal?(e.commands)
             # Same page, same command list -- only the surrounding
             # Game::Character objects were rebuilt (see #build_events), so keep
             # the still-running interpreter and just re-point its bookkeeping
             # at this rebuild's fresh event hash.
-            prior[:event] = e
+            prior.event = e
             @parallels.push prior
           else
             @parallels.push new_parallel(e.commands, nil, e, nil)
@@ -2282,8 +2298,7 @@ class RPG2k
           end
         end
         it.event_id = event && event.id
-        { interp: it, commands: commands, gate_switch: gate_switch,
-          wait_timer: nil, event: event, common_event_id: common_event_id }
+        Parallel.new(it, commands, gate_switch, event, common_event_id)
       end
 
       # Advance every background parallel process one frame. They loop their
@@ -2329,7 +2344,7 @@ class RPG2k
         size = @parallels.size
         while i < size
           pp = @parallels[i]
-          if pp[:interp].equal?(owner)
+          if pp.interp.equal?(owner)
             step_parallel(pp)
             return
           end
@@ -2338,12 +2353,8 @@ class RPG2k
       end
 
       def step_parallel(p)
-        return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
-        it = p[:interp]
-        # Every @parallels record carries the Game::Interpreter its event's page
-        # built; the check is what proves #drive_parallel_wait's typed parameter
-        # for a value read out of a Hash record.
-        raise TypeError, "parallel process interpreter is #{it.class}, not Game::Interpreter" unless it.is_a?(Game::Interpreter)
+        return if p.gate_switch && !@state.switches[p.gate_switch]
+        it = p.interp
         # Ported from a reference implementation's model, NOT independently
         # confirmed against genuine RPG_RT under wine: each Parallel Process
         # is its own interpreter there, so it gets its own frame-shared step
@@ -2405,18 +2416,18 @@ class RPG2k
                   wait_kind == :key_input_blocked || wait_kind == :message_config_blocked ||
                   wait_kind == :screen_blocked) &&
                  !it.waiting?
-            apply_interpreter_requests(it, p[:event])
+            apply_interpreter_requests(it, p.event)
             return record_parallel_progress(p)
           end
         end
         if it.running?
           it.update
         else
-          it.start(p[:commands]) # loop the process
+          it.start(p.commands) # loop the process
           # #start clears the "this event" id, so re-attach it on every lap or
           # the second pass would answer the process's own position queries with
           # nothing.
-          it.event_id = p[:event] && p[:event].id
+          it.event_id = p.event && p.event.id
           it.update
         end
         # Same "starts on the same real frame the command runs" fix as
@@ -2425,7 +2436,7 @@ class RPG2k
         # case (drive_map_animation) used to only ever be reached the *next*
         # time this method found `it` already parked on that wait.
         drive_parallel_wait(p, it) if it.waiting? && it.wait_kind == :animation
-        apply_interpreter_requests(it, p[:event])
+        apply_interpreter_requests(it, p.event)
         record_parallel_progress(p)
       rescue StandardError => e
         RGSS.warn_once("parallel process update failed: #{e.class}: #{e.message}")
@@ -2437,7 +2448,7 @@ class RPG2k
       # not a Transfer Player -- see #build_parallels) can resume it instead
       # of restarting at the top. Handles both halves of @parallels:
       #
-      #   - A Common Event's own Parallel Process (`p[:common_event_id]`
+      #   - A Common Event's own Parallel Process (`p.common_event_id`
       #     non-nil) records two things, cycle #191 having added the second
       #     on top of the pre-existing first:
       #       - Game::State#common_event_progress (Game::Interpreter
@@ -2451,37 +2462,37 @@ class RPG2k
       #         `.lsd`'s chunk 114 now backs, captured whenever the
       #         interpreter is running at all -- including mid a nested Call
       #         Event, unlike #resumable_index above.
-      #   - A Map Event's own Parallel Process (`p[:event]` non-nil,
-      #     `p[:common_event_id]` nil -- cycle #193) records only the fuller
+      #   - A Map Event's own Parallel Process (`p.event` non-nil,
+      #     `p.common_event_id` nil -- cycle #193) records only the fuller
       #     snapshot, into Game::State#map_event_exec, keyed by the owning
       #     map event's own id: there is no #common_event_progress-style
       #     coarse cursor to maintain in parallel here, since none ever
       #     existed for a map event's own Parallel Process before this (see
       #     #map_event_exec's own comment). Previously this method returned
-      #     immediately for this case (`return unless p[:common_event_id]`)
+      #     immediately for this case (`return unless p.common_event_id`)
       #     -- a map event's own Parallel Process got no checkpoint
       #     whatsoever and always restarted fresh; see this method's own
       #     history in docs/TODO.md for why.
       def record_parallel_progress(p)
-        if p[:common_event_id]
-          idx = p[:interp].resumable_index
-          @state.common_event_progress[p[:common_event_id]] = idx if idx
-          frames = p[:interp].call_stack_snapshot
-          @state.common_event_exec[p[:common_event_id]] = frames if frames
-        elsif p[:event]
-          frames = p[:interp].call_stack_snapshot
-          @state.map_event_exec[p[:event].id] = frames if frames
+        if p.common_event_id
+          idx = p.interp.resumable_index
+          @state.common_event_progress[p.common_event_id] = idx if idx
+          frames = p.interp.call_stack_snapshot
+          @state.common_event_exec[p.common_event_id] = frames if frames
+        elsif p.event
+          frames = p.interp.call_stack_snapshot
+          @state.map_event_exec[p.event.id] = frames if frames
         end
       end
 
       def drive_parallel_wait(p, it)
         if it.wait_kind == :wait
-          p[:wait_timer] = frames_from_tenths(it.wait_frames) if p[:wait_timer].nil?
-          if p[:wait_timer] <= 0
-            p[:wait_timer] = nil
+          p.wait_timer = frames_from_tenths(it.wait_frames) if p.wait_timer.nil?
+          if p.wait_timer <= 0
+            p.wait_timer = nil
             it.resume
           else
-            p[:wait_timer] -= 1
+            p.wait_timer -= 1
           end
         elsif it.wait_kind == :key_input
           # Parallel processes commonly poll a key each frame into a variable.
@@ -4061,7 +4072,7 @@ class RPG2k
         # this table in sync when they do, the same way ordinary movement
         # keeps @event_last_position current for a merely-hidden one.
         @erased_event_positions[ev.id] = tile
-        @parallels.reject! { |p| p[:event].equal?(ev) } if @parallels
+        @parallels.reject! { |p| p.event.equal?(ev) } if @parallels
       end
 
       # -- page refresh -------------------------------------------------------

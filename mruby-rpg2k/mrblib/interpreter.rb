@@ -9,6 +9,19 @@
 # drives the UI, and calls `resume` (or `choose`) to continue.
 module Game
   class Interpreter
+    # One frame of #call_stack_snapshot (outermost first), the unit #restore_call_stack and save chunks
+    # 113/114 (Game::State.build_event_exec_state / .read_event_exec_frames) carry.
+    class Frame
+      attr_reader :commands, :current_command, :event_id, :triggered_by_decision_key
+
+      def initialize(commands, current_command, event_id, triggered_by_decision_key)
+        @commands = commands
+        @current_command = current_command
+        @event_id = event_id
+        @triggered_by_decision_key = triggered_by_decision_key
+      end
+    end
+
     # RPG2000 event command opcodes (subset).
     module Cmd
       # RPG2003-only commands. The editor emits these low opcodes for the
@@ -931,20 +944,13 @@ module Game
       i = 0
       while i < n
         list, index, event_id = @call_stack[i]
-        out[i] = {
-          commands: list,
-          current_command: index,
-          event_id: (i.zero? ? @event_id : event_id) || 0,
-          triggered_by_decision_key: i.zero? && !!@triggered_by_decision_key,
-        }
+        out[i] = Frame.new(list, index, (i.zero? ? @event_id : event_id) || 0,
+                           i.zero? && !!@triggered_by_decision_key)
         i += 1
       end
-      out[n] = {
-        commands: @list,
-        current_command: live_index,
-        event_id: n.zero? ? (@event_id || 0) : (@call_frame_event_id || @event_id || 0),
-        triggered_by_decision_key: n.zero? && !!@triggered_by_decision_key,
-      }
+      out[n] = Frame.new(@list, live_index,
+                         n.zero? ? (@event_id || 0) : (@call_frame_event_id || @event_id || 0),
+                         n.zero? && !!@triggered_by_decision_key)
       out
     end
 
@@ -996,18 +1002,18 @@ module Game
       return if frames.empty?
 
       innermost = frames.last
-      start(innermost[:commands] || [])
-      idx = innermost[:current_command]
+      start(innermost.commands || [])
+      idx = innermost.current_command
       @index = idx if idx && idx >= 0 && idx <= @list.size
       # Pushed into a literal so @call_stack is provably an Array (a `map` result on an untyped receiver is not).
       @call_stack = []
       frames[0...-1].each do |f|
-        @call_stack << [f[:commands] || [], f[:current_command] || 0, f[:event_id] || 0]
+        @call_stack << [f.commands || [], f.current_command || 0, f.event_id || 0]
       end
       outer = frames.first
-      @event_id = outer[:event_id] if outer[:event_id] && outer[:event_id] != 0
-      @triggered_by_decision_key = !!outer[:triggered_by_decision_key]
-      @call_frame_event_id = (innermost[:event_id] || 0) if frames.size > 1
+      @event_id = outer.event_id if outer.event_id && outer.event_id != 0
+      @triggered_by_decision_key = !!outer.triggered_by_decision_key
+      @call_frame_event_id = (innermost.event_id || 0) if frames.size > 1
     end
 
     # Start (or restart) at a previously #resumable_index-captured position
