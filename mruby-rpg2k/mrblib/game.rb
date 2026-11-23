@@ -520,6 +520,8 @@ module Game
     # confirmed against genuine RPG_RT under wine).
     def initialize(lines, revealed = 0, pauses = [], auto_close = false,
                    instants = [], speeds = [])
+      # Set before the first block runs, so no read can see it unset (@released: Integer, sig).
+      @released = 0 # how many leading pauses the owner has let through
       @lines = lines || []
       @total = 0
       @lines.each { |l| @total += l.length }
@@ -530,7 +532,6 @@ module Game
       @auto_close = auto_close ? true : false
       @instants = instants || []
       @speeds = (speeds || []).sort { |a, b| a.at <=> b.at }
-      @released = 0 # how many leading pauses the owner has let through
       @carry = 0 # fractional per-frame budget banked while a \s[] slowdown is
                  # in effect, so a sub-1-character-per-frame rate still lands
                  # on whole characters over several frames instead of rounding
