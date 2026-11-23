@@ -916,7 +916,9 @@ if wio
     conf.cc.command = "#{gcc_prefix}arm-none-eabi-gcc"
     conf.cxx.command = "#{gcc_prefix}arm-none-eabi-g++"
     conf.linker.command = "#{gcc_prefix}arm-none-eabi-gcc"
-    conf.archiver.command = "#{gcc_prefix}arm-none-eabi-ar"
+    # gcc-ar loads the LTO plugin, so the archive index lists the LTO objects' symbols.
+    wio_lto = ENV['WIO_LTO'] != '0'
+    conf.archiver.command = "#{gcc_prefix}arm-none-eabi-#{wio_lto ? 'gcc-ar' : 'ar'}"
 
     # onigmo's (old) config.sub needs a triplet it recognizes to enter
     # cross-compile mode; arm-none-eabi is such a bare-metal triple.
@@ -1073,30 +1075,11 @@ if wio
       # the same tradeoff PlatformIO's own Arduino framework build already
       # makes for this board. Still nowhere near enough on its own to fit.
       t.flags << '-Os'
-      # -flto was tried and reverted -- a
-      # real, previously-unverified regression, not a size/speed tradeoff.
-      # Booting the real, linked env:wio/env:wio_rgss_boot under this
-      # project's own Renode emulator with -flto in play
-      # aborts on a wild jump moments after reset, on every build that
-      # includes it, isolated by testing GCC 14.2.1 and -fmerge-all-constants
-      # independently (both boot fine alone). Root cause, confirmed by
-      # reading the linked ELF directly: with -flto, the .isr_vector section
-      # -- the ARM Cortex-M reset/interrupt vector table a real chip reads at
-      # boot for its initial SP and Reset_Handler address -- is missing from
-      # the binary entirely, not just misplaced. PlatformIO's vendored
-      # Arduino/SAMD startup code (this project does not own it) references
-      # that array only via the linker script's own KEEP(*(.isr_vector)),
-      # never through a real call-graph edge or an explicit
-      # __attribute__((used)) -- exactly the shape LTO's own whole-program
-      # dead-code elimination (which runs before the final link, earlier
-      # than KEEP()/--gc-sections ever get a say) is liable to discard. Not
-      # a Renode-only artifact: a real SAMD51 boots by reading the identical
-      # fixed vector table location, so this would very likely have kept
-      # the real board from booting at all despite linking cleanly and
-      # reporting a correctly-sized image -- an earlier change was verified only by
-      # linker output size and CI compile success, never actually run.
-      # -fno-ident/-fmerge-all-constants below are unaffected (each verified
-      # independently to boot correctly on their own) and stay.
+      # LTO for libmruby only: its objects carry LTO bytecode that the firmware link (app/wio/lto_link.py)
+      # optimises as one unit. The Arduino core must stay non-LTO: its exception_table is referenced by the linker
+      # script's KEEP alone, which an LTO'd startup object loses (no vector table, no boot), as
+      # scripts/wio/vector_table_check.rb checks. WIO_LTO=0 turns it off.
+      t.flags << '-flto' if wio_lto
       # Free: drops the per-object GCC-version comment string.
       t.flags << '-fno-ident'
       # More aggressive than the default -fmerge-constants: deduplicates
@@ -1178,6 +1161,7 @@ if wio
       t.defines.delete('MRB_DEBUG')
     end
     conf.linker.flags += cpu_flags
+    conf.linker.flags << '-flto' if wio_lto
 
     # Own HAL for mruby-io (see its own file comment): this board's bare
     # newlib is close enough to POSIX for plain file I/O (open/read/write/
@@ -1501,6 +1485,7 @@ if psp
       t.defines << 'STBI_NO_STDIO'
     end
     conf.linker.flags += cpu_flags
+    conf.linker.flags << '-flto' if wio_lto
 
     # Only the table rows go: app/psp links without --gc-sections, so a left-out entry's C function stays.
     bc2cpp_core_mt_exclude(conf, verify: false, interpreted: true) unless ENV['RPGMAKER_BC2CPP']
