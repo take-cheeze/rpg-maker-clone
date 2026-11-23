@@ -552,7 +552,7 @@ end
 check 'legacy wrapped foreground frames still load' do
   db = rich_party_db
   st = rich_state(db)
-  frame = { commands: [LCF::EventCommand.new(11410, 0, '', [1])], current_command: 1, event_id: 5 }
+  frame = Game::Interpreter::Frame.new([LCF::EventCommand.new(11410, 0, '', [1])], 1, 5, false)
   st.foreground_event_exec = { frames: [frame] }
   save = st.to_lsd(nil, nil, 1, db)
   wrapper = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_LEGACY_FOREGROUND_EVENT })
@@ -561,7 +561,7 @@ check 'legacy wrapped foreground frames still load' do
   save[:lsd_ext] = [0, 1, 1]
   loaded = Game::State.from_lsd(db, save)
   eq 5, loaded.foreground_event_exec[:event_id]
-  eq 1, loaded.foreground_event_exec[:frames][0][:current_command]
+  eq 1, loaded.foreground_event_exec[:frames][0].current_command
 end
 
 check 'cursor-only common progress requires a database command list' do

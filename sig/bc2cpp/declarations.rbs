@@ -5304,7 +5304,6 @@ class Game::State
   def to_lsd: (?untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
   def walk_step: () -> untyped
   def self.bgm_from_chunk: (untyped) -> untyped
-  def self.build_event_exec_state: (untyped) -> untyped
   def self.from_lsd: (untyped, untyped) -> untyped
   def self.ole_now: () -> untyped
   def self.put_fields: (untyped, untyped) -> untyped
@@ -6291,6 +6290,14 @@ class RPG2k::Scene::Battle::Ui
   def target_win=: (untyped) -> untyped
   def initialize: () -> untyped
   def start: (untyped, untyped, untyped, untyped, untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::Interpreter::Frame
+  def commands: () -> untyped
+  def current_command: () -> untyped
+  def event_id: () -> untyped
+  def triggered_by_decision_key: () -> untyped
+  def initialize: (untyped, untyped, untyped, untyped) -> untyped
 end
 
 # ---- block_types.rbs
@@ -7920,6 +7927,18 @@ module RPG2k
     class DebugMenu
       # The variable editor: the literal in #open_editor and `= nil`; :digits is #digits_of's `Array.new(n, 0)`.
       @editor: { id: untyped, negative: untyped, digits: Array, cursor: untyped }?
+    end
+  end
+end
+
+# Game::Interpreter::Frame: the writers are #initialize's stores; every construction (Interpreter#call_stack_snapshot,
+# State#to_lsd's common-event cursor, State.read_event_exec_frames) passes an Integer cursor and event id (an
+# `|| 0`-defaulted ivar, a schema :int field or a #common_event_progress entry).
+module Game
+  class Interpreter
+    class Frame
+      @current_command: Integer
+      @event_id: Integer
     end
   end
 end
@@ -10316,6 +10335,10 @@ class Game::Party
 end
 class Game::EnemyAi
   def skill_helps_troop?: (untyped, untyped, Array[Game::Battle::Combatant]) -> bool
+end
+class Game::State
+  # #to_lsd passes the same frame Arrays, or its own `[Interpreter::Frame.new(...)]` for a cursor-only common event.
+  def self.build_event_exec_state: (Array[Game::Interpreter::Frame]) -> untyped
 end
 class Game::TextReveal
   # Game::Message.scan and Scene::Map#message_page_layout build both lists from PauseMarker / SpeedMarker.new only.
