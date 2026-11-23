@@ -110,7 +110,9 @@ shape = lambda do |kind|
   when :float then /\A(?:mrb_float_value|rgss::num_value)\s*\(/
   when String
     mod, klass = kind.split('::')
-    /\Amrb_obj_new\(\s*M,\s*mrb_class_get_under\(\s*M,\s*mrb_module_get\(\s*M,\s*"#{mod}"\s*\),\s*"#{klass}"\s*\),/
+    by_name = /mrb_class_get_under\(\s*M,\s*mrb_module_get\(\s*M,\s*"#{mod}"\s*\),\s*"#{klass}"\s*\)/
+    by_id = /mrb_class_get_under_id\(\s*M,\s*mrb_module_get_id\(\s*M,\s*MRB_SYM\(#{mod}\)\s*\),\s*MRB_SYM\(#{klass}\)\s*\)/
+    /\Amrb_obj_new\(\s*M,\s*(?:#{by_name}|#{by_id}),/
   end
 end
 
@@ -190,8 +192,8 @@ mutants = {
   'Color#red bound to another function' => [/color_red_get =\s*component_get<Color, &Color::red>/,
                                              'color_red_get = color_red_other'],
   'component_get returning nil' => ['return rgss::num_value(M, DataType<T>::get(M, self).*Field);', 'return mrb_nil_value();'],
-  'Bitmap#rect building another class' => ['mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);',
-                                           'mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);'],
+  'Bitmap#rect building another class' => [/MRB_SYM\(RGSS\)\),\s*MRB_SYM\(Rect\)\),\s*4, args\);/,
+                                           'MRB_SYM(RGSS)), MRB_SYM(Color)), 4, args);'],
   'a second Bitmap#width registration' => ['MRB_MT_ENTRY(bmp_width, MRB_SYM(width), MRB_ARGS_NONE())',
                                            'MRB_MT_ENTRY(bmp_width, MRB_SYM(width), MRB_ARGS_NONE()), ' \
                                            'MRB_MT_ENTRY(bmp_height, MRB_SYM(width), MRB_ARGS_NONE())']

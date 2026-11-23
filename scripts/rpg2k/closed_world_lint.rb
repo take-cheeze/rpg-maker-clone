@@ -33,7 +33,8 @@ COPS = {
   'Dynamic/IvarReflection' => 'instance_variable_get/set/defined?/remove_instance_variable',
   'Dynamic/MethodDefinition' => 'define_method/alias/undef/remove_method installed at runtime',
   'Dynamic/GlobalVariableReassignment' => 'a global variable may be written more than once in the closed world',
-  'Dynamic/ConstantReassignment' => 'a constant written at more than one site, in a repeatable context, or by ||=/&&=/op=',
+  'Dynamic/ConstantReassignment' => 'a constant written at more than one site, in a repeatable or conditional context, ' \
+                                    'or by ||=/&&=/op=',
   'Dynamic/Eval' => 'eval family, instance_exec/class_exec, binding, method objects',
   'Dynamic/Extend' => 'extend on an object other than self',
   'Dynamic/RescueModifier' => '`expr rescue value` turns any StandardError into control flow',
@@ -64,6 +65,7 @@ class Linter < Prism::Visitor
     @constant_writes = []
     @nesting = []
     @repeatable_write_depth = 0
+    @conditional_write_depth = 0
   end
 
   %i[block lambda while until for].each do |kind|
@@ -72,6 +74,27 @@ class Linter < Prism::Visitor
       super(node)
     ensure
       @repeatable_write_depth -= 1
+    end
+  end
+
+  # A write that may not run (bc2cpp's CONST_CONDITIONAL refuses to fold its reads): under a condition or a rescue.
+  %i[if unless case case_match and or rescue].each do |kind|
+    define_method("visit_#{kind}_node") do |node|
+      @conditional_write_depth += 1
+      super(node)
+    ensure
+      @conditional_write_depth -= 1
+    end
+  end
+
+  def visit_begin_node(node)
+    return super(node) unless node.rescue_clause
+
+    @conditional_write_depth += 1
+    begin
+      super(node)
+    ensure
+      @conditional_write_depth -= 1
     end
   end
 
@@ -127,7 +150,8 @@ class Linter < Prism::Visitor
     define_method("visit_#{kind}_node") do |node|
       name = constant_written(node)
       @constant_writes << [(@nesting + [name]).join('::'), @file, node.location.start_line,
-                           node.slice.lines.first.strip, @repeatable_write_depth.positive?]
+                           node.slice.lines.first.strip,
+                           @repeatable_write_depth.positive? || @conditional_write_depth.positive?]
       super(node)
     end
   end
@@ -245,7 +269,7 @@ def global_reassignment_offences(global_writes)
   end
 end
 
-# A constant written at two sites, or at one site that may run more than once.
+# A constant written at two sites, or at one site that may run more than once or not at all.
 def constant_reassignment_offences(constant_writes)
   constant_writes.group_by(&:first).flat_map do |_name, writes|
     conflicting = writes.size > 1 ? writes : writes.select(&:last)
