@@ -5,6 +5,8 @@
 # SP and Reset_Handler from the vector table at the application start, so an
 # image that links at a plausible size can still not boot (an LTO link once
 # dropped exception_table, which only the linker script's KEEP references).
+# Also checks that a C++ throw (every Ruby raise) can leave __cxa_throw: its
+# frame needs an .ARM.exidx entry other than EXIDX_CANTUNWIND (app/wio/eh_throw.py).
 #
 # usage: vector_table_check.rb FIRMWARE.elf [APP_START]   (APP_START default 0x4000, after the UF2 bootloader)
 
@@ -111,6 +113,28 @@ end
 unwired = overridden.reject { |s| wired.key?(s.value & ~1) }
 check.call(unwired.empty?, "#{overridden.size} overriding handlers are wired (#{overridden.map(&:name).sort.join(' ')})" +
                            unwired.map { |s| " unwired: #{s.name}" }.join)
+
+# The .ARM.exidx entry covering +addr+ (the last one starting at or below it): its second word, or nil.
+exidx = elf.sections.find { |s| s.name == '.ARM.exidx' }
+unwind_word = lambda do |addr|
+  return nil unless exidx
+
+  entries = (exidx.size / 8).times.map do |i|
+    w0 = elf.u32(exidx.offset + (i * 8))
+    w1 = elf.u32(exidx.offset + (i * 8) + 4)
+    off = w0 & 0x7fff_ffff
+    off -= 0x8000_0000 if off.anybits?(0x4000_0000)
+    [(exidx.addr + (i * 8) + off) & 0xffff_ffff, w1]
+  end
+  entries.select { |start, _| start <= addr }.max_by(&:first)&.last
+end
+%w[__cxa_throw __cxa_rethrow].each do |name|
+  sym = globals[name]
+  next unless sym
+
+  word = unwind_word.call(sym.value & ~1)
+  check.call(word && word != 1, format('%s has an unwind entry (got %s)', name, word ? format('0x%08x', word) : 'none'))
+end
 
 if failures.empty?
   puts "#{ARGV[0]}: vector table check passed"
