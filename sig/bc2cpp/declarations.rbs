@@ -8,6 +8,7 @@ class LCF::Array1D
   def delete: (untyped) -> untyped
   def field?: (untyped) -> untyped
   def key?: (untyped) -> untyped
+  def self.blank_record: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::Array2D
@@ -15,6 +16,7 @@ class LCF::Array2D
   def []=: (untyped, untyped) -> untyped
   def initialize: (untyped, untyped) -> untyped
   def same_schema?: (untyped) -> untyped
+  def self.blank_table: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::Database < LCF::File
@@ -1662,6 +1664,7 @@ class Game::Timer
   def in_battle=: (untyped) -> untyped
   def display_text: () -> untyped
   def initialize: () -> untyped
+  def restore_lsd_timer: (untyped, untyped) -> untyped
   def seconds: () -> untyped
   def set: (untyped) -> untyped
   def start: (untyped, ?untyped) -> untyped
@@ -1742,6 +1745,7 @@ class Game::Vehicle
   def charset_index=: (untyped) -> untyped
   def type: () -> untyped
   def load_movable: (untyped) -> untyped
+  def lsd_movable: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 class Game::Weather
@@ -5155,6 +5159,7 @@ class Game::Picture
   def frames_left: () -> untyped
   def green: () -> untyped
   def initialize: (untyped, ?untyped) -> untyped
+  def lsd_picture: () -> untyped
   def move_to: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def move_to_fixed: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def moving?: () -> untyped
@@ -5162,7 +5167,6 @@ class Game::Picture
   def red: () -> untyped
   def restore_legacy_lsd: (untyped, untyped, untyped) -> untyped
   def saturation: () -> untyped
-  def save_fixed: () -> untyped
   def show_x: () -> untyped
   def show_y: () -> untyped
   def shown?: () -> untyped
@@ -5292,8 +5296,10 @@ class Game::State
   def move_picture: (untyped, *untyped) -> untyped
   def move_picture_fixed: (untyped, *untyped) -> untyped
   def pictures_moving?: () -> untyped
+  def put_battle_background: (untyped, untyped, untyped) -> untyped
   def set_screen_transition: (untyped, untyped) -> untyped
   def show_picture: (untyped, untyped) -> untyped
+  def store_battle_background: (untyped, untyped, untyped) -> untyped
   def timer_display_text: () -> untyped
   def timer_frames: () -> untyped
   def timer_frames=: (untyped) -> untyped
@@ -5514,6 +5520,7 @@ class Game::Actor
   def knock_out!: () -> untyped
   def knows_skill?: (untyped) -> untyped
   def learn_skill: (untyped) -> untyped
+  def lsd_actor: () -> untyped
   def max_level: () -> untyped
   def permanent_states: () -> untyped
   def preemptive?: () -> untyped
@@ -5523,6 +5530,7 @@ class Game::Actor
   def rename_skill?: () -> untyped
   def restore_base: (untyped) -> untyped
   def restore_class: (untyped) -> untyped
+  def restore_lsd_actor: (untyped) -> untyped
   def set_battle_combo: (untyped, untyped) -> untyped
   def set_exp: (untyped) -> untyped
   def set_faceset: (untyped, untyped) -> untyped

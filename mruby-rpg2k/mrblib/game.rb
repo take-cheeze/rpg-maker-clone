@@ -8915,14 +8915,6 @@ module Game
       finish_move if @frames == 0
     end
 
-    # The fixed-point state a save writes from, read directly (no pixel truncation).
-    def save_fixed
-      { x: @x, y: @y, show_x: @show_x, show_y: @show_y, zoom: @zoom, opacity: @opacity,
-        red: @red, green: @green, blue: @blue, saturation: @saturation,
-        tx: @tx, ty: @ty, tzoom: @tzoom, topacity: @topacity,
-        tred: @tred, tgreen: @tgreen, tblue: @tblue, tsat: @tsat }
-    end
-
     def moving?; @frames > 0; end
 
     # Erase Picture (11130): turns #shown? false (so nothing draws --
