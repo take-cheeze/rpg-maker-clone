@@ -59,6 +59,11 @@ in `namespace bc2cpp_rt_<digest>`, `inline`, so the link holds one copy of each 
 each gem's text in place, so that state stays per gem. The gems of one link must compile the header with the same
 macros. The check is `ruby scripts/bc2cpp/runtime_header_check.rb`.
 
+The rest of the prelude (helpers printed per unit's use) goes the same way per group of items, to
+`bc2cpp_cs_<digest>.hxx` in `namespace bc2cpp_cs_<digest>`, when a group keeps no state, names nothing else of the
+unit and no function of it has its address taken; gems printing the same group share one copy
+(`tools/bc2cpp/cross_gem_share.rb`, `BC2CPP_CROSS_GEM_SHARE=0` turns it off).
+
 ## Grouping
 
 Methods are grouped by owner class (an owner's methods call each other most, so most direct calls stay inside one
