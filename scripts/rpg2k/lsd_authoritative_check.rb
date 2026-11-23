@@ -686,6 +686,29 @@ SCENARIOS.each do |label, build|
   end
 end
 
+# -- 6. real saves --------------------------------------------------------------
+
+# RPG2K_LSD_GAME_DIR names a game directory (RPG_RT.ldb, RPG_RT.lmt, Save*.lsd): every save loads, and from its
+# re-save on, loading and saving again gives the same bytes and the same state. (The first re-save is not that fixed
+# point for the state: it writes the database's vehicle graphics, which the reload then takes as the vehicles' own.)
+if (game_dir = ENV['RPG2K_LSD_GAME_DIR'])
+  real_db = LCF::Database.new(File.open(File.join(game_dir, 'RPG_RT.ldb'), 'rb'))
+  real_tree = LCF::MapTree.new(File.open(File.join(game_dir, 'RPG_RT.lmt'), 'rb'))
+  real_saves = Dir[File.join(game_dir, 'Save*.lsd')].sort
+  check("#{game_dir} has saves") { ok !real_saves.empty?, 'no Save*.lsd' }
+  resave = ->(st) { st.to_lsd(st.save_count, 44_000.5, 2, real_db, real_tree).to_lcf }
+  load_bytes = ->(bytes) { Game::State.from_lsd(real_db, LCF::SaveData.new(StringIO.new(bytes))) }
+  real_saves.each do |path|
+    check "a real save re-saves stably: #{File.basename(path)}" do
+      bytes = resave.call(load_bytes.call(File.binread(path)))
+      again = load_bytes.call(bytes)
+      again_bytes = resave.call(again)
+      eq bytes, again_bytes
+      eq native_snapshot(again), native_snapshot(load_bytes.call(again_bytes)), 'state after a reload'
+    end
+  end
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
