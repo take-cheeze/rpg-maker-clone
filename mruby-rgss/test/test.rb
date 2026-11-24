@@ -2384,6 +2384,8 @@ def rom_section(entries)
 end
 
 assert "RGSS::Bitmap reads a ROM bitmap in place, as its file would decode" do
+  # A native-only path: the CRuby shim (scripts/rgss/cruby_compat.rb) has no ROM.
+  next true unless RGSS::Bitmap.respond_to?(:_rom_bitmaps)
   file = "test-palette-rom.png"
   File.open(file, "wb") { |io| io.write(PAL_PNG_4X2) }
   # PAL_PNG_4X2 as its decode keeps it: tRNS gives an alpha channel either way.
