@@ -13,17 +13,6 @@ class LCF::Array1D
   def self.blank_record: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
-class LCF::Array2D
-  def []: (untyped) -> untyped
-  def []=: (untyped, untyped) -> untyped
-  def index_rows: (untyped, untyped) -> untyped
-  def initialize: (untyped, untyped, ?untyped) -> untyped
-  def load_lazy: () -> untyped
-  def row_bytes: (untyped) -> untyped
-  def same_schema?: (untyped) -> untyped
-  def self.blank_table: (untyped) -> untyped
-end
-# bc2cpp-native: base_lcf
 class LCF::Database < LCF::File
   def lazy_io: (untyped) -> untyped
   def maker: () -> untyped
@@ -1095,11 +1084,6 @@ module Game::ChipsetLayout
   def self.anim_ab: (untyped, untyped, untyped) -> untyped
   def self.anim_c: (untyped) -> untyped
   def self.quads_from_quarters: (untyped) -> untyped
-end
-# bc2cpp-native: base_rpg2k
-module Game::CommonEvent
-  def self.eligible: (untyped, untyped) -> untyped
-  def self.load: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 class Game::Enemy
@@ -5083,26 +5067,6 @@ class NoMethodError < NameError
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_rpg
-class Game::CommonEvent::CommonEventRecord
-  def id: () -> untyped
-  def id=: (untyped) -> untyped
-  def trigger: () -> untyped
-  def trigger=: (untyped) -> untyped
-  def need_flag: () -> untyped
-  def need_flag=: (untyped) -> untyped
-  def switch_id: () -> untyped
-  def switch_id=: (untyped) -> untyped
-  def lcf_chunk: () -> untyped
-  def lcf_chunk=: (untyped) -> untyped
-  def commands: () -> untyped
-  def commands=: (untyped) -> untyped
-  def guarded: () -> untyped
-  def guarded=: (untyped) -> untyped
-  def initialize: () -> untyped
-end
-
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_onig-regexp
 class OnigRegexp
   def source: () -> untyped
@@ -6333,6 +6297,47 @@ class RPG2k::Scene::Map::Parallel
   def wait_timer: () -> untyped
   def wait_timer=: (untyped) -> untyped
   def initialize: (untyped, untyped, untyped, untyped, untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_lcf
+class LCF::Array2D
+  def []: (untyped) -> untyped
+  def []=: (untyped, untyped) -> untyped
+  def each_peek: () -> untyped
+  def index_rows: (untyped, untyped) -> untyped
+  def initialize: (untyped, untyped, ?untyped) -> untyped
+  def load_lazy: () -> untyped
+  def peek: (untyped) -> untyped
+  def row_bytes: (untyped) -> untyped
+  def same_schema?: (untyped) -> untyped
+  def self.blank_table: (untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+module Game::CommonEvent
+  def self.eager?: () -> untyped
+  def self.eager_load: (untyped) -> untyped
+  def self.eligible: (untyped, untyped) -> untyped
+  def self.load: (untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::CommonEvent::CommonEventRecord
+  def id: () -> untyped
+  def id=: (untyped) -> untyped
+  def trigger: () -> untyped
+  def trigger=: (untyped) -> untyped
+  def need_flag: () -> untyped
+  def need_flag=: (untyped) -> untyped
+  def switch_id: () -> untyped
+  def switch_id=: (untyped) -> untyped
+  def lcf_chunk: () -> untyped
+  def lcf_chunk=: (untyped) -> untyped
+  def guarded: () -> untyped
+  def guarded=: (untyped) -> untyped
+  def commands: () -> untyped
+  def commands=: (untyped) -> untyped
+  def initialize: () -> untyped
+  def lazy_in: (untyped) -> untyped
 end
 
 # ---- block_types.rbs
