@@ -2213,6 +2213,64 @@ assert "RGSS::Bitmap reads a palette PNG's colours and tRNS" do
   end
 end
 
+# Bitmap#_defer keeps the draws instead of pixels (DEFERRED_BITMAP,
+# mruby-rgss/src/lib.cxx): what they compose to must be what the same draws
+# made at once give, including after their sources change.
+assert "RGSS::Bitmap#_defer composes to the immediate draws" do
+  path = "test-palette-defer.png"
+  File.open(path, "wb") { |io| io.write(PAL_PNG_4X2) }
+  begin
+    pal = RGSS::Bitmap.new(path, true)
+    blank = RGSS::Bitmap.new(3, 3)
+    blank.fill_rect(0, 0, 3, 3, RGSS::Color.new(90, 80, 70, 160))
+    grid_ref = RGSS::Bitmap.new(4, 4)
+    grid_def = RGSS::Bitmap.new(4, 4)
+    grid_def._defer
+    [grid_ref, grid_def].each do |g|
+      g.blt(0, 0, pal, RGSS::Rect.new(0, 0, 4, 2))
+      g.fill_rect(0, 2, 4, 2, RGSS::Color.new(30, 40, 50, 128))
+    end
+    ref = RGSS::Bitmap.new(8, 6)
+    lay = RGSS::Bitmap.new(8, 6)
+    lay._defer
+    [[ref, grid_ref], [lay, grid_def]].each do |b, grid|
+      b.fill_rect(1, 1, 5, 3, RGSS::Color.new(5, 6, 7, 255))
+      b.blt(0, 0, pal, RGSS::Rect.new(0, 0, 4, 2))
+      b.blt(2, 1, pal, RGSS::Rect.new(1, 0, 3, 2), 100)
+      b.blt_quads(1, 2, pal, [[0, 0, 0, 0, 2, 2], [2, 0, 2, 0, 2, 2]])
+      # Full-opacity draws over one another, opaque or not, as a map's
+      # animated tiles are.
+      12.times { |i| b.blt_quads(0, 3, pal, [[0, 0, i % 4, 0, 1, 2]]) }
+      b.blt(-1, 3, blank, RGSS::Rect.new(0, 0, 3, 3))
+      b.copy_blt(5, 0, grid, RGSS::Rect.new(0, 1, 3, 3))
+    end
+    # Sources that change afterwards: the deferred draws keep what they read.
+    blank.fill_rect(0, 0, 3, 3, RGSS::Color.new(1, 2, 3, 255))
+    grid_def.clear
+    grid_ref.clear
+    assert_equal pixels_of(ref), pixels_of(lay)
+
+    # Drawn from while deferred, a bitmap gives its composed pixels.
+    src = RGSS::Bitmap.new(4, 2)
+    src._defer
+    src.blt(0, 0, pal, RGSS::Rect.new(0, 0, 4, 2))
+    out = RGSS::Bitmap.new(4, 2)
+    out.blt(0, 0, src, RGSS::Rect.new(0, 0, 4, 2))
+    assert_equal pixels_of(pal), pixels_of(out)
+    # And _defer(false) keeps what it shows as pixels.
+    src._defer(false)
+    assert_equal pixels_of(pal), pixels_of(src)
+
+    gone = RGSS::Bitmap.new(2, 2)
+    gone._defer
+    gone.fill_rect(0, 0, 2, 2, RGSS::Color.new(9, 9, 9, 255))
+    gone.clear
+    assert_equal [[0, 0, 0, 0]] * 4, pixels_of(gone)
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end
+
 assert "RGSS::Bitmap blits from a palette PNG like from a direct-colour one" do
   path = "test-palette-blt.png"
   File.open(path, "wb") { |io| io.write(PAL_PNG_4X2) }

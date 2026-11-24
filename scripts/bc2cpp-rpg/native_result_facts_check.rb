@@ -185,9 +185,9 @@ mutate = lambda do |from, to|
   mutated
 end
 mutants = {
-  'Bitmap#width returning nil' => [/return mrb_fixnum_value\(bmp_self\(M, self\)\.width\);/, 'return mrb_nil_value();'],
-  'Bitmap#width returning a Float' => [/return mrb_fixnum_value\(bmp_self\(M, self\)\.width\);/,
-                                       'return mrb_float_value(M, bmp_self(M, self).width);'],
+  'Bitmap#width returning nil' => [/return mrb_fixnum_value\(bmp_raw\(M, self\)\.width\);/, 'return mrb_nil_value();'],
+  'Bitmap#width returning a Float' => [/return mrb_fixnum_value\(bmp_raw\(M, self\)\.width\);/,
+                                       'return mrb_float_value(M, bmp_raw(M, self).width);'],
   'Rect#x delegating elsewhere' => ['return rgss::rect_x_direct(M, self);', 'return rgss::rect_y_direct(M, self);'],
   'Color#red bound to another function' => [/color_red_get =\s*component_get<Color, &Color::red>/,
                                              'color_red_get = color_red_other'],

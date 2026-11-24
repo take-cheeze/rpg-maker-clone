@@ -946,7 +946,12 @@ class RPG2k
 
         @lower_sprite = Sprite.new(@map_viewport)
         @lower_sprite.z = 0
+        # The two layers and the two tile grids below record their draws
+        # rather than holding pixels; the layers are composed a few rows at a
+        # time as the screen is drawn (Bitmap#_defer, DEFERRED_BITMAP in
+        # mruby-rgss/src/lib.cxx).
         @lower_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @lower_bmp._defer
         @lower_sprite.bitmap = @lower_bmp
 
         # The cached tile grids behind @lower_bmp / @upper_bmp: same size, but
@@ -955,7 +960,9 @@ class RPG2k
         # served by copying rather than by re-blitting the grid. Never attached
         # to a sprite -- #draw_layers copies them into the two buffers above.
         @lower_tiles = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @lower_tiles._defer
         @upper_tiles = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @upper_tiles._defer
         @tiles_built = false
 
         # The upper (above-character) chip layer lives in its own viewport
@@ -970,6 +977,7 @@ class RPG2k
         @upper_sprite = Sprite.new(@upper_viewport)
         @upper_sprite.z = 200 # sole child of @upper_viewport, so this is only for parity
         @upper_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @upper_bmp._defer
         @upper_sprite.bitmap = @upper_bmp
 
         @player_sprite = Sprite.new(@map_viewport)
@@ -11396,6 +11404,11 @@ class RPG2k
 
         rebuilt = false
         unless tile_cache_valid?(first_tx, first_ty, abf, cf)
+          # Cleared first so the layers drop the grids' old draws before the
+          # rebuild replaces them (a deferred grid is copied on write while a
+          # layer still refers to it).
+          @lower_bmp.clear
+          @upper_bmp.clear
           rebuild_tile_cache(first_tx, first_ty, abf, cf)
           rebuilt = true
         end

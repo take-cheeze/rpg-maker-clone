@@ -70,6 +70,7 @@ module RGSS
       end
     end
     def clear; end
+    def _defer(_on = true); self; end
     def fill_rect(*a); (@fill_calls ||= []) << a; end
     attr_reader :fill_calls
     # Recorded so the bush-depth checks can assert *how* a character frame was
