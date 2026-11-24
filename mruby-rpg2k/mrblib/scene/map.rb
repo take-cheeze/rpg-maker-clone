@@ -11711,6 +11711,7 @@ class RPG2k
             end
           end
         end
+        cells
       end
 
       # Draw every event's graphic into the tile buffers, layered so it composits
