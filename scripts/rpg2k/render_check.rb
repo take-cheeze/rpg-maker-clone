@@ -141,7 +141,7 @@ check 'water autotiles assemble four in-bounds 8x8 quarters' do
   # Sweep every water set / border / corner combination.
   (0..2).each do |set|
     (0...16).each do |b|
-      (0...L::BLOCK_A_SUBTILES.size).each do |a|
+      (0...L::BLOCK_A_COUNT).each do |a|
         id = set * 1000 + b * 50 + a
         next if id.zero?
         (0..2).each do |anim|
