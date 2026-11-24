@@ -13,6 +13,8 @@
 //   census=0|1      count live objects at each phase (a full GC each time)
 //   every=N         also a census line every N frames (0: none)
 //   eager_db=0|1    read RPG_RT.ldb whole (LCF_EAGER_DATABASE, LAZY_CHUNKS off)
+//   eager_ce=0|1    common events as before LAZY_COMMON_EVENTS
+//                   (RPG2K_EAGER_COMMON_EVENTS)
 // The constants are the ones scripts/bc2cpp/trace_host.cxx sets, so a run
 // here and a host run of the same config play the same frames.
 //
@@ -47,6 +49,9 @@
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display);
+extern "C" bool rgss_set_rom_bitmaps(const void* section,
+                                     size_t size,
+                                     const char* root);
 extern "C" char __end__;
 extern "C" char __StackTop;
 extern "C" void* _sbrk(ptrdiff_t);
@@ -347,6 +352,10 @@ void setup(void) {
   probe("init");
 
   rgss_set_display(g_mrb, disp);
+  // scripts/wio/game_rom.rb's decoded images, read in place (ROM_BITMAP).
+  size_t bitmaps_len = 0;
+  if (const void* bitmaps = wio_game_rom_file("/rgss/bitmaps", &bitmaps_len))
+    rgss_set_rom_bitmaps(bitmaps, bitmaps_len, "/rom");
   set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, "/rom"));
   set_const("RTP_DIR", mrb_str_new_cstr(g_mrb, ""));
   set_const("TEST_PLAY", mrb_false_value());
@@ -361,6 +370,8 @@ void setup(void) {
             mrb_bool_value(config_long("battle_play", 0) != 0));
   if (config_long("eager_db", 0) != 0)
     set_const("LCF_EAGER_DATABASE", mrb_true_value());
+  if (config_long("eager_ce", 0) != 0)
+    set_const("RPG2K_EAGER_COMMON_EVENTS", mrb_true_value());
 
   mrb_value args = mrb_ary_new(g_mrb);
   g_game = bc2cpp_entry_RPG2k_new(g_mrb, 1, &args);
