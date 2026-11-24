@@ -486,6 +486,7 @@ Dir.mktmpdir('lcf-schema-rom') do |dir|
     'LCF::Array1D#[]=' => nil, 'LCF::Array1D#field?' => nil, 'LCF::Array1D#sym2idx' => nil,
     'LCF::Array2D#initialize' => nil, 'LCF::Array2D#[]' => nil, 'LCF::Array2D#[]=' => nil,
     'LCF::Array2D#peek' => nil, 'LCF::Array2D#same_schema?' => nil, 'LCF::Array1D.blank_record' => nil, 'LCF::Array2D.blank_table' => nil,
+    'LCF::Array2D.lazy_section' => nil,
     'LCF::File#initialize' => nil, 'LCF::File#schema' => nil, 'LCF::File#build_root' => nil, 'LCF::File#to_lcf' => nil,
     'LCF::Database#schema' => nil, 'LCF::MapTree#schema' => nil, 'LCF::MapUnit#schema' => nil,
     'LCF::SaveData#schema' => nil, 'LCF::SaveTyped::Record#save_put' => nil, 'LCF::SaveTyped::Record#check!' => nil
@@ -590,7 +591,7 @@ end
 suite.finish!
 
 # READER PINS
-# LCF.read_section a7c941a76944cf97
+# LCF.read_section 370a45e73090ffd6
 # LCF.to_rb 5f3f225846b27d15
 # LCF.int16_format 99da2f9273aac7ef
 # LCF.sget f352029d7ab23e37
@@ -609,7 +610,8 @@ suite.finish!
 # LCF::Array2D#same_schema? 46dfcbb99268bcd5
 # LCF::Array1D.blank_record 67a22e0df0d5c2c1
 # LCF::Array2D.blank_table b85106192df023c6
-# LCF::File#initialize 6c1546237906faad
+# LCF::Array2D.lazy_section 6c2733a3ebac90bf
+# LCF::File#initialize 039a091fbcb7f542
 # LCF::File#schema 417816763ff50949
 # LCF::File#build_root 427cef6960ffe7fe
 # LCF::File#to_lcf c01e042875ee2a2c

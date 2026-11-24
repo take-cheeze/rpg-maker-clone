@@ -29,7 +29,7 @@ module LCF
         i = 0
         while i < schema.size
           s = schema[i]
-          sections.add LCF.sget(s, :name), LCF.read_section(io, s)
+          sections.add LCF.sget(s, :name), LCF.read_section(io, s, lazy_io(io))
           i += 1
         end
         @root = sections
@@ -128,6 +128,20 @@ module LCF
   class MapTree < File
     def header; "LcfMapTree" end
     def schema; LCF::Schema::MAP_TREE end
+
+    # LAZY_MAP_TREE: the map properties rows stay in the file until a scene
+    # reads one. Sound because a multi-section file is never written (#to_lcf)
+    # and this object is the one reader of its open file. A host defines
+    # LCF_EAGER_MAP_TREE true to read them whole.
+    def lazy_io(io)
+      io.is_a?(::File) && !LCF::MapTree.eager? ? io : nil
+    end
+
+    def self.eager?
+      LCF_EAGER_MAP_TREE ? true : false
+    rescue NameError
+      false
+    end
   end
 
   class MapUnit < File
