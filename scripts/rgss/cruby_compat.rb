@@ -997,8 +997,8 @@ module RGSS
     # The native one records later draws instead of keeping pixels
     # (DEFERRED_BITMAP); what they compose to is the same, so the stand-in
     # only clears.
-    def _defer
-      clear
+    def _defer(on = true)
+      on ? clear : self
     end
 
     def fill_rect(*args)

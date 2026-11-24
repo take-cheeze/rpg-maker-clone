@@ -2257,6 +2257,9 @@ assert "RGSS::Bitmap#_defer composes to the immediate draws" do
     out = RGSS::Bitmap.new(4, 2)
     out.blt(0, 0, src, RGSS::Rect.new(0, 0, 4, 2))
     assert_equal pixels_of(pal), pixels_of(out)
+    # And _defer(false) keeps what it shows as pixels.
+    src._defer(false)
+    assert_equal pixels_of(pal), pixels_of(src)
 
     gone = RGSS::Bitmap.new(2, 2)
     gone._defer
