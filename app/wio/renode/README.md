@@ -265,3 +265,24 @@ obvious and cost real iteration time to find:
   channel's poll only ever re-reads its own single address in a tight loop
   (write `CHEN`, re-read the same offset), so there is no cross-register
   correlation to break.
+
+## Playing a game: `wio_renode_game`
+
+`scripts/wio/renode_game.bash ELF GAME_DIR` packs the game into an image that
+`game_rom.repl` maps at the QSPI flash window (0x04000000, up to 16 MB), boots
+the `wio_renode_game` firmware on the 192 KB board (`--board big` with the
+`wio_renode_game_big` ELF: 16 MB) and plays the frames `--config` asks for
+(`app/wio/src/wio_renode_game_main.cxx` lists the keys). It prints the game's
+stderr and one `P <phase>` line per phase (heap extent, bytes in use, stack
+depth, and a live-object census), and exits non-zero unless the run finished
+and every `--expect` regex matched. The firmware has no LCD output (no DMA
+model) and no audio. On the 192 KB board a game does not reach its title
+screen yet: the title graphic alone is a 300 KB 32-bit bitmap.
+
+```sh
+pio run -e wio_renode_game
+scripts/wio/renode_game.bash .pio/build/wio_renode_game/firmware.elf \
+  data/Nepheshel206beta/Nepheshel206Rbeta \
+  --font build-wio/wio/mrbgems/mruby-rgss/gothic.bin \
+  --config 'frames=300;every=50' --expect 'RPG2k-MAP'
+```
