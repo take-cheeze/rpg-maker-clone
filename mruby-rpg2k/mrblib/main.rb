@@ -760,12 +760,13 @@ class RPG2k
   # Pop the top scene (e.g. closing the menu), disposing it, then #resume the
   # scene that becomes active again -- the counterpart to #push's #suspend
   # call. The base scene is never popped so the loop always has something to
-  # update.
+  # update. Returns nil: callers end `#close` with it, and those are declared `-> nil`.
   def pop
     return if @scenes.size <= 1
     scene = @scenes.pop
     scene.dispose if scene.respond_to?(:dispose)
     @scenes.last.resume if @scenes.last.respond_to?(:resume)
+    nil
   end
 
   # Pop every scene down to (and stopping at) the base `Scene::Map`, disposing
