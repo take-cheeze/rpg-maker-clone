@@ -6922,7 +6922,7 @@ class Game::Interpreter
   %a{bc2cpp:hint}
   def apply: (Integer, Integer, Integer) -> Integer
   %a{bc2cpp:hint}
-  def call_stack_snapshot: () -> (Array | nil)
+  def call_stack_snapshot: (?untyped) -> (Array | nil)
   %a{bc2cpp:hint}
   def character_ref: (Integer) -> Integer
   %a{bc2cpp:hint}
