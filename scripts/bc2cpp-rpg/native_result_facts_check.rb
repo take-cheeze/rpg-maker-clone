@@ -676,8 +676,10 @@ if ENV['MRBC']
     end
   RUBY
   label = body_of_impl.call(rebound, 'NrBox_label_width')
+  # COLD_COMPACT_TAIL (bc2cpp cold_compact.rb): the slow path may sit in the helper the sum's tail calls.
+  tails = label.scan(/bc2cpp_compact_\h{16}/).map { |h| rebound[/^static[^\n]* #{h}\(.*?^\}$/m].to_s }
   check.call('a rebound Rect constant voids the class fact: the sum keeps its slow path',
-             label.include?('bc2cpp_slow_add') && !label.include?('NATIVE_EXACT_DIRECT :width -> RGSS::Rect'))
+             [label, *tails].any? { |t| t.include?('bc2cpp_slow_add') } && !label.include?('NATIVE_EXACT_DIRECT :width -> RGSS::Rect'))
 
   extended = generate.call(WORLD + "\nObject.new.extend(Comparable)\n", 'nr_extend')
   half = body_of_impl.call(extended, 'NrBox_half')
