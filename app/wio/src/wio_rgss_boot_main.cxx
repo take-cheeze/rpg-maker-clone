@@ -19,6 +19,8 @@
 #include <lvgl.h>
 
 #include <mruby.h>
+#include <mruby/error.h>
+#include <mruby/string.h>
 #include <mruby/variable.h>
 
 #include <cstdio>
@@ -42,11 +44,64 @@ constexpr uint32_t kResultFailRpg2kGem = 0xBAD20003;
 // one of the kResultFail* codes above.
 char g_exc_class[64] = {0};
 
-void record_exc(mrb_state* mrb) {
+// RUBY_ENTRY: a Ruby raise is a C++ throw (MRB_USE_CXX_EXCEPTION), and the
+// Arduino core, LVGL and this file have no handler for it, so one that left
+// libmruby here would end in std::terminate. Every call into mruby from
+// setup() runs as an mrb_protect_error body; build_src_flags gives this file
+// unwind tables so the throw can pass through the bodies to that catch.
+struct ExcReport {
+  RObject* exc;
+  const char* step;
+};
+
+mrb_value report_exc(mrb_state* mrb, void* data) {
+  const ExcReport& r = *static_cast<const ExcReport*>(data);
+  const mrb_value e = mrb_obj_value(r.exc);
+  std::strncpy(g_exc_class, mrb_obj_classname(mrb, e), sizeof(g_exc_class) - 1);
+  RBasic* mesg = mrb_exc_ptr(e)->mesg;
+  int len = 0;
+  const char* text = "";
+  if (mesg && mesg->tt == MRB_TT_STRING) {
+    const mrb_value m = mrb_obj_value(mesg);
+    len = static_cast<int>(RSTRING_LEN(m));
+    text = RSTRING_PTR(m);
+  }
+  std::fprintf(stderr, "[RGSS] %s raised %s: %.*s\n", r.step, g_exc_class, len,
+               text);
+  return mrb_nil_value();
+}
+
+// Records and logs the exception a boot step left in mrb->exc. Naming it can
+// itself raise (an allocation), so that is protected too.
+void record_exc(mrb_state* mrb, const char* step) {
   if (!mrb->exc)
     return;
-  const char* name = mrb_obj_classname(mrb, mrb_obj_value(mrb->exc));
-  std::strncpy(g_exc_class, name, sizeof(g_exc_class) - 1);
+  ExcReport r = {mrb->exc, step};
+  mrb_protect_error(mrb, report_exc, &r, nullptr);
+}
+
+// Runs one boot step; a raise out of it is left in mrb->exc, as
+// mrb_open_core leaves its own.
+void run_step(mrb_state* mrb, mrb_protect_error_func* body) {
+  mrb_bool failed = FALSE;
+  const mrb_value exc = mrb_protect_error(mrb, body, nullptr, &failed);
+  if (failed)
+    mrb->exc = mrb_obj_ptr(exc);
+}
+
+mrb_value init_shared_gems(mrb_state* mrb, void*) {
+  rpg_maker_init_shared_gems(mrb);
+  return mrb_nil_value();
+}
+
+mrb_value init_rpg2k_gem(mrb_state* mrb, void*) {
+  rpg_maker_init_rpg2k_gem(mrb);
+  return mrb_nil_value();
+}
+
+mrb_value full_gc(mrb_state* mrb, void*) {
+  mrb_full_gc(mrb);
+  return mrb_nil_value();
 }
 
 lv_obj_t* g_status_label = nullptr;
@@ -106,23 +161,25 @@ void setup(void) {
   wio_input_init();
 
   mrb_state* M = mrb_open_core();
-  if (!M) {
+  if (!M || M->exc) {
+    if (M)
+      record_exc(M, "mrb_open_core");
     g_result = kResultFailMrbOpenCore;
     build_ui("mrb_open_core failed");
     return;
   }
 
-  rpg_maker_init_shared_gems(M);
+  run_step(M, init_shared_gems);
   if (M->exc) {
-    record_exc(M);
+    record_exc(M, "rpg_maker_init_shared_gems");
     g_result = kResultFailSharedGems;
     build_ui(g_exc_class);
     return;
   }
 
-  rpg_maker_init_rpg2k_gem(M);
+  run_step(M, init_rpg2k_gem);
   if (M->exc) {
-    record_exc(M);
+    record_exc(M, "rpg_maker_init_rpg2k_gem");
     g_result = kResultFailRpg2kGem;
     build_ui(g_exc_class);
     return;
@@ -140,7 +197,8 @@ void setup(void) {
   // reclaims it up front instead -- cheap (a one-time boot cost, not a
   // per-frame one) and returned to the same newlib heap
   // LVGL's own allocations now draw from too.
-  mrb_full_gc(M);
+  run_step(M, full_gc);
+  record_exc(M, "mrb_full_gc");
 
   g_result = kResultPass;
   build_ui("mruby+RGSS+LVGL: OK");

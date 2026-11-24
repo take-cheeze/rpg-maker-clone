@@ -21,6 +21,7 @@
 # Exits non-zero if any file fails to parse or an invariant is violated.
 
 require 'stringio'
+require 'tmpdir'
 
 module LCF
   # uni-algo stand-in: transcode Shift_JIS (Windows-31J) to UTF-8, degrading
@@ -140,13 +141,40 @@ class Checker
     end
   end
 
+  # LAZY_CHUNKS: a file-backed Database leaves its large chunks in the file. After
+  # the walk above has decoded every row, it must write the file back byte for
+  # byte, read the same rows as a database read whole, and survive #save_to
+  # over its own file.
+  def check_lazy(db, ldb)
+    bytes = File.binread(ldb)
+    Object.const_set(:LCF_EAGER_DATABASE, true)
+    eager = LCF::Database.new(File.open(ldb, 'rb'))
+    Object.send(:remove_const, :LCF_EAGER_DATABASE)
+    fail 'ldb: lazy to_lcf not byte-exact' if db.to_lcf != bytes
+    LCF.elements_of(LCF::Schema::DATABASE).each do |idx, e|
+      next unless e[:type] == :Array2D
+
+      rows = ->(t) { t ? t.map { |id, r| [id, r.to_lcf] } : [] }
+      fail "ldb.#{e[:name]}: lazy rows differ from a whole read" if rows.(db[idx]) != rows.(eager[idx])
+    end
+    Dir.mktmpdir do |tmp|
+      copy = File.join(tmp, 'RPG_RT.ldb')
+      File.binwrite(copy, bytes)
+      saved = LCF::Database.new(File.open(copy, 'rb'))
+      saved.save_to(copy)
+      fail 'ldb: save_to over its own lazy file not byte-exact' if File.binread(copy) != bytes
+    end
+  end
+
   def check_game(dir)
     puts "== #{dir} =="
 
-    db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+    ldb = File.join(dir, 'RPG_RT.ldb')
+    db = LCF::Database.new(File.open(ldb, 'rb'))
     walk(db, LCF::Schema::DATABASE, 'ldb')
     check_maker(db)
     check_battlecommands(db)
+    check_lazy(db, ldb)
 
     lmt = LCF::MapTree.new(File.open(File.join(dir, 'RPG_RT.lmt'), 'rb'))
     fail 'map tree has no start map' if lmt[:initial][:initial_map_id].to_i <= 0

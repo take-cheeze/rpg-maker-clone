@@ -5,22 +5,29 @@ class LCF::Array1D
   def schema: () -> untyped
   def []: (untyped) -> untyped
   def []=: (untyped, untyped) -> untyped
+  def chunk_bytes: (untyped) -> untyped
   def delete: (untyped) -> untyped
   def field?: (untyped) -> untyped
   def key?: (untyped) -> untyped
+  def load_lazy: () -> untyped
   def self.blank_record: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::Array2D
   def []: (untyped) -> untyped
   def []=: (untyped, untyped) -> untyped
-  def initialize: (untyped, untyped) -> untyped
+  def index_rows: (untyped, untyped) -> untyped
+  def initialize: (untyped, untyped, ?untyped) -> untyped
+  def load_lazy: () -> untyped
+  def row_bytes: (untyped) -> untyped
   def same_schema?: (untyped) -> untyped
   def self.blank_table: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::Database < LCF::File
+  def lazy_io: (untyped) -> untyped
   def maker: () -> untyped
+  def self.eager?: () -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::EventCommand
@@ -37,6 +44,7 @@ class LCF::File
   def delete: (untyped) -> untyped
   def header: () -> untyped
   def initialize: (?untyped) -> untyped
+  def lazy_io: (untyped) -> untyped
   def schema: () -> untyped
 end
 # bc2cpp-native: base_lcf
@@ -7634,7 +7642,8 @@ class Game::Troop
   def drops: (untyped) -> Array
 end
 class LCF::Array1D
-  def initialize: (untyped, Hash | Integer) -> untyped
+  # The third argument is the open file of a lazy record (LAZY_CHUNKS, LCF::File#lazy_io).
+  def initialize: (untyped, Hash | Integer, ?File?) -> untyped
   def sym2idx: () -> untyped
   def to_lcf: () -> untyped
   %a{bc2cpp:hint}
@@ -8155,7 +8164,8 @@ end
 module LCF
   class Array2D
     # A schema is a Hash or, with the ROM schema (mruby-lcf/gen_schema_rom.rb), a node's Integer handle.
-    def initialize: ((String | File | StringIO) s, (Hash | Integer) schema) -> untyped
+    # +at+: the file offset of a lazy table chunk (LAZY_CHUNKS), with +s+ its open file.
+    def initialize: ((String | File | StringIO) s, (Hash | Integer) schema, ?Integer? at) -> untyped
     # The body stores nil, bytes or an Array1D (lcf.rb `[]=`), so the entry is declared as that union.
     def []=: (Integer idx, (LCF::Array1D | String | nil) entry) -> (LCF::Array1D | String | nil)
     def same_schema?: (Hash | Integer) -> bool
