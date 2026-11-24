@@ -672,6 +672,7 @@ end
 
 # bc2cpp-native: base_rgss
 class RGSS::Bitmap
+  def _defer: (?untyped) -> self
   def _init_file: (String, ?untyped) -> self?
   def _init_memory: (String, ?untyped) -> self?
   def _init_size: (Numeric, Numeric) -> self

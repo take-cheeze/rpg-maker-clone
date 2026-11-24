@@ -3448,10 +3448,18 @@ bool deferred_stretch(Bitmap& dst,
   return deferred_push(dst, o, false);
 }
 
-// Bitmap#_defer: drop the pixels and record later draws (see DEFERRED_BITMAP).
+// Bitmap#_defer(on = true): drop the pixels and record later draws (see
+// DEFERRED_BITMAP); _defer(false) turns a deferred bitmap back into the pixels
+// it shows.
 mrb_value bmp_defer(mrb_state* M, V self) {
+  mrb_bool on = true;
+  mrb_get_args(M, "|b", &on);
   Bitmap& b = bmp_raw(M, self);
-  b.wants_defer = true;
+  b.wants_defer = on;
+  if (!on) {
+    settle_for_access(b);
+    return self;
+  }
   if (!deferred_begin(b)) {
     promote_to_direct(b, /* keep = */ false);
     std::fill(b.buffer.begin(), b.buffer.end(), 0);
@@ -10279,7 +10287,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(bmp_blt, MRB_SYM(blt), MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1))  //
       MRB_MT_ENTRY(bmp_blt_quads, MRB_SYM(blt_quads), MRB_ARGS_REQ(4))        //
       MRB_MT_ENTRY(bmp_copy_blt, MRB_SYM(copy_blt), MRB_ARGS_REQ(4))          //
-      MRB_MT_ENTRY(bmp_defer, MRB_SYM(_defer), MRB_ARGS_NONE())               //
+      MRB_MT_ENTRY(bmp_defer, MRB_SYM(_defer), MRB_ARGS_OPT(1))               //
       MRB_MT_ENTRY(bmp_tone_blt, MRB_SYM(tone_blt), MRB_ARGS_REQ(2))          //
       MRB_MT_ENTRY(bmp_stretch_blt, MRB_SYM(stretch_blt),
                    MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1))                     //
