@@ -3,12 +3,12 @@
 # file only while its digest is listed. Re-check the claims before changing a digest;
 # scripts/bc2cpp/audit_pins_check.rb fails on a stale one.
 ivar_scopes:
-  mruby-rgss/src/lib.cxx: 6b7cdaf97feca284ab958a6515ce354fd9e3acdc86501d5fac389505b1d10c18
+  mruby-rgss/src/lib.cxx: e4bc5f73d5ad12a8356b151ce298b2142b865b4f4ab271b7681a2ef581672734
   include/rgss_construct.hxx: cf7beb38b45c12271848a7660bf194b4e0e2e566a6a8dae6da0bff9c37005f7d
   include/rgss_native_direct.hxx: 883796f30e0901f5c80095d7009a017b2ec17e440a4e950aac0af25447902538
 class_results:
   files:
-    mruby-rgss/src/lib.cxx: 6b7cdaf97feca284ab958a6515ce354fd9e3acdc86501d5fac389505b1d10c18
+    mruby-rgss/src/lib.cxx: e4bc5f73d5ad12a8356b151ce298b2142b865b4f4ab271b7681a2ef581672734
     # mruby-onig-regexp 355af1b changes only the internal character/byte offset conversions (identity on a single-byte
     # string); the natives' result classes and argument handling the tree's pin audits are the same. Both digests stay
     # listed, so the tree's pin of 2116496 and this one are each valid.
@@ -19,6 +19,20 @@ class_results:
     3rd/mruby/src/symbol.c:
     - 9cefc2d7d49de23dcae14e0922ed33e0fe1d4b72bba269c78c097187de4ee82b
     - 8161a2a0c9d93eb3c5f0bb4ef7b21dc19da47607589feaf0fb2f74d29a1122c7
+    # The fork's ROM rows (Fiber, Module#attr, mruby-stringio) and lazily made class tables move registrations and
+    # add a guard to a module test; no audited native's result class or arguments change.
+    3rd/mruby/src/class.c:
+    - c61bc1d54bb309a4dfd1d5e7f2fe2780f19c9b03d3d5a3fc08a934906c1059ce
+    - c9298d9551852caec11af3dc4603e3b73506e88a873261cfdd47ccad0b705d6f
+    3rd/mruby/src/object.c:
+    - c7523f7c3c07021e4765aae3a1ed2d840ac6c6340a084091d38b0a9a69a2738c
+    - e0972dbc1b64055ccddc8945814dba24a218bc39f079ffe06b15924a8b21f865
+    3rd/mruby/mrbgems/mruby-fiber/src/fiber.c:
+    - 5b8aa22575a772a0fb0a194c1720233307f7034a0704e362a315bd30fb44512f
+    - 5fdd61e9e5dff20a75941a10f9e939d340239597401a83bd6f0674f8951af634
+    3rd/mruby-stringio/src/stringio.c:
+    - 624a40811e85cd00d92afaffc251a7b9c55f564c87eb71115e9e7d88cb68f716
+    - 3b2e01cabef6979bfa61c3e8b1c041110196e587418fe881213a7847609ef38b
   # Added to the tree's facts: `kind` must match the tree's kind for a fact the tree already has.
   facts:
     to_s:
