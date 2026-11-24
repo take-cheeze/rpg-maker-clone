@@ -314,6 +314,8 @@ struct Table {
 static size_t g_bitmap_bytes_decoded = 0;
 static size_t g_bitmap_bytes_blank = 0;
 
+struct DeferredList;
+
 struct Bitmap {
   static constexpr const char* kTypeName = "Bitmap";
   int32_t width, height;
@@ -326,6 +328,9 @@ struct Bitmap {
   lv_color_format_t direct_format;
   std::vector<uint8_t> buffer;
   std::vector<uint8_t> palette;
+  // The draws recorded since Bitmap#_defer, which stand in for `buffer` (then
+  // empty); null for an ordinary bitmap. See DEFERRED_BITMAP.
+  std::shared_ptr<DeferredList> deferred;
   // Set whenever `buffer` is mutated so Graphics.update can invalidate the
   // sprites showing this bitmap and have LVGL redraw them. Starts true so the
   // initial contents are painted on the first frame after assignment.
@@ -375,6 +380,7 @@ struct Bitmap {
     direct_format = other.direct_format;
     buffer = other.buffer;
     palette = other.palette;
+    deferred = other.deferred;
     dirty = other.dirty;
     counter() += bytes();
     return *this;
@@ -427,7 +433,13 @@ void bmp_read(const Bitmap& b,
 // `buffer` here is safe precisely because an indexed buffer was never handed
 // out. `keep` false skips the expansion for a caller about to overwrite every
 // pixel.
+void deferred_materialize(Bitmap& b);
+
 void promote_to_direct(Bitmap& b, bool keep = true) {
+  if (b.deferred) {
+    deferred_materialize(b);
+    return;
+  }
   if (!b.indexed())
     return;
   const unsigned bpp = lv_color_format_get_size(b.direct_format);
@@ -487,6 +499,13 @@ void promote_to_direct(Bitmap& b, bool keep = true) {
 // std::bad_alloc is no different from the std::vector allocations Bitmap's
 // own pixel buffer already relies on).
 template <class T>
+inline void settle_for_access(T&) {}
+inline void settle_for_access(Bitmap& b) {
+  if (b.deferred)
+    deferred_materialize(b);
+}
+
+template <class T>
 struct DataType {
   static void free_obj(mrb_state* M, void* p) {
     (void)M;
@@ -543,9 +562,17 @@ struct DataType {
     return make_direct(M, c, make_owned(M, args...));
   }
 
-  static T& get(mrb_state* M, V self) {
+  // The object as stored: a deferred Bitmap stays deferred (see
+  // DEFERRED_BITMAP). `get` is what everything else uses.
+  static T& raw(mrb_state* M, V self) {
     return **reinterpret_cast<std::shared_ptr<T>*>(
         mrb_data_get_ptr(M, self, &data_type));
+  }
+
+  static T& get(mrb_state* M, V self) {
+    T& t = raw(M, self);
+    settle_for_access(t);
+    return t;
   }
 };
 
@@ -2069,6 +2096,12 @@ Bitmap& bmp_self(mrb_state* M, V self) {
   return DataType<Bitmap>::get(M, self);
 }
 
+// bmp_self without materializing a deferred bitmap: the recording draws and
+// the size readers.
+Bitmap& bmp_raw(mrb_state* M, V self) {
+  return DataType<Bitmap>::raw(M, self);
+}
+
 // Bitmap#dispose nulls the data pointer but leaves the mruby wrapper object
 // alive and non-nil (see obj_dispose), so mrb_get_args's "d" specifier -- which
 // only raises on a type mismatch, not a null payload -- happily hands back a
@@ -2092,7 +2125,20 @@ Bitmap& bmp_require(mrb_state* M, void* p) {
     mrb_raise(M, mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError)),
               "disposed Bitmap");
   }
-  return **reinterpret_cast<std::shared_ptr<Bitmap>*>(p);
+  Bitmap& b = **reinterpret_cast<std::shared_ptr<Bitmap>*>(p);
+  settle_for_access(b);
+  return b;
+}
+
+// The shared owner behind a "d"-spec argument, for a draw recorded into a
+// deferred bitmap (which keeps its sources alive).
+const std::shared_ptr<Bitmap>& bmp_require_shared(mrb_state* M, void* p) {
+  if (!p) {
+    RClass* mod = mrb_module_get_id(M, MRB_SYM(RGSS));
+    mrb_raise(M, mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError)),
+              "disposed Bitmap");
+  }
+  return *reinterpret_cast<std::shared_ptr<Bitmap>*>(p);
 }
 
 // Write an RGBA color into the bitmap at (x, y). LVGL stores ARGB8888 as
@@ -2175,15 +2221,15 @@ void blend_over(Bitmap& dst,
 }
 
 mrb_value bmp_width(mrb_state* M, V self) {
-  return mrb_fixnum_value(bmp_self(M, self).width);
+  return mrb_fixnum_value(bmp_raw(M, self).width);
 }
 
 mrb_value bmp_height(mrb_state* M, V self) {
-  return mrb_fixnum_value(bmp_self(M, self).height);
+  return mrb_fixnum_value(bmp_raw(M, self).height);
 }
 
 mrb_value bmp_rect(mrb_state* M, V self) {
-  Bitmap& b = bmp_self(M, self);
+  Bitmap& b = bmp_raw(M, self);
   const V args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
                     mrb_fixnum_value(b.width), mrb_fixnum_value(b.height)};
   return mrb_obj_new(M,
@@ -2192,16 +2238,30 @@ mrb_value bmp_rect(mrb_state* M, V self) {
                      4, args);
 }
 
+void deferred_clear(Bitmap& b);
+
 mrb_value bmp_clear(mrb_state* M, V self) {
-  Bitmap& b = bmp_self(M, self);
+  Bitmap& b = bmp_raw(M, self);
+  if (b.deferred) {
+    deferred_clear(b);
+    b.dirty = true;
+    return self;
+  }
   promote_to_direct(b, /* keep = */ false);
   std::fill(b.buffer.begin(), b.buffer.end(), 0);
   b.dirty = true;
   return self;
 }
 
+void fill_pixels(Bitmap& b,
+                 mrb_int x,
+                 mrb_int y,
+                 mrb_int w,
+                 mrb_int h,
+                 const Color& c);
+
 mrb_value bmp_fill_rect(mrb_state* M, V self) {
-  Bitmap& b = bmp_self(M, self);
+  Bitmap& b = bmp_raw(M, self);
   mrb_int x, y, w, h;
   V col;
   if (mrb_get_argc(M) <= 2) {
@@ -2218,10 +2278,7 @@ mrb_value bmp_fill_rect(mrb_state* M, V self) {
         M, self, mrb_int_value(M, x), mrb_int_value(M, y), mrb_int_value(M, w),
         mrb_int_value(M, h), col);
   }
-  Color& c = DataType<Color>::get(M, col);
-  for (mrb_int j = y; j < y + h; ++j)
-    for (mrb_int i = x; i < x + w; ++i)
-      bmp_put(b, i, j, c.red, c.green, c.blue, c.alpha);
+  fill_pixels(b, x, y, w, h, DataType<Color>::get(M, col));
   b.dirty = true;
   return self;
 }
@@ -2629,24 +2686,16 @@ static void blt_row_indexed(Bitmap& dst,
   }
 }
 
-// The pixel loop #blt and #blt_quads share: composite src_rect over (x, y)
-// at `opacity`. Kept in one place so the batched form cannot drift from the
-// single-rect one.
-static void blt_pixels(Bitmap& dst,
-                       const Bitmap& sb,
-                       mrb_int x,
-                       mrb_int y,
-                       const Rect& rc,
-                       int opacity) {
-  mrb_int sx = rc.x, sy = rc.y, w = rc.width, h = rc.height;
-  if (w <= 0 || h <= 0)
-    return;
-  // Before any format test below: `sb` may be this same bitmap.
-  promote_to_direct(dst);
-  // Clip against both bitmaps up front, carrying the destination along with
-  // the source the way bmp_copy_blt does. The old loop checked every pixel
-  // against both bitmaps instead; iterating only the intersection draws the
-  // same set.
+// Clip a blit of sb's (sx, sy, w, h) at (x, y) against both bitmaps, carrying
+// the destination along with the source.
+static void clip_blit(const Bitmap& dst,
+                      const Bitmap& sb,
+                      mrb_int& x,
+                      mrb_int& y,
+                      mrb_int& sx,
+                      mrb_int& sy,
+                      mrb_int& w,
+                      mrb_int& h) {
   if (sx < 0) {
     w += sx;
     x -= sx;
@@ -2675,6 +2724,27 @@ static void blt_pixels(Bitmap& dst,
     w = dst.width - x;
   if (y + h > dst.height)
     h = dst.height - y;
+}
+
+// The pixel loop #blt and #blt_quads share: composite src_rect over (x, y)
+// at `opacity`. Kept in one place so the batched form cannot drift from the
+// single-rect one.
+static void blt_pixels(Bitmap& dst,
+                       const Bitmap& sb,
+                       mrb_int x,
+                       mrb_int y,
+                       const Rect& rc,
+                       int opacity) {
+  mrb_int sx = rc.x, sy = rc.y, w = rc.width, h = rc.height;
+  if (w <= 0 || h <= 0)
+    return;
+  // Before any format test below: `sb` may be this same bitmap.
+  promote_to_direct(dst);
+  // Clip against both bitmaps up front, carrying the destination along with
+  // the source the way bmp_copy_blt does. The old loop checked every pixel
+  // against both bitmaps instead; iterating only the intersection draws the
+  // same set.
+  clip_blit(dst, sb, x, y, sx, sy, w, h);
   if (w <= 0 || h <= 0)
     return;
 
@@ -2716,6 +2786,14 @@ static void blt_pixels(Bitmap& dst,
     blt_row_pixels(dst, sb, x, y + row, sx, sy + row, w, opacity);
 }
 
+bool deferred_record(Bitmap& dst,
+                     const std::shared_ptr<Bitmap>& src,
+                     mrb_int x,
+                     mrb_int y,
+                     const Rect& rc,
+                     int opacity,
+                     bool copy);
+
 mrb_value bmp_blt(mrb_state* M, V self) {
   mrb_int x, y;
   V src;
@@ -2745,8 +2823,9 @@ mrb_value bmp_blt_quads(mrb_state* M, V self) {
   V quads_v;
   // "A" both fetches the batch and enforces that it is an Array.
   mrb_get_args(M, "iidA", &x, &y, &src, &DataType<Bitmap>::data_type, &quads_v);
-  Bitmap& dst = bmp_self(M, self);
-  Bitmap& sb = bmp_require(M, src);
+  Bitmap& dst = bmp_raw(M, self);
+  const std::shared_ptr<Bitmap>& shared = bmp_require_shared(M, src);
+  Bitmap& sb = *shared;
   Rect rc;
   const mrb_int n = ary_size(quads_v);
   for (mrb_int i = 0; i < n; ++i) {
@@ -2771,8 +2850,11 @@ mrb_value bmp_blt_quads(mrb_state* M, V self) {
     rc.y = mrb_integer(nums[3]);
     rc.width = mrb_integer(nums[4]);
     rc.height = mrb_integer(nums[5]);
-    blt_pixels(dst, sb, x + mrb_integer(nums[0]), y + mrb_integer(nums[1]), rc,
-               255);
+    const mrb_int qx = x + mrb_integer(nums[0]), qy = y + mrb_integer(nums[1]);
+    if (dst.deferred && deferred_record(dst, shared, qx, qy, rc, 255, false))
+      continue;
+    settle_for_access(sb);
+    blt_pixels(dst, sb, qx, qy, rc, 255);
   }
   dst.dirty = true;
   return self;
@@ -2802,51 +2884,21 @@ mrb_value bmp_blt_quads(mrb_state* M, V self) {
 // frame, 336x256 pixels twice, and through #blt's per-pixel read/blend/write
 // that measured ~5ms per frame -- a third of the engine's entire 16.67ms
 // budget spent blending pixels onto transparency. Row-wise, it is a memcpy.
-mrb_value bmp_copy_blt_body(mrb_state* M,
-                            V self,
-                            mrb_int x,
-                            mrb_int y,
-                            void* src,
-                            V srect) {
-  Bitmap& dst = bmp_self(M, self);
-  Bitmap& sb = bmp_require(M, src);
-  Rect& rc = DataType<Rect>::get(M, srect);
+// #copy_blt's pixel work on an already-resolved pair of bitmaps.
+static void copy_pixels(Bitmap& dst,
+                        const Bitmap& sb,
+                        mrb_int x,
+                        mrb_int y,
+                        const Rect& rc) {
   // Before the format test below: `sb` may be this same bitmap.
   promote_to_direct(dst);
 
   mrb_int sx = rc.x, sy = rc.y, w = rc.width, h = rc.height;
   // Clip against the source's origin, carrying the destination along so the
   // two stay in step, then against the destination's, then both extents.
-  if (sx < 0) {
-    w += sx;
-    x -= sx;
-    sx = 0;
-  }
-  if (sy < 0) {
-    h += sy;
-    y -= sy;
-    sy = 0;
-  }
-  if (x < 0) {
-    w += x;
-    sx -= x;
-    x = 0;
-  }
-  if (y < 0) {
-    h += y;
-    sy -= y;
-    y = 0;
-  }
-  if (sx + w > sb.width)
-    w = sb.width - sx;
-  if (sy + h > sb.height)
-    h = sb.height - sy;
-  if (x + w > dst.width)
-    w = dst.width - x;
-  if (y + h > dst.height)
-    h = dst.height - y;
+  clip_blit(dst, sb, x, y, sx, sy, w, h);
   if (w <= 0 || h <= 0)
-    return self;
+    return;
 
   if (dst.format == sb.format) {
     const unsigned bpp = lv_color_format_get_size(dst.format);
@@ -2883,6 +2935,19 @@ mrb_value bmp_copy_blt_body(mrb_state* M,
       }
     }
   }
+}
+
+mrb_value bmp_copy_blt_body(mrb_state* M,
+                            V self,
+                            mrb_int x,
+                            mrb_int y,
+                            void* src,
+                            V srect) {
+  Bitmap& dst = bmp_raw(M, self);
+  Rect& rc = DataType<Rect>::get(M, srect);
+  if (!dst.deferred ||
+      !deferred_record(dst, bmp_require_shared(M, src), x, y, rc, 255, true))
+    copy_pixels(bmp_self(M, self), bmp_require(M, src), x, y, rc);
   dst.dirty = true;
   return self;
 }
@@ -2893,6 +2958,409 @@ mrb_value bmp_copy_blt(mrb_state* M, V self) {
   V srect;
   mrb_get_args(M, "iido", &x, &y, &src, &DataType<Bitmap>::data_type, &srect);
   return bmp_copy_blt_body(M, self, x, y, src, srect);
+}
+
+// DEFERRED_BITMAP: Bitmap#_defer turns a canvas into a list of the draws made
+// on it (clear, fill_rect, blt, blt_quads, copy_blt), evaluated a few rows at a
+// time when a sprite shows it (see DRAW_TIME_SPRITE) instead of being held as
+// pixels. Each recorded draw runs later through the very function the
+// immediate draw uses (blt_pixels, copy_pixels, fill_pixels) on a window of
+// rows, so a row comes out byte for byte as the canvas would have held it.
+// Anything else that touches the bitmap materializes it first: DataType::get,
+// bmp_require and promote_to_direct all do, and only bmp_raw sees the list.
+// Sources stay as they were when drawn: a decoded image is held (nothing draws
+// into a loaded asset), a deferred one by a snapshot of its list (copy on
+// write), and any other bitmap by a copy of the rect drawn from it.
+// RGSS_DEFERRED_BITMAPS=0 (environment or build define) makes _defer a clear.
+#ifndef RGSS_DEFERRED_BITMAPS
+#define RGSS_DEFERRED_BITMAPS 1
+#endif
+static bool draw_time_sprites_enabled();
+static bool deferred_bitmaps_enabled() {
+#if RGSS_DEFERRED_BITMAPS
+  static const bool on = [] {
+    const char* e = std::getenv("RGSS_DEFERRED_BITMAPS");
+    return !(e && std::strcmp(e, "0") == 0);
+  }();
+  return on && draw_time_sprites_enabled();
+#else
+  return false;
+#endif
+}
+
+enum : uint8_t { kDeferredBlt, kDeferredCopy, kDeferredFill, kDeferredDead };
+
+// One recorded draw, already clipped to its source and destination.
+struct DeferredOp {
+  int16_t dx, dy;
+  uint16_t sx, sy, w, h;  // a fill keeps its B, G, R, A bytes in sx and sy
+  uint16_t src;
+  uint8_t opacity, kind;
+};
+
+struct DeferredSrc {
+  std::shared_ptr<Bitmap> bmp;
+  // bmp's draws when it was recorded, if it was deferred; their own sources
+  // are never deferred (see deferred_source), so evaluation nests one deep.
+  std::shared_ptr<const DeferredList> list;
+};
+
+// Rows per band of the index that lets a window of rows visit only the draws
+// that reach it.
+constexpr int kDeferredBand = 16;
+// A list that still holds this many draws after compaction is materialized.
+constexpr size_t kDeferredMaxOps = 8192;
+
+struct DeferredList {
+  std::vector<DeferredOp> ops;
+  std::vector<DeferredSrc> srcs;
+  std::vector<std::vector<uint16_t>> bands;  // op indices, ascending
+  size_t dead = 0;
+};
+
+static void deferred_index(DeferredList& L, uint16_t i, int height) {
+  const DeferredOp& o = L.ops[i];
+  if (L.bands.empty())
+    L.bands.resize((height + kDeferredBand - 1) / kDeferredBand);
+  for (int b = o.dy / kDeferredBand; b <= (o.dy + o.h - 1) / kDeferredBand; ++b)
+    L.bands[b].push_back(i);
+}
+
+// The list b's draws may be appended to: b's own, or a copy when a snapshot
+// elsewhere still shares it.
+static DeferredList& deferred_edit(Bitmap& b) {
+  if (b.deferred.use_count() > 1)
+    b.deferred = std::make_shared<DeferredList>(*b.deferred);
+  return *b.deferred;
+}
+
+void deferred_clear(Bitmap& b) {
+  if (b.deferred.use_count() > 1)
+    b.deferred = std::make_shared<DeferredList>();
+  else
+    *b.deferred = DeferredList{};
+}
+
+void fill_pixels(Bitmap& b,
+                 mrb_int x,
+                 mrb_int y,
+                 mrb_int w,
+                 mrb_int h,
+                 const Color& c);
+
+// Composite rows [y0, y0 + win.height) of a deferred bitmap `height` rows tall
+// into `win` (transparent, the bitmap's width).
+static void deferred_rows(const DeferredList& L,
+                          int height,
+                          int y0,
+                          Bitmap& win) {
+  const int y1 = y0 + win.height;
+  const int b0 = std::max(0, y0) / kDeferredBand;
+  const int b1 = std::min<int>(static_cast<int>(L.bands.size()) - 1,
+                               (std::min(y1, height) - 1) / kDeferredBand);
+  if (y1 <= 0 || y0 >= height || b0 > b1)
+    return;
+  std::vector<uint16_t> merged;
+  const std::vector<uint16_t>* order = &L.bands[b0];
+  if (b1 > b0) {
+    for (int b = b0; b <= b1; ++b)
+      merged.insert(merged.end(), L.bands[b].begin(), L.bands[b].end());
+    std::sort(merged.begin(), merged.end());
+    merged.erase(std::unique(merged.begin(), merged.end()), merged.end());
+    order = &merged;
+  }
+  for (const uint16_t i : *order) {
+    const DeferredOp& o = L.ops[i];
+    const int a = std::max<int>(o.dy, y0);
+    const int e = std::min<int>(o.dy + o.h, y1);
+    if (o.kind == kDeferredDead || a >= e)
+      continue;
+    if (o.kind == kDeferredFill) {
+      const Color c{
+          static_cast<double>(o.sx >> 8), static_cast<double>(o.sx & 0xff),
+          static_cast<double>(o.sy >> 8), static_cast<double>(o.sy & 0xff)};
+      fill_pixels(win, o.dx, a - y0, o.w, e - a, c);
+      continue;
+    }
+    const DeferredSrc& s = L.srcs[o.src];
+    Rect rc{o.sx, o.sy + (a - o.dy), o.w, e - a};
+    const Bitmap* sb = s.bmp.get();
+    std::unique_ptr<Bitmap> part;
+    if (s.list) {
+      part =
+          std::make_unique<Bitmap>(sb->width, e - a, LV_COLOR_FORMAT_ARGB8888);
+      deferred_rows(*s.list, sb->height, rc.y, *part);
+      rc.y = 0;
+      sb = part.get();
+    }
+    if (o.kind == kDeferredCopy)
+      copy_pixels(win, *sb, o.dx, a - y0, rc);
+    else
+      blt_pixels(win, *sb, o.dx, a - y0, rc, o.opacity);
+  }
+}
+
+void deferred_materialize(Bitmap& b) {
+  std::shared_ptr<DeferredList> L = std::move(b.deferred);
+  b.deferred = nullptr;
+  b.counter() -= b.bytes();
+  b.buffer.assign(static_cast<size_t>(b.width) * b.height * 4, 0);
+  b.counter() += b.bytes();
+  if (L && !L->ops.empty())
+    deferred_rows(*L, b.height, 0, b);
+}
+
+// Whether every pixel of the rect is opaque, so a full-opacity blt of it
+// replaces what lies beneath.
+static bool rect_opaque(const Bitmap& s, int sx, int sy, int w, int h) {
+  if (s.deferred)
+    return false;
+  if (s.indexed()) {
+    for (int y = sy; y < sy + h; ++y)
+      for (int x = sx; x < sx + w; ++x)
+        if (s.palette[s.buffer[static_cast<size_t>(y) * s.width + x] * 4u +
+                      3] != 255)
+          return false;
+    return true;
+  }
+  if (lv_color_format_get_size(s.format) < 4)
+    return true;
+  for (int y = sy; y < sy + h; ++y)
+    for (int x = sx; x < sx + w; ++x)
+      if (s.buffer[(static_cast<size_t>(y) * s.width + x) * 4 + 3] != 255)
+        return false;
+  return true;
+}
+
+// The alpha of source pixel (x, y); a deferred source's is unknown, so it
+// answers `unknown`.
+static int src_alpha(const Bitmap& s, int x, int y, int unknown) {
+  if (s.deferred)
+    return unknown;
+  if (s.indexed())
+    return s.palette[s.buffer[static_cast<size_t>(y) * s.width + x] * 4u + 3];
+  if (lv_color_format_get_size(s.format) < 4)
+    return 255;
+  return s.buffer[(static_cast<size_t>(y) * s.width + x) * 4 + 3];
+}
+
+// Whether earlier blt `e`, inside full-opacity blt `o`, has no pixel left that
+// `o` does not overwrite: every pixel e changes is opaque in o.
+static bool blt_hidden(const DeferredList& L,
+                       const DeferredOp& e,
+                       const DeferredOp& o) {
+  const Bitmap& es = *L.srcs[e.src].bmp;
+  const Bitmap& os = *L.srcs[o.src].bmp;
+  for (int y = 0; y < e.h; ++y) {
+    for (int x = 0; x < e.w; ++x) {
+      if (src_alpha(es, e.sx + x, e.sy + y, 255) * e.opacity / 255 <= 0)
+        continue;
+      if (src_alpha(os, o.sx + (e.dx - o.dx) + x, o.sy + (e.dy - o.dy) + y,
+                    0) != 255)
+        return false;
+    }
+  }
+  return true;
+}
+
+// Drop the earlier draws inside a new one that it replaces: all of them for a
+// copy, a fill or an opaque blt, and for any other full-opacity blt those
+// whose every changed pixel it overwrites.
+static void deferred_cover(DeferredList& L,
+                           const DeferredOp& o,
+                           bool opaque,
+                           int height) {
+  if (L.bands.empty() || (o.kind == kDeferredBlt && o.opacity < 255))
+    return;
+  for (int b = o.dy / kDeferredBand; b <= (o.dy + o.h - 1) / kDeferredBand;
+       ++b) {
+    for (const uint16_t i : L.bands[b]) {
+      DeferredOp& e = L.ops[i];
+      if (e.kind != kDeferredDead && e.dx >= o.dx && e.dy >= o.dy &&
+          e.dx + e.w <= o.dx + o.w && e.dy + e.h <= o.dy + o.h &&
+          (opaque || (e.kind == kDeferredBlt && blt_hidden(L, e, o)))) {
+        e.kind = kDeferredDead;
+        ++L.dead;
+      }
+    }
+  }
+}
+
+// Rebuild the list without its dropped draws once they are the majority.
+static void deferred_compact(DeferredList& L, int height, bool full = false) {
+  if (full ? L.dead == 0 : (L.dead < 64 || L.dead * 2 < L.ops.size()))
+    return;
+  std::vector<DeferredOp> live;
+  live.reserve(L.ops.size() - L.dead);
+  std::vector<int> remap(L.srcs.size(), -1);
+  std::vector<DeferredSrc> srcs;
+  for (DeferredOp e : L.ops) {
+    if (e.kind == kDeferredDead)
+      continue;
+    if (e.kind != kDeferredFill) {
+      if (remap[e.src] < 0) {
+        remap[e.src] = static_cast<int>(srcs.size());
+        srcs.push_back(L.srcs[e.src]);
+      }
+      e.src = static_cast<uint16_t>(remap[e.src]);
+    }
+    live.push_back(e);
+  }
+  L.ops.swap(live);
+  L.srcs.swap(srcs);
+  L.dead = 0;
+  L.bands.clear();
+  for (size_t i = 0; i < L.ops.size(); ++i)
+    deferred_index(L, static_cast<uint16_t>(i), height);
+}
+
+// Append a recorded draw, materializing the bitmap instead when the list is
+// full. Returns false when the draw still has to be made on the pixels.
+static bool deferred_push(Bitmap& b, DeferredOp o, bool opaque) {
+  DeferredList& L = deferred_edit(b);
+  deferred_cover(L, o, opaque, b.height);
+  if (L.ops.size() >= kDeferredMaxOps)
+    deferred_compact(L, b.height, /* full = */ true);
+  if (L.ops.size() >= kDeferredMaxOps) {
+    std::fprintf(stderr,
+                 "[RGSS] deferred %dx%d bitmap reached %zu draws; keeping its "
+                 "pixels instead\n",
+                 static_cast<int>(b.width), static_cast<int>(b.height),
+                 L.ops.size());
+    deferred_materialize(b);
+    return false;
+  }
+  L.ops.push_back(o);
+  deferred_index(L, static_cast<uint16_t>(L.ops.size() - 1), b.height);
+  deferred_compact(L, b.height);
+  return true;
+}
+
+// The source slot for a draw from `s` of the clipped rect (sx, sy, w, h); a
+// copied source moves the rect to its own origin.
+static uint16_t deferred_source(DeferredList& L,
+                                const std::shared_ptr<Bitmap>& s,
+                                mrb_int& sx,
+                                mrb_int& sy,
+                                mrb_int w,
+                                mrb_int h) {
+  if (s->deferred || s->decoded_from_source) {
+    const DeferredSrc want{s, s->deferred};
+    for (size_t i = L.srcs.size(); i-- > 0;)
+      if (L.srcs[i].bmp == want.bmp && L.srcs[i].list == want.list)
+        return static_cast<uint16_t>(i);
+    L.srcs.push_back(want);
+    return static_cast<uint16_t>(L.srcs.size() - 1);
+  }
+  auto part = std::make_shared<Bitmap>(w, h, s->format);
+  part->palette = s->palette;
+  part->direct_format = s->direct_format;
+  part->counter() += part->palette.size();
+  const unsigned bpp = lv_color_format_get_size(s->format);
+  for (mrb_int y = 0; y < h; ++y)
+    std::memcpy(
+        part->buffer.data() + static_cast<size_t>(y) * w * bpp,
+        s->buffer.data() + (static_cast<size_t>(sy + y) * s->width + sx) * bpp,
+        static_cast<size_t>(w) * bpp);
+  sx = 0;
+  sy = 0;
+  L.srcs.push_back(DeferredSrc{std::move(part), nullptr});
+  return static_cast<uint16_t>(L.srcs.size() - 1);
+}
+
+// Record a blt (or, with `copy`, a copy_blt) of src's `rc` at (x, y) into the
+// deferred `dst`. Returns false when the draw has to be made on the pixels
+// instead: a bitmap drawn into itself, or a list that reached its limit.
+bool deferred_record(Bitmap& dst,
+                     const std::shared_ptr<Bitmap>& src,
+                     mrb_int x,
+                     mrb_int y,
+                     const Rect& rc,
+                     int opacity,
+                     bool copy) {
+  if (src.get() == &dst)
+    return false;
+  mrb_int sx = rc.x, sy = rc.y, w = rc.width, h = rc.height;
+  if (w <= 0 || h <= 0)
+    return true;
+  clip_blit(dst, *src, x, y, sx, sy, w, h);
+  if (w <= 0 || h <= 0 || (!copy && opacity <= 0))
+    return true;
+  // A deferred source must not draw from another deferred bitmap itself.
+  if (src->deferred) {
+    for (const DeferredSrc& d : src->deferred->srcs)
+      if (d.list) {
+        deferred_materialize(*src);
+        break;
+      }
+  }
+  const bool opaque =
+      copy || (opacity >= 255 && rect_opaque(*src, sx, sy, w, h));
+  DeferredList& L = deferred_edit(dst);
+  const uint16_t slot = deferred_source(L, src, sx, sy, w, h);
+  DeferredOp o{static_cast<int16_t>(x),
+               static_cast<int16_t>(y),
+               static_cast<uint16_t>(sx),
+               static_cast<uint16_t>(sy),
+               static_cast<uint16_t>(w),
+               static_cast<uint16_t>(h),
+               slot,
+               static_cast<uint8_t>(opacity),
+               copy ? kDeferredCopy : kDeferredBlt};
+  return deferred_push(dst, o, opaque);
+}
+
+void fill_pixels(Bitmap& b,
+                 mrb_int x,
+                 mrb_int y,
+                 mrb_int w,
+                 mrb_int h,
+                 const Color& c) {
+  if (b.deferred) {
+    // bmp_put's own clip, applied up front.
+    const mrb_int x0 = std::max<mrb_int>(x, 0), y0 = std::max<mrb_int>(y, 0);
+    const mrb_int x1 = std::min<mrb_int>(x + w, b.width);
+    const mrb_int y1 = std::min<mrb_int>(y + h, b.height);
+    if (x0 >= x1 || y0 >= y1)
+      return;
+    // The bytes bmp_put stores.
+    const uint16_t bg = static_cast<uint16_t>(static_cast<uint8_t>(c.red) << 8 |
+                                              static_cast<uint8_t>(c.green));
+    const uint16_t ba = static_cast<uint16_t>(
+        static_cast<uint8_t>(c.blue) << 8 | static_cast<uint8_t>(c.alpha));
+    DeferredOp o{static_cast<int16_t>(x0),
+                 static_cast<int16_t>(y0),
+                 bg,
+                 ba,
+                 static_cast<uint16_t>(x1 - x0),
+                 static_cast<uint16_t>(y1 - y0),
+                 0,
+                 0,
+                 kDeferredFill};
+    if (deferred_push(b, o, true))
+      return;
+  }
+  for (mrb_int j = y; j < y + h; ++j)
+    for (mrb_int i = x; i < x + w; ++i)
+      bmp_put(b, i, j, c.red, c.green, c.blue, c.alpha);
+}
+
+// Bitmap#_defer: drop the pixels and record later draws (see DEFERRED_BITMAP).
+mrb_value bmp_defer(mrb_state* M, V self) {
+  Bitmap& b = bmp_raw(M, self);
+  if (deferred_bitmaps_enabled()) {
+    b.counter() -= b.bytes();
+    std::vector<uint8_t>().swap(b.buffer);
+    std::vector<uint8_t>().swap(b.palette);
+    b.format = b.direct_format = LV_COLOR_FORMAT_ARGB8888;
+    b.counter() += b.bytes();
+    b.deferred = std::make_shared<DeferredList>();
+  } else {
+    promote_to_direct(b, /* keep = */ false);
+    std::fill(b.buffer.begin(), b.buffer.end(), 0);
+  }
+  b.dirty = true;
+  return self;
 }
 
 // Copy src_rect from `src` into dest_rect of self, scaling with nearest
@@ -4732,8 +5200,18 @@ lv_result_t sprite_view_get_area(lv_image_decoder_t*,
     }
     out = lv_draw_buf_reshape(buf, cf, w, rows, LV_STRIDE_AUTO);
   }
-  const Bitmap& src = *v->src;
-  const SpriteFx& f = v->fx;
+  const Bitmap* sb = v->src.get();
+  SpriteFx f = v->fx;
+  // A deferred bitmap's rows are composed for this chunk only, and read from
+  // there as if they were the bitmap.
+  std::unique_ptr<Bitmap> part;
+  if (const std::shared_ptr<DeferredList> list = sb->deferred) {
+    part = std::make_unique<Bitmap>(sb->width, rows, LV_COLOR_FORMAT_ARGB8888);
+    deferred_rows(*list, sb->height, f.cy + y1, *part);
+    f.cy = -y1;
+    sb = part.get();
+  }
+  const Bitmap& src = *sb;
   const bool plain = !f.colour();
   for (int32_t r = 0; r < rows; ++r) {
     uint8_t* d = out->data + static_cast<size_t>(r) * out->header.stride;
@@ -4826,7 +5304,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   const mrb_value bmp_v = mrb_iv_get(M, self, MRB_IVSYM(bitmap));
   if (mrb_nil_p(bmp_v))
     return;
-  Bitmap& src = DataType<Bitmap>::get(M, bmp_v);
+  Bitmap& src = DataType<Bitmap>::raw(M, bmp_v);
 
   SpriteFx f;
   f.mirror = mrb_test(mrb_iv_get(M, self, MRB_IVSYM(mirror)));
@@ -4888,8 +5366,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   }
   const bool needs_fx = cropped || f.mirror || f.colour();
 
-  if ((needs_fx || src.indexed()) && draw_time_sprites_enabled() &&
-      !sprite_transformed(obj)) {
+  if ((needs_fx || src.indexed() || src.deferred) &&
+      draw_time_sprites_enabled() && !sprite_transformed(obj)) {
     if (SpriteView* v = sprite_view(obj, true)) {
       mrb_iv_set(M, self, MRB_IVSYM(_fx_bitmap), mrb_nil_value());
       v->src = *reinterpret_cast<std::shared_ptr<Bitmap>*>(DATA_PTR(bmp_v));
@@ -4911,6 +5389,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   }
   if (SpriteView* v = sprite_view(obj, false))
     v->src.reset();
+  settle_for_access(src);
 
   if (needs_fx) {
     // Reuse the scratch bitmap when its size still matches (src_rect changes
@@ -8272,11 +8751,8 @@ mrb_value bitmap_fill_rect_direct(mrb_state* M,
   const mrb_int y = mrb_as_int(M, y_value);
   const mrb_int w = mrb_as_int(M, w_value);
   const mrb_int h = mrb_as_int(M, h_value);
-  Bitmap& b = bmp_self(M, self);
-  Color& c = DataType<Color>::get(M, color);
-  for (mrb_int j = y; j < y + h; ++j)
-    for (mrb_int i = x; i < x + w; ++i)
-      bmp_put(b, i, j, c.red, c.green, c.blue, c.alpha);
+  Bitmap& b = bmp_raw(M, self);
+  fill_pixels(b, x, y, w, h, DataType<Color>::get(M, color));
   b.dirty = true;
   return self;
 }
@@ -8292,15 +8768,18 @@ mrb_value bitmap_blt_direct(mrb_state* M,
   const mrb_int x = mrb_as_int(M, x_value);
   const mrb_int y = mrb_as_int(M, y_value);
   void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
-  Bitmap& dst = bmp_self(M, self);
-  Bitmap& src = bmp_require(M, source_data);
+  Bitmap& dst = bmp_raw(M, self);
   Rect& rc = DataType<Rect>::get(M, source_rect);
   mrb_int opacity = opacity_given ? mrb_as_int(M, opacity_value) : 255;
   if (opacity < 0)
     opacity = 0;
   if (opacity > 255)
     opacity = 255;
-  blt_pixels(dst, src, x, y, rc, opacity);
+  if (!dst.deferred ||
+      !deferred_record(dst, bmp_require_shared(M, source_data), x, y, rc,
+                       static_cast<int>(opacity), false))
+    blt_pixels(bmp_self(M, self), bmp_require(M, source_data), x, y, rc,
+               opacity);
   dst.dirty = true;
   return self;
 }
@@ -9677,6 +10156,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(bmp_blt, MRB_SYM(blt), MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1))  //
       MRB_MT_ENTRY(bmp_blt_quads, MRB_SYM(blt_quads), MRB_ARGS_REQ(4))        //
       MRB_MT_ENTRY(bmp_copy_blt, MRB_SYM(copy_blt), MRB_ARGS_REQ(4))          //
+      MRB_MT_ENTRY(bmp_defer, MRB_SYM(_defer), MRB_ARGS_NONE())               //
       MRB_MT_ENTRY(bmp_tone_blt, MRB_SYM(tone_blt), MRB_ARGS_REQ(2))          //
       MRB_MT_ENTRY(bmp_stretch_blt, MRB_SYM(stretch_blt),
                    MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1))                     //
