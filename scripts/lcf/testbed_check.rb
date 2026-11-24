@@ -166,6 +166,18 @@ class Checker
     end
   end
 
+  # LAZY_MAP_TREE: a file-backed map tree leaves its rows in the file. It must
+  # read every row, and the sections after them, as a tree read whole.
+  def check_lazy_tree(lmt, path)
+    Object.const_set(:LCF_EAGER_MAP_TREE, true)
+    eager = LCF::MapTree.new(File.open(path, 'rb'))
+    Object.send(:remove_const, :LCF_EAGER_MAP_TREE)
+    rows = ->(t) { t.map { |id, r| [id, r.to_lcf] } }
+    fail 'lmt: lazy rows differ from a whole read' if rows.(lmt[:map_properties]) != rows.(eager[:map_properties])
+    tree = ->(t) { [t[:tree].selected_id, t[:tree].maps, t[:initial].to_lcf] }
+    fail 'lmt: lazy tree and initial sections differ from a whole read' if tree.(lmt) != tree.(eager)
+  end
+
   def check_game(dir)
     puts "== #{dir} =="
 
@@ -176,9 +188,11 @@ class Checker
     check_battlecommands(db)
     check_lazy(db, ldb)
 
-    lmt = LCF::MapTree.new(File.open(File.join(dir, 'RPG_RT.lmt'), 'rb'))
+    lmt_path = File.join(dir, 'RPG_RT.lmt')
+    lmt = LCF::MapTree.new(File.open(lmt_path, 'rb'))
     fail 'map tree has no start map' if lmt[:initial][:initial_map_id].to_i <= 0
     lmt[:map_properties].each { |id, m| walk(m, LCF::Schema::MAP_TREE[0], "lmt[#{id}]") }
+    check_lazy_tree(lmt, lmt_path)
 
     Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
       base = File.basename(f)

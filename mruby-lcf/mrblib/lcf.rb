@@ -306,10 +306,11 @@ module LCF
     def field? sym ; @by_name.key? sym end
   end
 
-  # Read one section of a file sequentially from the stream +io+.
-  def self.read_section io, s
+  # Read one section of a file sequentially from the stream +io+. With +lazy+
+  # (LCF::File#lazy_io), a table section keeps only each row's offset in it.
+  def self.read_section io, s, lazy = nil
     case sget(s, :type)
-    when :Array2D ; Array2D.new io, s
+    when :Array2D ; lazy ? Array2D.lazy_section(lazy, s) : Array2D.new(io, s)
     when :Array1D ; Array1D.new io, s
     when :Tree
       map_count = read_ber io
@@ -958,6 +959,15 @@ module LCF
       Array2D.new '', { elements: elements }
     end
 
+    # LAZY_MAP_TREE: the table section of a multi-section file at +io+'s
+    # position, read like a lazy chunk's (#index_rows): only each row's offset
+    # is kept, and +io+ is left after the table.
+    def self.lazy_section io, schema
+      table = Array2D.new '', schema
+      table.index_section io
+      table
+    end
+
     # LAZY_CHUNKS: with +at+, +s+ is the open file of a lazy Array1D chunk and +at+
     # the offset of the chunk's length (Array1D#initialize): only each row's
     # file offset is kept, and #[] reads the row from the file.
@@ -1041,6 +1051,12 @@ module LCF
       out
     end
 
+    # LAZY_MAP_TREE: see .lazy_section.
+    def index_section io
+      @io = io
+      index_rows_to io, io.size
+    end
+
     # LAZY_CHUNKS: reads the rows still in the file (see Array1D#load_lazy).
     def load_lazy
       @data.each_with_index { |v, i| @data[i] = row_bytes(v) if v.is_a?(Integer) }
@@ -1057,6 +1073,12 @@ module LCF
       io.seek at
       len = LCF.read_ber io
       stop = io.pos + len
+      index_rows_to io, stop
+      raise "truncated table: #{len} bytes declared" if io.pos > stop
+    end
+
+    # The rows of a table that starts at +io+'s position and ends by +stop+.
+    def index_rows_to io, stop
       scratch = String.new
       (0...LCF.read_ber(io)).each do
         idx = LCF.read_ber io
@@ -1074,7 +1096,6 @@ module LCF
           end
         end
       end
-      raise "truncated table: #{len} bytes declared" if io.pos > stop
     end
 
     def row_bytes at
