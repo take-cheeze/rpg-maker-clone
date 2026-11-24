@@ -222,6 +222,12 @@ def rpg_maker_gems(conf, include_mvjs: true)
     conf.cc.defines << 'MRB_FRAMEFREE_VERIFY'
     conf.cxx.defines << 'MRB_FRAMEFREE_VERIFY'
   end
+  # IVAR_SYM's kill switch: RData ivar slot entries named by their "@name" string (3rd/mruby data.h), as bc2cpp's
+  # generated fallback spells them. Every unit of a build must agree, so it is a build-wide define.
+  if ENV['MRB_DATA_IVAR_BY_NAME'] == '1'
+    conf.cc.defines << 'MRB_DATA_IVAR_BY_NAME'
+    conf.cxx.defines << 'MRB_DATA_IVAR_BY_NAME'
+  end
   if ENV['BC2CPP_METHOD_LOOKUP_HOOK'] == '1'
     conf.cc.defines << 'MRB_USE_METHOD_LOOKUP_HOOK'
     conf.cxx.defines << 'MRB_USE_METHOD_LOOKUP_HOOK'
