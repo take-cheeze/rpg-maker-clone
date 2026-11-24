@@ -30,6 +30,11 @@ a raise leaves the exception in `M->exc` and returns the exception object.
 Inside a region (`mrb_protect_error`, or compiled code that set `M->jmp`), the
 raise propagates to that region.
 
+Like `mrb_funcall`, each call leaves its result in the GC arena. A host that
+calls an entry every frame wraps the frame in `mrb_gc_arena_save` /
+`mrb_gc_arena_restore`, or the arena grows by a slot per frame and keeps those
+objects alive (`scripts/bc2cpp-rpg/host_arena_check.rb` checks the hosts).
+
 `bc2cpp_entry_<Owner>_new(M, argc, argv)` has `mrb_obj_new`'s contract
 instead: it returns the new object, and a raise in `initialize` is left in
 `M->exc` (or propagates inside a protected region).

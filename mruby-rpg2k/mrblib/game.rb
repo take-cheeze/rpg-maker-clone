@@ -1810,6 +1810,9 @@ module Game
       @equipment = normalize_equipment(LCF.field?(a, :initial_equipment) ? a[:initial_equipment] : nil)
       @skills = []
       @states = []
+      # Empty until #set_level fills them from the curve: never nil, so the compiled reads need no nil test.
+      @base = []
+      @base_raw = []
       # Base stats scale with level from the growth curve and equipment adds on
       # top, and levelling learns skills, so seed them all at the actor's initial
       # level, then start at full health.
@@ -1861,7 +1864,7 @@ module Game
     # matching its own explicit mod-zeroing before it reapplies
     # the class's own curve.
     def set_level(level, preserve_mod: true)
-      mod = preserve_mod && @base_raw ? Array.new(@base_raw.size) { |i| @base_raw[i] - base_stats(@level)[i] } : nil
+      mod = preserve_mod && !@base_raw.empty? ? Array.new(@base_raw.size) { |i| @base_raw[i] - base_stats(@level)[i] } : nil
       @level = level && level >= 1 ? level : 1
       curve = base_stats(@level)
       @base_raw = mod ? Array.new(curve.size) { |i| curve[i] + mod[i] } : curve.dup

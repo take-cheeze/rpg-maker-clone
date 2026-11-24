@@ -6477,16 +6477,17 @@ module Game
 # `T?` ("T or nil", the contract every ClassLayout fact already has). Each was checked against every writer and every
 # construction site in the closed world (mruby-rpg2k/mrblib), as noted.
 #
-# @state: the only writer in each class is `@state = state` in #initialize. Every construction site passes nil, an
-# `@state` of another class below (or Scene::Battle's `map.state`, Scene::Map's attr_reader) or RPG2k's own `state`:
-# `Game::State.new(party, ...)` (#start_new_game, its party built in an RGSS::Profiler.section block),
-# `load_save_state` (Game::State.from_lsd, whose one return is `new(party, ...)`, or nil) or that same local.
+# @state: the only writer in each class is `@state = state` in #initialize, before any call. Interpreter.new is called
+# only by Scene::Map (#initialize, #new_parallel) and Scene::Battle#start with the scene's @state, and EnemyAi.new only
+# by Scene::Battle#start. Scene::Map#initialize stores its `state` argument, which RPG2k passes as a `Game::State.new`
+# (#start_new_game) or a load_save_state result past `unless state` (#continue_game); Scene::Battle stores
+# `map.state`, that same slot. So neither is nil: no `?` (see Game::Actor's @db).
   class Interpreter
-    @state: Game::State?
+    @state: Game::State
   end
   class EnemyAi
     # Constructed only by Scene::Battle: `Game::EnemyAi.new(db, @state)`, db being Scene::Base#db.
-    @state: Game::State?
+    @state: Game::State
     @db: LCF::Database
   end
   # @db: each class's one writer is `@db = db` in #initialize. Party.new gets RPG2k#db (main.rb, whose one writer
@@ -7882,21 +7883,25 @@ class RPG2k
       # Scene::Map's and MapViewer's map: Scene::Map stores `state.map` (Game::State#@map) or RPG2k#load_map's
       # `Game::Map.new`; MapViewer its `map:` keyword (#load_map's result or `@state.map`) or `state.map`.
       @map: Game::Map?
+      # Touched only by Scene::Map and Scene::Battle. Scene::Map#initialize stores `Game::Rng.new(0x2000)` before any
+      # call on self, Scene::Battle#initialize `map.rng` (that same object) right after `super`. Never nil.
+      @rng: Game::Rng
     end
     class Battle
-      # One writer; both construction sites (Scene::Map#drive_battle) pass the Scene::Map `self`.
-      @map_scene: RPG2k::Scene::Map?
+      # One writer, in #initialize right after `super` (Scene::Base#initialize reads none of it); both construction
+      # sites (Scene::Map#drive_battle) pass the Scene::Map `self`, so never nil (no `?`: see Game::Actor's @db).
+      @map_scene: RPG2k::Scene::Map
     end
-    # One writer each, in #initialize; the only construction sites are in Scene::Map#initialize:
-    # `MapWorld.new(self, @rng)` / `VehicleWorld.new(self, @rng, type)`, Scene::Map's one @rng writer being
-    # `Game::Rng.new(0x2000)`.
+    # One writer each, in #initialize before any call; the only construction sites are in Scene::Map#initialize:
+    # `MapWorld.new(self, @rng)` / `VehicleWorld.new(self, @rng, type)`, after Scene::Map's one @rng writer,
+    # `Game::Rng.new(0x2000)`, so neither is ever nil.
     class MapWorld
-      @scene: RPG2k::Scene::Map?
-      @rng: Game::Rng?
+      @scene: RPG2k::Scene::Map
+      @rng: Game::Rng
     end
     class VehicleWorld
-      @scene: RPG2k::Scene::Map?
-      @rng: Game::Rng?
+      @scene: RPG2k::Scene::Map
+      @rng: Game::Rng
     end
   end
 end
@@ -7987,8 +7992,9 @@ module RPG2k
       # :contents) and `= nil` in #close_number_input. :model is the one `Game::NumberInput.new`.
       @number_input: { model: Game::NumberInput, interp: untyped, ?embedded: untyped, ?x: untyped, ?y: untyped,
                        ?window: untyped, ?contents: RGSS::Bitmap }?
-      # #build_parallels' `[]`, filled only with #new_parallel results or entries of the previous @parallels.
-      @parallels: Array[RPG2k::Scene::Map::Parallel]?
+      # #initialize's `[]` (before any call on self) and #build_parallels' `[]`, filled only with #new_parallel results
+      # or entries of the previous @parallels. Never nil.
+      @parallels: Array[RPG2k::Scene::Map::Parallel]
       # A Parallel Process: #new_parallel is the one construction, with its `Game::Interpreter.new`, a common
       # event's switch id or nil, and a common event id or nil; the Wait countdown is nil or
       # #frames_from_tenths' Integer counted down by 1 (#drive_parallel_wait).
@@ -8137,10 +8143,10 @@ class Game::ChipSet
   @terrain: Array?
 end
 # Every store is an Array built from the class curve (Array.new, #dup, #map, #base_stats), or #restore_base's `dup`
-# of a saved total, which lsd_io builds with Array.new; nil before the first #set_level.
+# of a saved total, which lsd_io builds with Array.new. #initialize seeds both with `[]` before its first #set_level.
 class Game::Actor
-  @base: Array?
-  @base_raw: Array?
+  @base: Array
+  @base_raw: Array
 end
 class RPG2k
   module Scene
@@ -10851,16 +10857,16 @@ end
 
 # bc2cpp-native: typed_returns
 class Game::Actor
-  def id: () -> Integer?
-  def level: () -> Integer?
+  def id: () -> Integer
+  def level: () -> Integer
   def charset_name: () -> String?
   def charset_index: () -> Integer?
   def face_name: () -> String?
   def face_index: () -> Integer?
   def transparent: () -> bool?
-  def equipment: () -> Array?
-  def states: () -> Array?
-  def class_id: () -> Integer?
+  def equipment: () -> Array
+  def states: () -> Array
+  def class_id: () -> Integer
   def battle_combo: () -> Hash?
   def alive?: () -> bool
   def attack_all?: () -> bool
@@ -11733,9 +11739,9 @@ end
 
 # bc2cpp-native: typed_returns
 class RPG2k::Scene::Battle
-  def ui: () -> RPG2k::Scene::Battle::Ui?
+  def ui: () -> RPG2k::Scene::Battle::Ui
   def owner: () -> Game::Interpreter?
-  def map: () -> RPG2k::Scene::Map?
+  def map: () -> RPG2k::Scene::Map
   def actor_placeholder_battler: () -> RGSS::Bitmap
   def actor_sprite_z: (untyped) -> Integer
   def advance_actor: () -> (Integer | RPG2k::Window)?
@@ -11882,7 +11888,7 @@ class RPG2k::Scene::Map
   def state: () -> Game::State?
   def events: () -> Array?
   def interpreter: () -> Game::Interpreter?
-  def rng: () -> Game::Rng?
+  def rng: () -> Game::Rng
   def monster_cache: () -> RPG2k::Scene::Map::LRUBitmapCache?
   def backdrop_cache: () -> RPG2k::Scene::Map::LRUBitmapCache?
   def battlecharset_cache: () -> RPG2k::Scene::Map::LRUBitmapCache?
@@ -13814,6 +13820,17 @@ end
 class Game::Troop
   # `[]` in #initialize, then only `<<` of #build_member's `Enemy.new`.
   @members: Array[Game::Enemy]
+end
+class Game::Actor
+  # #initialize's #normalize_equipment (an Array.new), #equip's #normalize_equipment and #unequip's `EQUIP_ORDER.map`.
+  @equipment: Array
+  # `[]` in #initialize, and `kept` in #clear_states, #states= and #prune_states!, each an Array.
+  @states: Array
+end
+class RPG2k
+  # `[]` at the top of #initialize, then `[...]` literals (#push_title_screen, #show_game_over, #start_new_game,
+  # #continue_game); #push and #pop only push and pop. Never nil.
+  @scenes: Array
 end
 class Game::Party
   # `[]` then `<<` of non-nil Actors#[] results (#initialize, #add_actor), #reorder's `old[i]` over Scene::Order's

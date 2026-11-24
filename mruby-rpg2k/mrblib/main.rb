@@ -616,6 +616,8 @@ class RPG2k
     # ...)` parameters. None of the calls below reads @db, so the order changes
     # nothing.
     @db = LCF::Database.new File.open RPG2k.db_path
+    # Before any call on self too, so #current_scene_name and every other reader sees an Array, never nil.
+    @scenes = []
 
     # An RPG2000/2003 project's graphics are resolved in RPG_RT.exe's own
     # order, which is not RGSS's: .bmp first, then .png, then .xyz, with no
@@ -632,7 +634,6 @@ class RPG2k
     # build), the way RPG_RT.exe titles its own.
     @title = read_ini_title
     RGSS.window_title = @title
-    @scenes = []
     boot_title_or_new_game
   end
 
