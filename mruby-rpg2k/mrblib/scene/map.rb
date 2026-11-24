@@ -481,6 +481,8 @@ class RPG2k
         # constructor reads anything the steps below set up.
         @rng = Game::Rng.new(0x2000)
         @interpreter = Game::Interpreter.new(@state)
+        # Filled by #build_parallels below; empty until then, so no reader sees nil.
+        @parallels = []
         # Named graphics loaded and memoized on demand -- see #cached_bitmap.
         # One cache per graphic category (rather than a single cache keyed by
         # a [kind, name] tuple) so each material's entries stay a plain
@@ -2210,7 +2212,7 @@ class RPG2k
       def build_parallels(preserve_map_events: false)
         previous_common = {}
         previous_map = {}
-        (@parallels || []).each do |p|
+        @parallels.each do |p|
           if p.common_event_id
             previous_common[p.common_event_id] = p
           elsif preserve_map_events && p.event
@@ -4088,7 +4090,7 @@ class RPG2k
         # this table in sync when they do, the same way ordinary movement
         # keeps @event_last_position current for a merely-hidden one.
         @erased_event_positions[ev.id] = tile
-        @parallels.reject! { |p| p.event.equal?(ev) } if @parallels
+        @parallels.reject! { |p| p.event.equal?(ev) }
       end
 
       # -- page refresh -------------------------------------------------------
