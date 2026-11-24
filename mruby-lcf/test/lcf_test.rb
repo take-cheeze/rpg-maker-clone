@@ -28,6 +28,15 @@ assert 'Read BER number folds the sign without pack' do
   assert_equal 1, LCF.read_ber(StringIO.new("\x81\x80\x80\x80\x80\x01"))
 end
 
+assert 'LCF.ber_value decodes what read_ber does' do
+  ["\x7f", "\x81\x00", "\x8f\xff\xff\xff\x7f", "\x88\x80\x80\x80\x00",
+   "\x87\xff\xff\xff\x7f", "\x81\x80\x80\x80\x80\x01", "\x05\x09"].each do |data|
+    assert_equal LCF.read_ber(StringIO.new(data)), LCF.ber_value(data)
+  end
+  assert_raise(RuntimeError) { LCF.ber_value("\xff") }
+  assert_raise(RuntimeError) { LCF.ber_value("") }
+end
+
 assert "cp932 to unicode" do
   assert_equal "あ", LCF.cp932_to_utf8("\x82\xa0")
   assert_equal "あああ", LCF.cp932_to_utf8("\x82\xa0\x82\xa0\x82\xa0")

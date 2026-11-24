@@ -6108,36 +6108,6 @@ end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_lcf
-module LCF
-  def self.append_ber: (untyped, untyped) -> untyped
-  def self.double_decode: (untyped) -> untyped
-  def self.double_default: (untyped) -> untyped
-  def self.double_encode: (untyped) -> untyped
-  def self.double_from_fixed: (untyped) -> untyped
-  def self.double_to_fixed: (untyped) -> untyped
-  def self.double_value?: (untyped) -> untyped
-  def self.edition_default: (untyped) -> untyped
-  def self.encode: (untyped, untyped) -> untyped
-  def self.encode_move_commands: (untyped) -> untyped
-  def self.exp_default: () -> untyped
-  def self.field?: (untyped, untyped) -> untyped
-  def self.int16_format: (untyped) -> untyped
-  def self.level_max: () -> untyped
-  def self.npc_hp_max: () -> untyped
-  def self.pack_double: (untyped) -> untyped
-  def self.pack_fixed_double: (untyped, untyped) -> untyped
-  def self.parse_event_commands: (untyped) -> untyped
-  def self.parse_move_commands: (untyped) -> untyped
-  def self.pc_hp_max: () -> untyped
-  def self.read_ber: (untyped) -> untyped
-  def self.read_section: (untyped, untyped, ?untyped) -> untyped
-  def self.sget: (untyped, untyped) -> untyped
-  def self.skeys: (untyped) -> untyped
-  def self.to_rb: (untyped, untyped) -> untyped
-  def self.var_max: () -> untyped
-  def self.var_min: () -> untyped
-end
-# bc2cpp-native: base_lcf
 class LCF::Array2D
   def []: (untyped) -> untyped
   def []=: (untyped, untyped) -> untyped
@@ -6179,6 +6149,39 @@ class StringIO
   def tty?: () -> untyped
   def ungetc: (untyped) -> untyped
   def write_nonblock: (*untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_lcf
+module LCF
+  def self.append_ber: (untyped, untyped) -> untyped
+  def self.ber_value: (untyped) -> untyped
+  def self.double_decode: (untyped) -> untyped
+  def self.double_default: (untyped) -> untyped
+  def self.double_encode: (untyped) -> untyped
+  def self.double_from_fixed: (untyped) -> untyped
+  def self.double_to_fixed: (untyped) -> untyped
+  def self.double_value?: (untyped) -> untyped
+  def self.edition_default: (untyped) -> untyped
+  def self.encode: (untyped, untyped) -> untyped
+  def self.encode_move_commands: (untyped) -> untyped
+  def self.exp_default: () -> untyped
+  def self.field?: (untyped, untyped) -> untyped
+  def self.int16_format: (untyped) -> untyped
+  def self.level_max: () -> untyped
+  def self.npc_hp_max: () -> untyped
+  def self.pack_double: (untyped) -> untyped
+  def self.pack_fixed_double: (untyped, untyped) -> untyped
+  def self.parse_event_commands: (untyped) -> untyped
+  def self.parse_move_commands: (untyped) -> untyped
+  def self.pc_hp_max: () -> untyped
+  def self.read_ber: (untyped) -> untyped
+  def self.read_section: (untyped, untyped, ?untyped) -> untyped
+  def self.sget: (untyped, untyped) -> untyped
+  def self.skeys: (untyped) -> untyped
+  def self.to_rb: (untyped, untyped) -> untyped
+  def self.var_max: () -> untyped
+  def self.var_min: () -> untyped
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
