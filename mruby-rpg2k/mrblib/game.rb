@@ -1284,9 +1284,11 @@ module Game
       [bx + sub % 6 * TS, by + sub / 6 * TS, TS, TS]
     end
 
-    # .event_tile_rect, kept per id (frozen): a tile-graphic event asks every frame it is drawn.
+    # .event_tile_rect, kept per id: a tile-graphic event asks every frame it is
+    # drawn. Not frozen: a freeze of a method's result puts bc2cpp's frozen test
+    # back on every ivar store (FRESH_BUILTIN_FREEZE); callers only read it.
     def self.event_tile_rect_cached(tile_id)
-      (@event_tile_rects ||= {})[tile_id] ||= event_tile_rect(tile_id).freeze
+      (@event_tile_rects ||= {})[tile_id] ||= event_tile_rect(tile_id)
     end
   end
 
