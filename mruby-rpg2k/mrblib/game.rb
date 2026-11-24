@@ -1108,14 +1108,72 @@ module Game
       # mrb_int and cannot silently become a bignum on the Emscripten / PSP /
       # Wio builds (see AGENTS.md on 32-bit mrb_int).
       b = block(id)
-      return [] if b.nil?
-      # abf is 0..2 and cf is 0..3 (see .anim_ab / .anim_c), so eight bits each
-      # is room to spare and the three pack without overlapping.
+      return NO_QUADS if b.nil?
       @quads_cache ||= {}
-      key = (id << 16) | (abf << 8) | cf
+      key = quads_key(b, id, abf, cf)
       cached = @quads_cache[key]
       return cached if cached
       @quads_cache[key] = uncached_quads(b, id, abf, cf)
+    end
+
+    NO_QUADS = [].freeze
+
+    # The .quads cache key. abf is 0..2 and cf is 0..3 (see .anim_ab /
+    # .anim_c), so eight bits each is room to spare and the three pack without
+    # overlapping. Only the input a block's quads read is in it (see
+    # .uncached_quads), so a water tile is one entry per column, not per
+    # column and frame.
+    def self.quads_key(b, id, abf, cf)
+      case b
+      when :water then (id << 16) | (abf << 8)
+      when :animated then (id << 16) | cf
+      else id << 16
+      end
+    end
+
+    # DENSE_QUADS: the .quads entries of +ids+, for every animation state they
+    # read, made up front and copied side by side. Made lazily mid-render, each
+    # landed among that frame's garbage and kept its heap page alive after the
+    # garbage died; the copies are the only objects made in the last loop.
+    def self.prepare_quads(ids)
+      @quads_cache ||= {}
+      keys = []
+      made = []
+      i = 0
+      while i < ids.size
+        id = ids[i]
+        b = block(id)
+        i += 1
+        next if b.nil?
+        abf_n = b == :water ? 3 : 1
+        cf_n = b == :animated ? 4 : 1
+        a = 0
+        while a < abf_n
+          c = 0
+          while c < cf_n
+            key = quads_key(b, id, a, c)
+            unless @quads_cache.key?(key)
+              keys.push(key)
+              made.push(uncached_quads(b, id, a, c))
+            end
+            c += 1
+          end
+          a += 1
+        end
+      end
+      i = 0
+      while i < keys.size
+        qs = made[i]
+        out = Array.new(qs.size)
+        j = 0
+        while j < qs.size
+          out[j] = qs[j].dup
+          j += 1
+        end
+        @quads_cache[keys[i]] = out
+        i += 1
+      end
+      nil
     end
 
     # Whether an upper-layer id draws nothing, so the renderer can skip it.
@@ -6280,6 +6338,15 @@ module Game
     def lower(x, y); tile(@lower, 0, x, y); end
     def upper(x, y); tile(@upper, 1, x, y); end
 
+    # Every tile id the layers draw now (substitutions applied), each once;
+    # the upper layer's blank ids are left out, as the renderer skips them.
+    def drawn_tile_ids
+      seen = {}
+      add_drawn_ids(seen, @lower, @substitutions[0], false)
+      add_drawn_ids(seen, @upper, @substitutions[1], true)
+      seen.keys
+    end
+
     # Tile Substitution: from now on draw (and treat) as `new_id` every tile on
     # `layer` (0 lower, 1 upper) that *currently* renders as `old_id` -- not
     # just tiles whose original chipset id is `old_id`. Ported from a
@@ -6381,6 +6448,17 @@ module Game
     # `y` that reaches the MUL below is a Fixnum wherever the already-
     # annotated `x` is.
 
+
+    def add_drawn_ids(seen, layer, table, upper)
+      i = 0
+      size = layer.size
+      while i < size
+        id = layer[i]
+        id = table[id] || id unless table.empty?
+        seen[id] = true unless upper && ChipsetLayout.upper_blank?(id)
+        i += 1
+      end
+    end
 
     def tile(layer, index, x, y)
       return nil unless in_bounds?(x, y)
