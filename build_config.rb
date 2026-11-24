@@ -719,7 +719,10 @@ def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false, world: 'close
   # take the file CI's `bc2cpp-lists` job computed from the same commit (docs/bc2cpp-unregistered-methods.md).
   StaticDispatchLists.verify_current!(lists, __dir__) if verify
   mruby = File.expand_path('3rd/mruby', __dir__)
-  sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
+  # The external core gems' ROM tables are the core's too (static_dispatch_registrations.rb reads the same ones).
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/compiled_gems')
+  sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"] +
+            BC2CPP_EXTERNAL_MRBLIB_GEMS.flat_map { |g| Dir[File.expand_path("3rd/#{g}/src/**/*.c", __dir__)] }
   # ENGINE_ROM: the engine gems' ROM tables name their class the same way (MRB_MT_CLASS), so their entries the proof lists
   # (StaticDispatchLists#engine_rom) are left out at compile time too.
   engine = CoreNativeCandidates.engine_entries(Dir["#{__dir__}/mruby-{rgss,lcf}/src/**/*.{c,cc,cpp,cxx}"].sort)

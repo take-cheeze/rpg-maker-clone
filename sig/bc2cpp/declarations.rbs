@@ -635,6 +635,11 @@ end
 
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_rgss
+class Array
+  def _rgss_native_sort!: () -> untyped
+end
+
+# bc2cpp-native: base_rgss
 module RGSS
   def __log_bridge_write: (String) -> String?
   def default_font_path: () -> String?
@@ -849,6 +854,7 @@ end
 
 # bc2cpp-native: base_rgss
 class RGSS::Window
+  def _rgss1_initialize: (?untyped) -> self
   def active=: (untyped) -> self
   def back_opacity=: (Numeric) -> self
   def contents=: (untyped) -> untyped
@@ -4324,27 +4330,6 @@ class Win32API
   def initialize: (untyped, untyped, ?untyped, ?untyped) -> untyped
 end
 
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_stringio
-class StringIO
-  def string: () -> untyped
-  def string=: (untyped) -> untyped
-  def each: (*untyped) -> untyped
-  def fileno: () -> untyped
-  def flush: () -> untyped
-  def fsync: () -> untyped
-  def open: (?untyped, ?untyped) -> untyped
-  def print: (*untyped) -> untyped
-  def puts: (*untyped) -> untyped
-  def read_nonblock: (*untyped) -> untyped
-  def readchar: () -> untyped
-  def sync: () -> untyped
-  def sync=: (untyped) -> untyped
-  def sysread: (*untyped) -> untyped
-  def ungetc: (untyped) -> untyped
-  def write_nonblock: (*untyped) -> untyped
-end
-
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_stringio
 class EOFError < IOError
@@ -4362,12 +4347,14 @@ end
 class StringIO
   def close: () -> nil
   def closed?: () -> bool
+  def eof: () -> bool
   def eof?: () -> bool
   def getbyte: () -> Integer?
   def getc: (*untyped) -> String?
   def gets: (*untyped) -> untyped
   def initialize: (?String, ?String) -> self
   def initialize_copy: (untyped) -> untyped
+  def length: () -> Integer
   def lineno: () -> Integer
   def lineno=: (Numeric) -> Integer
   def pos: () -> Integer
@@ -4377,6 +4364,8 @@ class StringIO
   def rewind: () -> Integer
   def seek: (Numeric, ?untyped) -> Integer
   def size: () -> Integer
+  def syswrite: (untyped) -> Integer
+  def tell: () -> Integer
   def write: (untyped) -> Integer
 end
 
@@ -6346,6 +6335,28 @@ end
 class LCF::MapTree < LCF::File
   def lazy_io: (untyped) -> untyped
   def self.eager?: () -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_stringio
+class StringIO
+  def string: () -> untyped
+  def string=: (untyped) -> untyped
+  def each: (*untyped) -> untyped
+  def fileno: () -> untyped
+  def flush: () -> untyped
+  def fsync: () -> untyped
+  def open: (?untyped, ?untyped) -> untyped
+  def print: (*untyped) -> untyped
+  def puts: (*untyped) -> untyped
+  def read_nonblock: (*untyped) -> untyped
+  def readchar: () -> untyped
+  def sync: () -> untyped
+  def sync=: (untyped) -> untyped
+  def sysread: (*untyped) -> untyped
+  def tty?: () -> untyped
+  def ungetc: (untyped) -> untyped
+  def write_nonblock: (*untyped) -> untyped
 end
 
 # ---- block_types.rbs
