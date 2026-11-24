@@ -339,7 +339,7 @@ void setup(void) {
     rpg_maker_init_rpg2k_gem(g_mrb);
   if (g_mrb->exc) {
     report_exc("init");
-    probe("fail");
+    probe("failed");
     g_result = kFailBoot;
     return;
   }
@@ -366,7 +366,7 @@ void setup(void) {
   g_game = bc2cpp_entry_RPG2k_new(g_mrb, 1, &args);
   if (g_mrb->exc) {
     report_exc("RPG2k.new");
-    probe("fail");
+    probe("failed");
     g_result = kFailNew;
     return;
   }
