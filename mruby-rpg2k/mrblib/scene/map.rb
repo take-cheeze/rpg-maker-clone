@@ -11765,6 +11765,7 @@ class RPG2k
           draw_event ordered[i], cam_x, cam_y
           i += 1
         end
+        ordered
       end
 
       # @events sorted by (y, x, id), kept from the last frame and re-sorted by

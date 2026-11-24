@@ -11993,8 +11993,8 @@ class RPG2k::Scene::Map
   def start_map_animation: (untyped) -> Hash?
   def start_player_route: (untyped, untyped) -> Hash?
   def start_player_slide: () -> bool
-  def step_event: (untyped, ?allow_trigger: untyped) -> bool
-  def step_events: (?allow_trigger: untyped) -> nil
+  def step_event: (untyped, ?untyped) -> bool
+  def step_events: (?untyped) -> nil
   def step_movement: () -> (bool | nil)
   def sync_player_route_to_state: () -> Hash?
   def table_entries: (untyped) -> Array
