@@ -37,6 +37,9 @@ class LCF::File
   def schema: () -> untyped
 end
 # bc2cpp-native: base_lcf
+class LCF::MapTree < LCF::File
+end
+# bc2cpp-native: base_lcf
 class LCF::MapUnit < LCF::File
 end
 # bc2cpp-native: base_lcf
@@ -690,6 +693,7 @@ class RGSS::Bitmap
   def self._begin_load: () -> nil
   def self._decoder_ran?: () -> bool
   def self._load_error: () -> String
+  def self._rom_bitmaps: (untyped, String) -> bool
   def self._stbi_error: () -> String
 end
 
@@ -1081,11 +1085,6 @@ module Game::ChipsetLayout
   def self.anim_ab: (untyped, untyped, untyped) -> untyped
   def self.anim_c: (untyped) -> untyped
   def self.quads_from_quarters: (untyped) -> untyped
-end
-# bc2cpp-native: base_rpg2k
-module Game::CommonEvent
-  def self.eligible: (untyped, untyped) -> untyped
-  def self.load: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 class Game::Enemy
@@ -5069,26 +5068,6 @@ class NoMethodError < NameError
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_rpg
-class Game::CommonEvent::CommonEventRecord
-  def id: () -> untyped
-  def id=: (untyped) -> untyped
-  def trigger: () -> untyped
-  def trigger=: (untyped) -> untyped
-  def need_flag: () -> untyped
-  def need_flag=: (untyped) -> untyped
-  def switch_id: () -> untyped
-  def switch_id=: (untyped) -> untyped
-  def lcf_chunk: () -> untyped
-  def lcf_chunk=: (untyped) -> untyped
-  def commands: () -> untyped
-  def commands=: (untyped) -> untyped
-  def guarded: () -> untyped
-  def guarded=: (untyped) -> untyped
-  def initialize: () -> untyped
-end
-
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_onig-regexp
 class OnigRegexp
   def source: () -> untyped
@@ -5104,6 +5083,36 @@ class OnigRegexp
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_lcf
+module LCF
+  def self.append_ber: (untyped, untyped) -> untyped
+  def self.double_decode: (untyped) -> untyped
+  def self.double_default: (untyped) -> untyped
+  def self.double_encode: (untyped) -> untyped
+  def self.double_from_fixed: (untyped) -> untyped
+  def self.double_to_fixed: (untyped) -> untyped
+  def self.double_value?: (untyped) -> untyped
+  def self.edition_default: (untyped) -> untyped
+  def self.encode: (untyped, untyped) -> untyped
+  def self.encode_move_commands: (untyped) -> untyped
+  def self.exp_default: () -> untyped
+  def self.field?: (untyped, untyped) -> untyped
+  def self.int16_format: (untyped) -> untyped
+  def self.level_max: () -> untyped
+  def self.npc_hp_max: () -> untyped
+  def self.pack_double: (untyped) -> untyped
+  def self.pack_fixed_double: (untyped, untyped) -> untyped
+  def self.parse_event_commands: (untyped) -> untyped
+  def self.parse_move_commands: (untyped) -> untyped
+  def self.pc_hp_max: () -> untyped
+  def self.read_ber: (untyped) -> untyped
+  def self.read_section: (untyped, untyped) -> untyped
+  def self.sget: (untyped, untyped) -> untyped
+  def self.skeys: (untyped) -> untyped
+  def self.to_rb: (untyped, untyped) -> untyped
+  def self.var_max: () -> untyped
+  def self.var_min: () -> untyped
+end
 # bc2cpp-native: base_rpg
 class Game::Picture
   def id: () -> untyped
@@ -6293,53 +6302,43 @@ end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_lcf
-module LCF
-  def self.append_ber: (untyped, untyped) -> untyped
-  def self.double_decode: (untyped) -> untyped
-  def self.double_default: (untyped) -> untyped
-  def self.double_encode: (untyped) -> untyped
-  def self.double_from_fixed: (untyped) -> untyped
-  def self.double_to_fixed: (untyped) -> untyped
-  def self.double_value?: (untyped) -> untyped
-  def self.edition_default: (untyped) -> untyped
-  def self.encode: (untyped, untyped) -> untyped
-  def self.encode_move_commands: (untyped) -> untyped
-  def self.exp_default: () -> untyped
-  def self.field?: (untyped, untyped) -> untyped
-  def self.int16_format: (untyped) -> untyped
-  def self.level_max: () -> untyped
-  def self.npc_hp_max: () -> untyped
-  def self.pack_double: (untyped) -> untyped
-  def self.pack_fixed_double: (untyped, untyped) -> untyped
-  def self.parse_event_commands: (untyped) -> untyped
-  def self.parse_move_commands: (untyped) -> untyped
-  def self.pc_hp_max: () -> untyped
-  def self.read_ber: (untyped) -> untyped
-  def self.read_section: (untyped, untyped, ?untyped) -> untyped
-  def self.sget: (untyped, untyped) -> untyped
-  def self.skeys: (untyped) -> untyped
-  def self.to_rb: (untyped, untyped) -> untyped
-  def self.var_max: () -> untyped
-  def self.var_min: () -> untyped
-end
-# bc2cpp-native: base_lcf
 class LCF::Array2D
   def []: (untyped) -> untyped
   def []=: (untyped, untyped) -> untyped
+  def each_peek: () -> untyped
   def index_rows: (untyped, untyped) -> untyped
-  def index_rows_to: (untyped, untyped) -> untyped
-  def index_section: (untyped) -> untyped
   def initialize: (untyped, untyped, ?untyped) -> untyped
   def load_lazy: () -> untyped
+  def peek: (untyped) -> untyped
   def row_bytes: (untyped) -> untyped
   def same_schema?: (untyped) -> untyped
   def self.blank_table: (untyped) -> untyped
-  def self.lazy_section: (untyped, untyped) -> untyped
 end
-# bc2cpp-native: base_lcf
-class LCF::MapTree < LCF::File
-  def lazy_io: (untyped) -> untyped
+# bc2cpp-native: base_rpg
+module Game::CommonEvent
   def self.eager?: () -> untyped
+  def self.eager_load: (untyped) -> untyped
+  def self.eligible: (untyped, untyped) -> untyped
+  def self.load: (untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::CommonEvent::CommonEventRecord
+  def id: () -> untyped
+  def id=: (untyped) -> untyped
+  def trigger: () -> untyped
+  def trigger=: (untyped) -> untyped
+  def need_flag: () -> untyped
+  def need_flag=: (untyped) -> untyped
+  def switch_id: () -> untyped
+  def switch_id=: (untyped) -> untyped
+  def lcf_chunk: () -> untyped
+  def lcf_chunk=: (untyped) -> untyped
+  def guarded: () -> untyped
+  def guarded=: (untyped) -> untyped
+  def commands: () -> untyped
+  def commands=: (untyped) -> untyped
+  def initialize: () -> untyped
+  def lazy_in: (untyped) -> untyped
 end
 
 # ---- block_types.rbs

@@ -1006,6 +1006,24 @@ module LCF
       @data[idx] = Array1D.new(entry, @schema)
     end
 
+    # PEEK_ROWS: row +idx+ as #[] reads it, but a row #[] has not kept is not
+    # kept now either, so a scan of a few fields of every row does not leave the
+    # whole table decoded.
+    def peek idx
+      entry = @data[idx]
+      return entry unless entry.is_a?(String) || entry.is_a?(Integer)
+      entry = row_bytes(entry) if entry.is_a?(Integer)
+      Array1D.new(entry, @schema)
+    end
+
+    # PEEK_ROWS: #each through #peek.
+    def each_peek
+      @data.size.times do |i|
+        v = peek(i)
+        yield i, v unless v.nil?
+      end
+    end
+
     # Store an entry (an Array1D, or its already-serialised bytes) at id +idx+,
     # so an authored table can be assembled and written back out via #to_lcf.
     # LCF_ROW_FLOW: an entry of any other kind is re-read through this

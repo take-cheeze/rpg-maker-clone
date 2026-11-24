@@ -2131,10 +2131,11 @@ class RPG2k
           return
         end
 
+        # The list is the last test: reading it decodes it (LAZY_COMMON_EVENTS).
         ce = @common.find do |c|
-          c.trigger == Game::CommonEvent::AUTO_START && c.commands &&
+          c.trigger == Game::CommonEvent::AUTO_START &&
             common_gate_open?(c) && !@started_common[c.id] &&
-            !(c.guarded && @auto_once_common[c.id])
+            !(c.guarded && @auto_once_common[c.id]) && c.commands
         end
         return unless ce
         @started_common[ce.id] = true

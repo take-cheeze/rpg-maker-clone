@@ -424,6 +424,16 @@ def fake_map_with_counters(id, events, counters)
                                    upper_layer: upper, events: events))
 end
 
+# Game::CommonEvent.load reads the common event table through LCF::Array2D's
+# #each_peek and #peek; the fake table is the check's own Hash, kept live.
+def fake_common_table(common)
+  return nil unless common
+
+  def common.peek(id) = self[id]
+  def common.each_peek(&block) = each(&block)
+  common
+end
+
 def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
             airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
             rpg2003: false, menu_commands: nil, footstep: '', on_damage_se: false,
@@ -679,7 +689,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                                     footstep: footstep.respond_to?(:file) ? footstep :
                                       OpenStruct.new(file: footstep, volume: 100, pitch: 100),
                                     on_damage_se: on_damage_se) },
-    common_event: common,
+    common_event: fake_common_table(common),
     # Database actor rows carry the *original* names, which a \N[n] must not
     # use once the actor has been renamed in play (see the \N[n] check).
     player: { 1 => OpenStruct.new(name: 'DbHero'),

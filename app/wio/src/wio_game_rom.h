@@ -22,6 +22,8 @@ constexpr size_t kDiagSize = 0x10000;
 
 // The config value for +key+ (NUL-terminated copy into buf), or nullptr.
 const char* wio_game_rom_config(const char* key, char* buf, size_t cap);
+// The bytes of the image's file at +path+, in place, or nullptr.
+const void* wio_game_rom_file(const char* path, size_t* len);
 // Appends to the diagnostic log (stdout/stderr land here too).
 void wio_diag_write(const char* text, size_t len);
 void wio_diag_printf(const char* fmt, ...)

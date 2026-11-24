@@ -485,7 +485,7 @@ Dir.mktmpdir('lcf-schema-rom') do |dir|
     'LCF::Array1D#initialize' => nil, 'LCF::Array1D#[]' => nil, 'LCF::Array1D#int16_values' => nil,
     'LCF::Array1D#[]=' => nil, 'LCF::Array1D#field?' => nil, 'LCF::Array1D#sym2idx' => nil,
     'LCF::Array2D#initialize' => nil, 'LCF::Array2D#[]' => nil, 'LCF::Array2D#[]=' => nil,
-    'LCF::Array2D#same_schema?' => nil, 'LCF::Array1D.blank_record' => nil, 'LCF::Array2D.blank_table' => nil,
+    'LCF::Array2D#peek' => nil, 'LCF::Array2D#same_schema?' => nil, 'LCF::Array1D.blank_record' => nil, 'LCF::Array2D.blank_table' => nil,
     'LCF::Array2D.lazy_section' => nil,
     'LCF::File#initialize' => nil, 'LCF::File#schema' => nil, 'LCF::File#build_root' => nil, 'LCF::File#to_lcf' => nil,
     'LCF::Database#schema' => nil, 'LCF::MapTree#schema' => nil, 'LCF::MapUnit#schema' => nil,
@@ -606,6 +606,7 @@ suite.finish!
 # LCF::Array2D#initialize ceb5854322c5e4a9
 # LCF::Array2D#[] 0bd3d8ee88588dc7
 # LCF::Array2D#[]= 8f62693a42874353
+# LCF::Array2D#peek f83dc4310648ec2d
 # LCF::Array2D#same_schema? 46dfcbb99268bcd5
 # LCF::Array1D.blank_record 67a22e0df0d5c2c1
 # LCF::Array2D.blank_table b85106192df023c6
