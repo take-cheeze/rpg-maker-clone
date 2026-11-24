@@ -243,6 +243,33 @@ module RGSS
       ok = false
     end
 
+    # A cropped, mirrored sprite is drawn from its bitmap's rows at draw time
+    # (DRAW_TIME_SPRITE, mruby-rgss/src/lib.cxx), so the screen has to show the
+    # crop flipped: the strip's second and third pixels, swapped.
+    strip = Bitmap.new(4, 1)
+    strip.set_pixel(0, 0, Color.new(255, 0, 0, 255))
+    strip.set_pixel(1, 0, Color.new(0, 255, 0, 255))
+    strip.set_pixel(2, 0, Color.new(0, 0, 255, 255))
+    strip.set_pixel(3, 0, Color.new(255, 255, 255, 255))
+    cell = Sprite.new(viewport)
+    cell.z = 10
+    cell.bitmap = strip
+    cell.src_rect = Rect.new(1, 0, 2, 1)
+    cell.mirror = true
+    Graphics.update
+    shot = Graphics.snap_to_bitmap
+    left = shot.get_pixel(0, 0)
+    right = shot.get_pixel(1, 0)
+    $stderr.puts "[RGSS-PROBE] cell=#{[left.red, left.green, left.blue].inspect}/" \
+                 "#{[right.red, right.green, right.blue].inspect}"
+    unless left.blue > 200 && left.green < 50 && right.green > 200 && right.blue < 50
+      $stderr.puts "[RGSS-PROBE] FAIL a cropped, mirrored sprite drew the wrong pixels"
+      ok = false
+    end
+    shot.dispose
+    cell.dispose
+    strip.dispose
+
     sprite.dispose
     bitmap.dispose
     viewport.dispose
