@@ -1014,7 +1014,12 @@ class RPG2k
   # not stall the run.
   def maybe_battle_play_test
     return if @btl_play_done
-    return unless battle_play_requested?
+    unless battle_play_requested?
+      # The host sets RPG2K_BATTLE_PLAY once, before RPG2k.new (src/main.cxx, trace_host.cxx), so an unset or false
+      # flag stays so: the per-frame lookup (a raised NameError where no host sets it) runs once.
+      @btl_play_done = true
+      return
+    end
 
     scene = @scenes.last
     return unless scene.is_a?(Scene::Map)
