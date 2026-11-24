@@ -598,7 +598,10 @@ run lies inside the world the proof read. That world is:
 psp and maix are single-format builds, so they have no game Ruby and no other
 maker gem. Their engine mrblib is the closed one, less a few files (psp drops
 the debug tools), and the proof already reads their native sources. Fewer
-sources only remove references, so the closed list stays sound for both. The
+sources only remove references. The interpreter, though, looks up by name what
+the closed build's compiled class bodies call directly (`attr_writer`,
+`public`), so these builds keep every listed entry whose name any mrblib spells
+(`bc2cpp_interpreted_sends` in `build_config.rb`). The
 maix firmware's `mrb_load_string` probe evaluates a string literal and sends
 nothing.
 

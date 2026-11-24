@@ -690,6 +690,21 @@ cross = emscripten || wio || maix || psp || android
 # The Wio target is closed-world only: its libmruby is always the bc2cpp build.
 abort 'MRUBY_TARGET=wio requires RPGMAKER_BC2CPP=1 (the Wio build is closed-world only)' if wio && ENV['RPGMAKER_BC2CPP'] != '1'
 
+# INTERPRETED_SENDS: the closed build compiles its class bodies, so the proof counts no lookup for what they call
+# (attr_writer, public, ...), but an interpreted build runs its mrblib in the VM, which looks every send up by name.
+# The excluded keys whose name some mrblib spells as an identifier stay; operators keep the proof's verdict.
+def bc2cpp_interpreted_sends(keys)
+  require 'set'
+  words = Set.new
+  Dir["#{__dir__}/{3rd/*,3rd/mruby/mrbgems/*,mruby-*,app/**}/mrblib/**/*.rb"].each do |file|
+    File.read(file).scan(/[A-Za-z_]\w*/) { |word| words << word }
+  end
+  keys.select do |key|
+    name = key.split('#', 2)[1]
+    name.match?(/\A[A-Za-z_]/) && words.include?(name.sub(/[?!=]\z/, ''))
+  end
+end
+
 # CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (StaticDispatchLists#core_excluded) are
 # left out of a build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names
 # (3rd/mruby/include/mruby/class.h). Written only when it changes, so an unchanged list rebuilds nothing. Both
@@ -706,7 +721,8 @@ abort 'MRUBY_TARGET=wio requires RPGMAKER_BC2CPP=1 (the Wio build is closed-worl
 #   - closed, and the interpreted psp and maix builds: single format (no game Ruby, no other maker gem), the same
 #     engine mrblib less some files (psp's debug tools), and native sources the proof already reads. An interpreted
 #     build (interpreted: true) takes core_excluded only: engine_rom and core_rows count an engine send the closed
-#     build compiles to a direct call as no lookup, but the interpreter looks it up by name (RGSS.window_title=);
+#     build compiles to a direct call as no lookup, but the interpreter looks it up by name (RGSS.window_title=)
+#     and of core_excluded it leaves in what some mrblib names (bc2cpp_interpreted_sends);
 #   - not psp/maix with RPGMAKER_BC2CPP=1: their generated code is not the closed build's, and a by-name fallback it
 #     emits may name a core method the closed generation never did;
 #   - not wio: it takes lists of its own world (`BC2CPP_LISTS_WORLD=wio scripts/bc2cpp/static_dispatch_lists.bash`),
@@ -735,7 +751,9 @@ def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false, world: 'close
   # Operator names are keyed by the proof's verdict (INDEX_CLOSED admission):
   # only listed ones are excluded, so naming them here maps keys to entries.
   # CORE_ROWS: the core entries only proven-receiver calls look up stay as rows (StaticDispatchLists#core_rows).
-  text = CoreNativeCandidates.header(lists.core_excluded.to_a,
+  excluded = lists.core_excluded.to_a
+  excluded -= bc2cpp_interpreted_sends(excluded) if interpreted
+  text = CoreNativeCandidates.header(excluded,
                                      CoreNativeCandidates.entries(sources.sort, operator_names: true),
                                      interpreted ? [] : lists.engine_rom.to_a, engine,
                                      rows: interpreted ? [] : lists.core_rows.to_a,
@@ -1514,7 +1532,6 @@ if psp
       t.defines << 'STBI_NO_STDIO'
     end
     conf.linker.flags += cpu_flags
-    conf.linker.flags << '-flto' if wio_lto
 
     # Only the table rows go: app/psp links without --gc-sections, so a left-out entry's C function stays.
     bc2cpp_core_mt_exclude(conf, verify: false, interpreted: true) unless ENV['RPGMAKER_BC2CPP']

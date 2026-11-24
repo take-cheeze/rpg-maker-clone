@@ -482,6 +482,28 @@ void psp_write(const char* s, int len) {
   sceIoWrite(2, s, len);
 }
 
+// Writes "RPG2K_PSP_EXCEPTION <where>: <exception.inspect>" and clears
+// M->exc, so a recovered failure still names its cause in the log.
+void report_exc(mrb_state* M, const char* where) {
+  const mrb_value exc = mrb_obj_value(M->exc);
+  M->exc = nullptr;
+  const mrb_value text = mrb_inspect(M, exc);
+  const bool inspect_ok = !M->exc && mrb_string_p(text);
+  M->exc = nullptr;
+  char buf[256];
+  StrBuf sb(buf, sizeof(buf));
+  sb.str("RPG2K_PSP_EXCEPTION ");
+  sb.str(where);
+  sb.str(": ");
+  if (inspect_ok) {
+    sb.str(RSTRING_PTR(text), static_cast<size_t>(RSTRING_LEN(text)));
+  } else {
+    sb.str("(inspect raised)");
+  }
+  sb.str("\n");
+  psp_write(buf, sb.length());
+}
+
 // The HOME-button exit callback, so the EBOOT quits cleanly back to the XMB.
 int exit_callback(int /*arg1*/, int /*arg2*/, void* /*common*/) {
   sceKernelExitGame();
@@ -708,6 +730,10 @@ int main(void) {
     sb.str("\n");
     psp_write(buf, sb.length());
   }
+  // mrb_open stops at the first gem whose init raises and returns with
+  // M->exc set; the later gems are missing, so name the cause.
+  if (M && M->exc)
+    report_exc(M, "gem init");
 
   // GAME_DIR/RTP_DIR are load-bearing mruby constants: mruby-rpg2k/mruby-rpgxp/
   // mruby-rpgvx/mruby-rgss's own mrblib read them directly (RPG_RT.ldb/.lmt
@@ -783,7 +809,7 @@ int main(void) {
         // resolution -- a rare path (the project's own files exist but its
         // database failed to parse), not worth the extra bookkeeping to fix
         // up for what the idle status screen looks like.
-        M->exc = nullptr;
+        report_exc(M, "game start");
         game_start_result = "FAILED";
       } else {
         // Keeps `game_obj` reachable from the GC across the frame loop below
@@ -855,7 +881,10 @@ int main(void) {
         // read before clearing, since clearing drops the flag with the
         // exception object.
         const bool clean_exit = MRB_EXC_EXIT_P(M->exc);
-        M->exc = nullptr;
+        if (clean_exit)
+          M->exc = nullptr;
+        else
+          report_exc(M, "main loop");
         have_game = false;
         char buf[48];
         StrBuf sb(buf, sizeof(buf));
