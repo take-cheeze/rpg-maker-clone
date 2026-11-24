@@ -14,14 +14,13 @@ namespace {
 // pins in the Seeed board package).
 TFT_eSPI g_tft;
 
-// LVGL partial-render draw buffers. Ten rows of RGB565 across the 320-wide
-// panel is 320*10*2 = 6.4 KB each; two buffers let a DMA flush of one overlap
-// rendering into the other. Kept small on purpose: SRAM is only 192 KB and a
-// full 320x240x2 framebuffer (150 KB) would nearly exhaust it.
+// The LVGL partial-render draw buffer: ten rows of RGB565 across the 320-wide
+// panel, 6.4 KB (a full 320x240x2 framebuffer would take 150 KB of the 192 KB
+// SRAM). One buffer is enough: flush_cb returns only once the transfer is done,
+// so a second buffer could never be rendered into while the first one flushes.
 constexpr int32_t kPanelWidth = 320;
 constexpr int32_t kBufRows = 10;
-uint8_t g_buf1[kPanelWidth * kBufRows * 2];
-uint8_t g_buf2[kPanelWidth * kBufRows * 2];
+uint8_t g_buf[kPanelWidth * kBufRows * 2];
 
 // LVGL needs a tick and a delay source without SDL. Arduino's millis()/delay()
 // provide both; wrap them so the function-pointer types match exactly (millis()
@@ -36,6 +35,8 @@ void delay_cb(uint32_t ms) {
 
 // Push one rendered rectangle to the LCD. LVGL hands RGB565 pixels; the panel
 // expects byte-swapped RGB565, so setSwapBytes(true) is set once at init.
+// pushColors blocks until the SPI transfer has finished (SPIClass::transfer
+// with block = true), so the buffer is free again when flush_ready is called.
 void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   const int32_t w = lv_area_get_width(area);
   const int32_t h = lv_area_get_height(area);
@@ -84,7 +85,7 @@ lv_display_t* wio_display_create(int32_t hor_res, int32_t ver_res) {
     return nullptr;
 
   lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-  lv_display_set_buffers(disp, g_buf1, g_buf2, sizeof(g_buf1),
+  lv_display_set_buffers(disp, g_buf, nullptr, sizeof(g_buf),
                          LV_DISPLAY_RENDER_MODE_PARTIAL);
   lv_display_set_flush_cb(disp, flush_cb);
   return disp;
