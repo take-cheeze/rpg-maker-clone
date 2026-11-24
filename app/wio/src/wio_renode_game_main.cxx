@@ -47,6 +47,9 @@
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display);
+extern "C" bool rgss_set_rom_bitmaps(const void* section,
+                                     size_t size,
+                                     const char* root);
 extern "C" char __end__;
 extern "C" char __StackTop;
 extern "C" void* _sbrk(ptrdiff_t);
@@ -347,6 +350,10 @@ void setup(void) {
   probe("init");
 
   rgss_set_display(g_mrb, disp);
+  // scripts/wio/game_rom.rb's decoded images, read in place (ROM_BITMAP).
+  size_t bitmaps_len = 0;
+  if (const void* bitmaps = wio_game_rom_file("/rgss/bitmaps", &bitmaps_len))
+    rgss_set_rom_bitmaps(bitmaps, bitmaps_len, "/rom");
   set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, "/rom"));
   set_const("RTP_DIR", mrb_str_new_cstr(g_mrb, ""));
   set_const("TEST_PLAY", mrb_false_value());

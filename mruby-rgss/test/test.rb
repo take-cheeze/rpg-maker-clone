@@ -2360,6 +2360,110 @@ assert "RGSS::Bitmap unpacks a 2-bit palette PNG and keys its colour 0" do
   end
 end
 
+# A ROM_BITMAP section (mruby-rgss/src/lib.cxx) holding +entries+, each
+# [path, w, h, indices, [palette, keyed palette], [bpp, keyed bpp]] and in
+# path order, as scripts/wio/game_rom.rb lays it out.
+def rom_section(entries)
+  head = 16 + entries.size * 32
+  names = entries.map { |e| "#{e[0]}\0" }
+  blobs = ""
+  at = head + names.join.bytesize
+  place = lambda do |bytes|
+    blobs << ("\0" * ((16 - (at + blobs.bytesize) % 16) % 16))
+    off = at + blobs.bytesize
+    blobs << bytes
+    off
+  end
+  path_at = head
+  table = entries.each_with_index.map do |(_, w, h, idx, pals, bpps), i|
+    row = [path_at, place.call(idx), w, h, place.call(pals[0]), place.call(pals[1]), *bpps].pack("V8")
+    path_at += names[i].bytesize
+    row
+  end
+  "RGSSRB01" + [entries.size, 0].pack("V2") + table.join + names.join + blobs
+end
+
+assert "RGSS::Bitmap reads a ROM bitmap in place, as its file would decode" do
+  # A native-only path: the CRuby shim (scripts/rgss/cruby_compat.rb) has no ROM.
+  next true unless RGSS::Bitmap.respond_to?(:_rom_bitmaps)
+  file = "test-palette-rom.png"
+  File.open(file, "wb") { |io| io.write(PAL_PNG_4X2) }
+  # PAL_PNG_4X2 as its decode keeps it: tRNS gives an alpha channel either way.
+  pal = [30, 20, 10, 255, 90, 40, 200, 255, 120, 250, 0, 128].pack("C*") + ("\0" * (253 * 4))
+  # Keyed, an opaque palette clears index 0; unkeyed it decodes without alpha.
+  plain = [3, 2, 1, 255, 6, 5, 4, 255, 9, 8, 7, 255].pack("C*") + ("\0" * (253 * 4))
+  keyed = plain.dup
+  keyed.setbyte(3, 0)
+  sec = rom_section([["Pics/a.png", 4, 2, [0, 1, 2, 1, 2, 1, 0, 0].pack("C*"), [pal, pal], [4, 4]],
+                     ["Pics/b.png", 3, 1, [2, 0, 1].pack("C*"), [plain, keyed], [3, 4]]])
+  begin
+    assert_false RGSS::Bitmap._rom_bitmaps("RGSSRB01" + [9, 0].pack("V2"), "romroot")
+    assert_true RGSS::Bitmap._rom_bitmaps(sec, "romroot")
+    ref = RGSS::Bitmap.new(file, true)
+    rom = RGSS::Bitmap.new("romroot/Pics/a.png", true)
+    assert_equal [4, 2], [rom.width, rom.height]
+    assert_equal pixels_of(ref), pixels_of(rom)
+    assert_equal [[7, 8, 9, 255], [1, 2, 3, 255], [4, 5, 6, 255]],
+                 pixels_of(RGSS::Bitmap.new("romroot/Pics/b.png"))
+    assert_equal [[7, 8, 9, 255], [1, 2, 3, 0], [4, 5, 6, 255]],
+                 pixels_of(RGSS::Bitmap.new("romroot/Pics/b.png", true))
+    # Only under the root: no file and no entry answers here.
+    assert_raise(RuntimeError) { RGSS::Bitmap.new("elsewhere/Pics/a.png") }
+
+    # Drawn from, it gives what the decoded file gives.
+    bg = RGSS::Color.new(50, 60, 70, 200)
+    [[255, :blt], [100, :blt], [255, :copy_blt]].each do |opa, m|
+      a = RGSS::Bitmap.new(6, 4)
+      b = RGSS::Bitmap.new(6, 4)
+      [a, b].each { |d| d.fill_rect(0, 0, 6, 4, bg) }
+      if m == :blt
+        a.blt(1, 1, rom, RGSS::Rect.new(0, 0, 4, 2), opa)
+        b.blt(1, 1, ref, RGSS::Rect.new(0, 0, 4, 2), opa)
+      else
+        a.copy_blt(1, 1, rom, RGSS::Rect.new(0, 0, 4, 2))
+        b.copy_blt(1, 1, ref, RGSS::Rect.new(0, 0, 4, 2))
+      end
+      assert_equal pixels_of(b), pixels_of(a), "#{m} at #{opa}"
+    end
+    lay = RGSS::Bitmap.new(4, 2)
+    lay._defer
+    flat = RGSS::Bitmap.new(4, 2)
+    [[lay, rom], [flat, ref]].each do |d, s|
+      d.blt(0, 0, s, RGSS::Rect.new(0, 0, 4, 2))
+      d.blt_quads(0, 0, s, [[0, 0, 1, 0, 2, 1]])
+    end
+    assert_equal pixels_of(flat), pixels_of(lay)
+
+    # A write copies the pixels out of the ROM first: the next load of the
+    # same entry still has them as they were.
+    w = RGSS::Bitmap.new("romroot/Pics/a.png", true)
+    w.fill_rect(3, 1, 1, 1, RGSS::Color.new(1, 2, 3, 4))
+    assert_equal [1, 2, 3, 4], pixels_of(w)[7]
+    assert_equal pixels_of(ref)[0, 7], pixels_of(w)[0, 7]
+    assert_equal pixels_of(ref), pixels_of(RGSS::Bitmap.new("romroot/Pics/a.png", true))
+
+    # A clone shares the ROM pixels; recolouring or writing it leaves the
+    # original as it was.
+    c = rom.clone
+    assert_equal pixels_of(ref), pixels_of(c)
+    c.hue_change(130)
+    ref.hue_change(130)
+    assert_equal pixels_of(ref), pixels_of(c)
+    assert_equal pixels_of(RGSS::Bitmap.new(file, true)), pixels_of(rom)
+    c.set_pixel(0, 0, RGSS::Color.new(9, 9, 9, 9))
+    assert_equal pixels_of(RGSS::Bitmap.new(file, true)), pixels_of(rom)
+    rom.dispose
+    assert_true rom.disposed?
+    assert_equal pixels_of(ref)[1, 7], pixels_of(c)[1, 7]
+
+    assert_true RGSS::Bitmap._rom_bitmaps(nil, "")
+    assert_raise(RuntimeError) { RGSS::Bitmap.new("romroot/Pics/a.png") }
+  ensure
+    RGSS::Bitmap._rom_bitmaps(nil, "")
+    File.delete(file) if File.exist?(file)
+  end
+end
+
 assert "RGSS::Plane API surface" do
   # Plane is now native: Plane.new builds an lv_canvas the size of the viewport
   # and tiles the bitmap into it, so construction needs a live display the
