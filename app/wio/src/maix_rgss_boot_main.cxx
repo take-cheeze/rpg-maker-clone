@@ -77,6 +77,15 @@ void setup(void) {
     Serial.println("maix-rgss-boot: mrb_open failed");
     return;
   }
+  // A gem whose init raised leaves mrb->exc set and every later gem missing.
+  if (g_mrb->exc) {
+    mrb_value exc = mrb_obj_value(g_mrb->exc);
+    g_mrb->exc = nullptr;
+    mrb_value text = mrb_inspect(g_mrb, exc);
+    Serial.print("maix-rgss-boot: gem init failed: ");
+    Serial.println(g_mrb->exc ? "(inspect raised)" : RSTRING_PTR(text));
+    return;
+  }
   Serial.println("maix-rgss-boot: mrb_open ok");
   report_string(g_mrb, mrb_load_string(g_mrb, kProbe));
 
