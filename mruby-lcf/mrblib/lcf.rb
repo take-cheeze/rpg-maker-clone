@@ -56,6 +56,9 @@ module LCF
   # comes near this: the schema's highest field id is 140 and database tables
   # hold a few thousand rows.
   MAX_CHUNK_ID = 0xffff
+  # LAZY_CHUNKS: the smallest chunk (and table) a file-backed record leaves in
+  # its file instead of reading into a String (Array1D#initialize's +io+).
+  LAZY_MIN = 2048
   INT32_SIGN_BIT = 0x8000_0000
   INT32_WRAP = 0x1_0000_0000
 
@@ -715,11 +718,18 @@ module LCF
       Array1D.new '', { elements: elements }
     end
 
-    def initialize s, schema
+    # LAZY_CHUNKS: +io+ is the open file +s+ reads (LCF::File#lazy_io), which
+    # stays open and unwritten while this record lives (LCF::File#save_to reads
+    # it all back first). A chunk of LAZY_MIN bytes or more is then left there:
+    # @data holds the file offset of its length, and #chunk_bytes, or a lazy
+    # Array2D for a table chunk, reads it when it is used.
+    def initialize s, schema, io = nil
       s = StringIO.new s if s.is_a? String
 
       @data = []
       @schema = schema
+      @io = io
+      size = io ? io.size : 0
 
       begin
         until s.eof?
@@ -727,7 +737,14 @@ module LCF
           break if idx == 0
           raise "chunk id #{idx} out of range" if idx < 0 || idx > MAX_CHUNK_ID
 
+          at = io ? io.pos : 0
           len = LCF.read_ber s
+          if io && len >= LAZY_MIN
+            raise "truncated chunk #{idx}: #{len} bytes declared" if io.pos + len > size
+            io.seek(io.pos + len)
+            @data[idx] = at
+            next
+          end
           # A chunk that runs past the end of the stream is a truncated file, not
           # a shorter chunk: reading it short would load the file with that
           # field silently garbled or missing.
@@ -770,7 +787,14 @@ module LCF
       cached = @decoded && @decoded[idx]
       return cached if cached
       elem = LCF.sget(LCF.elements_of(@schema), idx)
-      value = LCF.to_rb @data[idx], elem
+      d = @data[idx]
+      value = if !d.is_a?(Integer)
+                LCF.to_rb d, elem
+              elsif LCF.sget(elem, :type) == :Array2D
+                Array2D.new @io, elem, d
+              else
+                LCF.to_rb chunk_bytes(d), elem
+              end
       if value.is_a?(Array1D) || value.is_a?(Array2D) ||
          LCF.sget(elem, :type) == :event || LCF.sget(elem, :type) == :move_commands
         @decoded ||= {}
@@ -799,6 +823,7 @@ module LCF
     # surfaces the first row. Returns nil when the chunk is absent.
     def int16_values idx
       d = @data[idx]
+      d = chunk_bytes(d) if d.is_a?(Integer)
       d && d.unpack(LCF.int16_format(LCF.sget(LCF.elements_of(@schema), idx)))
     end
 
@@ -810,6 +835,7 @@ module LCF
     # with no event running at all. Returns the removed raw bytes, or nil.
     def delete idx
       was = @data[idx]
+      was = chunk_bytes(was) if was.is_a?(Integer)
       @data[idx] = nil
       @decoded.delete(idx) if @decoded
       was
@@ -851,6 +877,7 @@ module LCF
       out = String.new
       @data.each_with_index do |v, idx|
         next if idx == 0 || v.nil?
+        v = chunk_bytes(v) if v.is_a?(Integer)
         bytes = LCF.binstr(v.is_a?(String) ? v : v.to_lcf)
         LCF.append_ber(out, idx)
         LCF.append_ber(out, bytes.bytesize) << bytes
@@ -869,7 +896,24 @@ module LCF
       (@schema && sym2idx.key?(sym)) ? true : false
     end
 
+    # LAZY_CHUNKS: reads every chunk and table row still in the file into
+    # memory, so the file can be rewritten under this record.
+    def load_lazy
+      @data.each_with_index { |v, idx| @data[idx] = chunk_bytes(v) if v.is_a?(Integer) }
+      @decoded&.each_value { |v| v.load_lazy if v.is_a?(Array2D) }
+      @io = nil
+    end
+
     private
+
+    # The bytes of the chunk whose length is at file offset +at+.
+    def chunk_bytes at
+      @io.seek at
+      len = LCF.read_ber @io
+      d = len > 0 ? @io.read(len) : ''
+      raise "truncated chunk: #{len} bytes declared" if d.nil? || d.bytesize != len
+      d
+    end
 
     # Field-name -> chunk-id lookup for Symbol keys, built lazily
     # (only paid by callers that actually use a symbolic field key --
@@ -914,11 +958,15 @@ module LCF
       Array2D.new '', { elements: elements }
     end
 
-    def initialize s, schema
+    # LAZY_CHUNKS: with +at+, +s+ is the open file of a lazy Array1D chunk and +at+
+    # the offset of the chunk's length (Array1D#initialize): only each row's
+    # file offset is kept, and #[] reads the row from the file.
+    def initialize s, schema, at = nil
       s = StringIO.new s if s.is_a? String
 
       @data = []
       @schema = schema
+      return index_rows(s, at) if at
 
       # An empty string builds an empty, writable table from scratch (populate
       # via #[]= then #to_lcf); a real chunk starts with a BER entry count.
@@ -943,7 +991,8 @@ module LCF
     # raw byte span forever. nil for an id the table never had.
     def [] idx
       entry = @data[idx]
-      return entry unless entry.is_a? String
+      return entry unless entry.is_a?(String) || entry.is_a?(Integer)
+      entry = row_bytes(entry) if entry.is_a?(Integer)
       @data[idx] = Array1D.new(entry, @schema)
     end
 
@@ -985,13 +1034,53 @@ module LCF
       out = LCF.write_ber(ids.size)
       ids.each do |i|
         entry = @data[i]
+        entry = row_bytes(entry) if entry.is_a?(Integer)
         bytes = LCF.binstr(entry.is_a?(String) ? entry : entry.to_lcf)
         LCF.append_ber(out, i) << bytes
       end
       out
     end
 
+    # LAZY_CHUNKS: reads the rows still in the file (see Array1D#load_lazy).
+    def load_lazy
+      @data.each_with_index { |v, i| @data[i] = row_bytes(v) if v.is_a?(Integer) }
+      @io = nil
+    end
+
     private
+
+    # The row table of a lazy chunk (see #initialize): a row's chunks are
+    # skipped, short ones read into one reused buffer rather than sought past
+    # (a seek drops the file's read buffer).
+    def index_rows io, at
+      @io = io
+      io.seek at
+      len = LCF.read_ber io
+      stop = io.pos + len
+      scratch = String.new
+      (0...LCF.read_ber(io)).each do
+        idx = LCF.read_ber io
+        raise "row id #{idx} out of range" if idx < 0 || idx > MAX_CHUNK_ID
+        @data[idx] = io.pos
+        until io.eof?
+          id = LCF.read_ber io
+          break if id == 0
+          n = LCF.read_ber io
+          raise "truncated chunk #{id}: #{n} bytes declared" if n < 0 || io.pos + n > stop
+          if n > 256
+            io.seek(io.pos + n)
+          elsif n > 0
+            io.read(n, scratch)
+          end
+        end
+      end
+      raise "truncated table: #{len} bytes declared" if io.pos > stop
+    end
+
+    def row_bytes at
+      @io.seek at
+      read_row_bytes(@io)
+    end
 
     def same_schema? other
       return @schema.equal?(other) if @schema.nil? || other.nil?

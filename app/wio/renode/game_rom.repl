@@ -1,0 +1,12 @@
+// Layered on a Wio board description for the wio_renode_game firmware
+// (scripts/wio/renode_game.bash): the game image in the QSPI flash window,
+// and a diagnostic log window where the real board has nothing.
+qspi_rom: Memory.MappedMemory @ sysbus 0x04000000
+    size: 0x1000000
+
+diag: Memory.MappedMemory @ sysbus 0x06000000
+    size: 0x10000
+
+// The 5-way switch's port. wio_terminal.repl leaves it out, and an unmapped
+// port reads every pin low: pressed, as the buttons are active low.
+portd: GPIOPort.SAMD21_GPIO @ sysbus 0x41008180
