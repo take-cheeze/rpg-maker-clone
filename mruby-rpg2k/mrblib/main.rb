@@ -119,7 +119,10 @@ class RPG2k
       @arrow_bmp = Bitmap.new(ARROW_W, ARROW_H)
       @arrow_sprite.bitmap = @arrow_bmp
 
-      allocate_skin
+      # Created before the first call on self, so no method ever reads either one unset (nil).
+      @skin_bmp = Bitmap.new([width, 1].max, [height, 1].max)
+      @cursor_bmp = Bitmap.new([width, 1].max, [height, 1].max)
+      install_skin
     end
 
     attr_reader :x, :y, :width, :height, :contents, :windowskin, :cursor_rect
@@ -314,8 +317,12 @@ class RPG2k
     # then redraw both layers and re-centre the (fixed-size) arrow sprite.
     def allocate_skin
       @skin_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
-      @skin_sprite.bitmap = @skin_bmp
       @cursor_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
+      install_skin
+    end
+
+    def install_skin
+      @skin_sprite.bitmap = @skin_bmp
       @cursor_sprite.bitmap = @cursor_bmp
       position_arrow
       draw_skin

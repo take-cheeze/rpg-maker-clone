@@ -363,6 +363,10 @@ checks it at run time unless the return proofs already prove it: a wrong value r
 (a `StandardError`) naming the method and the type. `BC2CPP_DECLARATION_GUARD=0` drops those checks; `%a{bc2cpp:hint}`
 declarations keep theirs.
 
+An `@ivar: C` may name a class a native defines (`RGSS::Bitmap`): every store checks it like a program class, as long
+as the closed world sees every subclass of C. `@ivar: Array[C]` checks its elements while C has no subclass.
+`BC2CPP_DECLARED_NATIVE=0` leaves those declarations unchecked.
+
 Loop: write the signature, run `type_check.rb` (contradictions are reported at the signature's line), fix them, then
 enable the strict tier when it is available so a wrong signature fails loudly at run time instead of falling back.
 
