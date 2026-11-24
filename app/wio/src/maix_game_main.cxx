@@ -115,6 +115,13 @@ void setup(void) {
     Serial.println("maix-game: mrb_open failed");
     return;
   }
+  // mrb_open stops at the first gem whose init raises and returns with
+  // mrb->exc set; every later gem is missing, so report it here.
+  if (g_mrb->exc) {
+    Serial.println("maix-game: gem init failed");
+    report_exc();
+    return;
+  }
   rgss_set_display(g_mrb, disp);
 #ifdef MAIX_WITH_SD
   // Game data lives on the card under /sd/<game> (pushed with
