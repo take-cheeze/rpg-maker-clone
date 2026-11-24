@@ -4126,6 +4126,7 @@ class RPG2k
         @erased_event_positions[ev.id] = tile
         # A new Array, not reject!: #step_parallels may be walking the old one.
         @parallels = @parallels.reject { |p| p.event.equal?(ev) }
+        nil
       end
 
       # -- page refresh -------------------------------------------------------
