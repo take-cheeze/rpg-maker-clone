@@ -6487,35 +6487,37 @@ module Game
   class EnemyAi
     # Constructed only by Scene::Battle: `Game::EnemyAi.new(db, @state)`, db being Scene::Base#db.
     @state: Game::State?
-    @db: LCF::Database?
+    @db: LCF::Database
   end
   # @db: each class's one writer is `@db = db` in #initialize. Party.new gets RPG2k#db (main.rb, whose one writer
   # is `LCF::Database.new`) or Game::State.from_lsd's db (RPG2k#load_save_state passes @db); Actors.new only
-  # Party's db; Actor.new only Actors' @db; Shop.new and EnemyAi.new Scene::Base#db.
+  # Party's db; Actor.new only Actors' @db; Shop.new and EnemyAi.new Scene::Base#db. None of them is nil, so the
+  # declaration has no `?`: a `?` seeds NIL into the pool (DECLARED_IVAR_PROOF) and keeps every `@db[...]` nil test.
   class Actor
-    @db: LCF::Database?
+    @db: LCF::Database
   end
   class Actors
-    @db: LCF::Database?
+    @db: LCF::Database
   end
   class Party
-    @db: LCF::Database?
+    @db: LCF::Database
   end
   class Shop
-    @db: LCF::Database?
-    # The one construction site (Scene::Map#open_shop) passes `@state.party`, Game::State's attr_reader.
-    @party: Game::Party?
+    @db: LCF::Database
+    # The one construction site (Scene::Map#open_shop) passes `@state.party`, Game::State's attr_reader,
+    # after an `is_a?(Game::Party)` check.
+    @party: Game::Party
     # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
     def sellable?: (untyped) -> bool
   end
   class State
     # One writer (#initialize). Constructed by RPG2k#start_new_game with `Game::Party.new(@db)` and by
     # State.from_lsd with `Party.new(db, member_ids)`.
-    @party: Game::Party?
+    @party: Game::Party
   end
   class Map
     # One writer (#initialize); one construction site: RPG2k#load_map's `LCF::MapUnit.new(...)`.
-    @unit: LCF::MapUnit?
+    @unit: LCF::MapUnit
   end
   class Battle
     # Called only from #finished? with @enemies, which #initialize sets from its `enemies` argument; the one
@@ -7867,9 +7869,11 @@ class RPG2k
     class Base
       # One writer each, in #initialize(parent). Every scene is built with RPG2k's `self` (main.rb), another scene's
       # @parent / `parent` (Scene::Base's attr_reader) or `map.parent` (Scene::Battle). RPG2k#db / #map_tree are
-      # attr_readers whose one writers are `LCF::Database.new` / `LCF::MapTree.new`.
-      @parent: RPG2k?
-      @db: LCF::Database?
+      # attr_readers whose one writers are `LCF::Database.new` / `LCF::MapTree.new`. @parent and @db are never nil (no
+      # `?`: see Game::Actor's @db). @map_tree keeps it: RPG2k#initialize assigns it after other calls, so the flow
+      # cannot prove it set before a read.
+      @parent: RPG2k
+      @db: LCF::Database
       @map_tree: LCF::MapTree?
       # Declared once for the family (DECLARED_IVAR_PROOF needs one declaring class): every writer is a subclass's
       # #initialize, `@state = state` (each construction site passes RPG2k's or another scene's Game::State, or nil),
@@ -11322,7 +11326,7 @@ end
 # bc2cpp-native: typed_returns
 class Game::Map
   def id: () -> Integer?
-  def unit: () -> LCF::MapUnit?
+  def unit: () -> LCF::MapUnit
   def chipset_id: () -> Integer
   def revision: () -> Integer
   def restore_substitutions: (untyped, untyped) -> Integer
@@ -11527,7 +11531,7 @@ end
 
 # bc2cpp-native: typed_returns
 class Game::State
-  def party: () -> Game::Party?
+  def party: () -> Game::Party
   def switches: () -> Game::Switches?
   def variables: () -> Game::Variables?
   def message_config: () -> Game::MessageConfig?
@@ -11702,7 +11706,7 @@ end
 
 # bc2cpp-native: typed_returns
 class RPG2k
-  def db: () -> LCF::Database?
+  def db: () -> LCF::Database
   def map_tree: () -> LCF::MapTree?
   def bug_report_interp_text: (untyped) -> String
   def bug_report_text: () -> String
@@ -11716,8 +11720,8 @@ end
 
 # bc2cpp-native: typed_returns
 class RPG2k::Scene::Base
-  def parent: () -> RPG2k?
-  def db: () -> LCF::Database?
+  def parent: () -> RPG2k
+  def db: () -> LCF::Database
   def map_tree: () -> LCF::MapTree?
   def dispose: () -> nil
   def draw_stat_segment: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> Integer

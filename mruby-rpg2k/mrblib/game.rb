@@ -7578,14 +7578,22 @@ module Game
       list = []
       ce = db[:common_event]
       return list unless ce
-      ce.each_peek do |id, c|
+      # DENSE_RECORDS: the records outlive the map visit and each peeked row is
+      # garbage, so the fields are gathered first and the records made after,
+      # side by side. Made per row, they were spread over every page the row
+      # garbage filled and kept those pages alive.
+      fields = []
+      ce.each_peek { |id, c| fields.push(id, c[:start_term], c[:need_flag], c[:switch_id]) }
+      i = 0
+      while i < fields.size
         rec = CommonEventRecord.new
-        rec.id = id
-        rec.trigger = c[:start_term]
-        rec.need_flag = c[:need_flag]
-        rec.switch_id = c[:switch_id]
+        rec.id = fields[i]
+        rec.trigger = fields[i + 1]
+        rec.need_flag = fields[i + 2]
+        rec.switch_id = fields[i + 3]
         rec.lazy_in(ce)
         list.push(rec)
+        i += 4
       end
       @loaded_db = db
       @loaded = list
