@@ -1381,28 +1381,6 @@ class Game::Rng
   def scaled: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
-class Game::Screen
-  def approach: (untyped, untyped, untyped) -> untyped
-  def erase: (untyped, ?untyped) -> untyped
-  def fade_transition: () -> untyped
-  def flash: (untyped, untyped, untyped, untyped, untyped) -> untyped
-  def flash_begin: (untyped, untyped, untyped, untyped, untyped) -> untyped
-  def flash_end: () -> untyped
-  def initialize: () -> untyped
-  def pan: (untyped, untyped, untyped) -> untyped
-  def pan_lock: () -> untyped
-  def pan_reset: (untyped) -> untyped
-  def pan_step_for: (untyped) -> untyped
-  def pan_unlock: () -> untyped
-  def shake: (untyped, untyped, untyped) -> untyped
-  def shake_begin: (untyped, untyped) -> untyped
-  def shake_end: () -> untyped
-  def tint_to: (untyped, untyped, untyped, untyped, untyped) -> untyped
-  def update_fade: () -> untyped
-  def update_shake: () -> untyped
-  def update_tint: () -> untyped
-end
-# bc2cpp-native: base_rpg2k
 class Game::Shop
   def goods: () -> untyped
   def did_transaction: () -> untyped
@@ -1676,12 +1654,6 @@ end
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::GameOver < RPG2k::Scene::Base
   def dispose: () -> untyped
-end
-# bc2cpp-native: base_rpg2k
-class RPG2k::Scene::Map::LRUBitmapCache
-  def []: (untyped) -> untyped
-  def []=: (untyped, untyped) -> untyped
-  def initialize: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Map::MapEventState
@@ -6128,14 +6100,6 @@ end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rpg
-module Game::ChipsetLayout
-  def self.anim_ab: (untyped, untyped, untyped) -> untyped
-  def self.anim_c: (untyped) -> untyped
-  def self.prepare_quads: (untyped) -> untyped
-  def self.quads_from_quarters: (untyped) -> untyped
-  def self.quads_key: (untyped, untyped, untyped, untyped) -> untyped
-end
-# bc2cpp-native: base_rpg
 class Game::Map
   def id: () -> untyped
   def unit: () -> untyped
@@ -6151,6 +6115,40 @@ class Game::Map
   def set_upper: (untyped, untyped, untyped) -> untyped
   def substitute_tile: (untyped, untyped, untyped) -> untyped
   def sync_layers_to_unit: () -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rpg
+module Game::ChipsetLayout
+  def self.anim_ab: (untyped, untyped, untyped) -> untyped
+  def self.anim_c: (untyped) -> untyped
+  def self.event_tile_rect_cached: (untyped) -> untyped
+  def self.prepare_quads: (untyped) -> untyped
+  def self.quads_from_quarters: (untyped) -> untyped
+  def self.quads_key: (untyped, untyped, untyped, untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::Screen
+  def approach: (untyped, untyped, untyped) -> untyped
+  def erase: (untyped, ?untyped) -> untyped
+  def fade_transition: () -> untyped
+  def flash: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def flash_begin: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def flash_end: () -> untyped
+  def initialize: () -> untyped
+  def pan: (untyped, untyped, untyped) -> untyped
+  def pan_lock: () -> untyped
+  def pan_reset: (untyped) -> untyped
+  def pan_step_for: (untyped) -> untyped
+  def pan_unlock: () -> untyped
+  def shake: (untyped, untyped, untyped) -> untyped
+  def shake_begin: (untyped, untyped) -> untyped
+  def shake_end: () -> untyped
+  def tint_equal?: (untyped) -> untyped
+  def tint_to: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def update_fade: () -> untyped
+  def update_shake: () -> untyped
+  def update_tint: () -> untyped
 end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::Map < RPG2k::Scene::Base
@@ -6246,6 +6244,8 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def drive_shop_quantity: () -> untyped
   def drive_wait_key_enter: () -> untyped
   def event_at: (untyped, untyped) -> untyped
+  def event_draw_order: () -> untyped
+  def event_drawn_after?: (untyped, untyped) -> untyped
   def event_id_at: (untyped, untyped) -> untyped
   def event_position: (untyped) -> untyped
   def finish_inn: (untyped, ?untyped) -> untyped
@@ -6282,7 +6282,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def map_node_properties: () -> untyped
   def message_color: (untyped) -> untyped
   def missing_animation_wait: (untyped) -> untyped
-  def move_autonomous: (untyped, untyped, ?allow_trigger: untyped) -> untyped
+  def move_autonomous: (untyped, untyped, ?untyped) -> untyped
   def move_event_to: (untyped, untyped, untyped) -> untyped
   def move_player_to: (untyped, untyped) -> untyped
   def move_vehicle_to: (untyped, untyped, untyped) -> untyped
@@ -6352,8 +6352,8 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def start_player_route: (untyped, untyped) -> untyped
   def start_player_slide: () -> untyped
   def step_animation_wait: () -> untyped
-  def step_event: (untyped, ?allow_trigger: untyped) -> untyped
-  def step_events: (?allow_trigger: untyped) -> untyped
+  def step_event: (untyped, ?untyped) -> untyped
+  def step_events: (?untyped) -> untyped
   def step_map_animation: () -> untyped
   def step_movement: () -> untyped
   def sync_player_route_to_state: () -> untyped
@@ -6374,6 +6374,14 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def weather_drift: (untyped) -> untyped
   def weather_particle_count: (untyped) -> untyped
   def self.tone_channel: (untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class RPG2k::Scene::Map::LRUBitmapCache
+  def []: (untyped) -> untyped
+  def []=: (untyped, untyped) -> untyped
+  def initialize: (untyped) -> untyped
+  def renumber_stamps: () -> untyped
+  def touch: (untyped) -> untyped
 end
 
 # ---- block_types.rbs
@@ -12020,8 +12028,8 @@ class RPG2k::Scene::Map
   def start_map_animation: (untyped) -> Hash?
   def start_player_route: (untyped, untyped) -> Hash?
   def start_player_slide: () -> bool
-  def step_event: (untyped, ?allow_trigger: untyped) -> bool
-  def step_events: (?allow_trigger: untyped) -> nil
+  def step_event: (untyped, ?untyped) -> bool
+  def step_events: (?untyped) -> nil
   def step_movement: () -> (bool | nil)
   def sync_player_route_to_state: () -> Hash?
   def table_entries: (untyped) -> Array

@@ -267,9 +267,15 @@ class RPG2k
         whole = frac >> 2
         if whole > 0
           frac = frac - (whole << 2)
-          move_count = [move_count + whole, TILE].min
+          move_count += whole
+          move_count = TILE if move_count > TILE
         end
-        [move_count, frac, move_count < TILE]
+        # One Array reused across calls: both callers destructure it at once.
+        out = (@advance_slide_out ||= [0, 0, false])
+        out[0] = move_count
+        out[1] = frac
+        out[2] = move_count < TILE
+        out
       end
 
       # The screen flash a step's slip damage fires: a brief red pulse, so the
@@ -356,9 +362,16 @@ class RPG2k
       # no changes.
       class LRUBitmapCache
 
+        # Recency is a use stamp per key rather than the Hash's order: moving a
+        # key to the end deleted and re-inserted it, and re-inserting a String
+        # key makes the Hash store a fresh frozen copy -- a String per lookup.
+        STAMP_LIMIT = 0x3fff_0000
+
         def initialize(capacity_bytes)
           @capacity_bytes = capacity_bytes
-          @entries = {} # key => value, oldest (least-recently-used) first
+          @entries = {} # key => value
+          @used = {} # key => stamp of its last #[] or #[]=
+          @stamp = 0
           @bytes = 0
         end
 
@@ -372,14 +385,14 @@ class RPG2k
         # is never confused with a cached nil here.
         def [] key
           return nil unless @entries.key?(key)
-          v = @entries.delete(key)
-          @entries[key] = v
-          v
+          touch(key)
+          @entries[key]
         end
 
         def []= key, value
-          @bytes -= bitmap_bytes(@entries.delete(key)) if @entries.key?(key)
+          @bytes -= bitmap_bytes(@entries[key]) if @entries.key?(key)
           @entries[key] = value
+          touch(key)
           @bytes += bitmap_bytes(value)
           evict_lru_until_within_budget
           value
@@ -406,9 +419,27 @@ class RPG2k
         def evict_lru_until_within_budget
           while @bytes > @capacity_bytes && @entries.size > 1
             oldest_key = nil
-            @entries.each_key { |k| oldest_key = k; break }
+            oldest = nil
+            @used.each do |k, t|
+              next if oldest && t >= oldest
+              oldest_key = k
+              oldest = t
+            end
+            @used.delete(oldest_key)
             @bytes -= bitmap_bytes(@entries.delete(oldest_key))
           end
+        end
+
+        def touch(key)
+          renumber_stamps if @stamp >= STAMP_LIMIT
+          @used[key] = (@stamp += 1)
+        end
+
+        # Keeps the stamps fixnums on a 32-bit mrb_int; the order is unchanged.
+        def renumber_stamps
+          keys = @used.keys.sort_by { |k| @used[k] }
+          @stamp = 0
+          keys.each { |k| @used[k] = (@stamp += 1) }
         end
       end
 
@@ -892,7 +923,7 @@ class RPG2k
           # them walk, turn and finish routes, but never lets one start a new
           # event over the player's -- there is only one foreground
           # interpreter, and it is already busy with this message.
-          step_events(allow_trigger: false) if events_move_during_message?
+          step_events(false) if events_move_during_message?
         else
           start_autostart
           if event_busy?
@@ -1133,7 +1164,7 @@ class RPG2k
       def update_screen_overlay
         screen = @state.screen
         draw_transition_mask screen
-        update_map_tone screen.tint
+        update_map_tone screen.tint unless screen.tint_equal?(@map_tint)
 
         r, g, b, strength = screen.flash_color
         if strength <= 0
@@ -2330,13 +2361,14 @@ class RPG2k
       # window or a parked foreground event -- see #parallels_paused? for the
       # (narrower) actual pause conditions.
       def step_parallels
-        # Iterate a copy: an Erase Event in a parallel process removes it from
-        # @parallels mid-loop (see erase_event). A plain while loop instead of
+        # Walks the Array as it was when the sweep began: nothing mutates
+        # @parallels in place (#erase_event and the rebuilds assign a new one),
+        # so it needs no copy. A plain while loop instead of
         # #each avoids allocating a Proc+env for the block on every single
         # frame -- mruby's `for` is sugar for the identical #each call (see
         # its NODE_FOR codegen), so it would not save anything here; only a
         # loop with no block at all does.
-        snapshot = @parallels.dup
+        snapshot = @parallels
         i = 0
         size = snapshot.size
         while i < size
@@ -3710,9 +3742,11 @@ class RPG2k
       # Advance autonomous / custom-route event movement one frame. Skipped
       # while an event process is running so the map holds still during messages
       # -- unless a Message Options command turned `continue_events` on, in which
-      # case #update calls this a second way (allow_trigger: false) while a
+      # case #update calls this a second way (allow_trigger false) while a
       # message window is open; see #events_move_during_message?.
-      def step_events(allow_trigger: true)
+      # allow_trigger is positional in this family: mrbc rebuilds a `**` Hash in
+      # every call of a method with keyword parameters.
+      def step_events(allow_trigger = true)
         # A plain while loop instead of #each avoids allocating a Proc+env for
         # the block on every single frame. Safe without a defensive #dup
         # (unlike #step_parallels' own loop): #step_event only sets up the
@@ -3722,7 +3756,7 @@ class RPG2k
         i = 0
         size = @events.size
         while i < size
-          step_event(@events[i], allow_trigger: allow_trigger)
+          step_event(@events[i], allow_trigger)
           i += 1
         end
       end
@@ -3756,7 +3790,7 @@ class RPG2k
         status
       end
 
-      def step_event(e, allow_trigger: true)
+      def step_event(e, allow_trigger = true)
         # Cleared unconditionally, before any early return, so a crossing
         # recognised on some earlier frame (see #move_autonomous /
         # #player_intended_target) never lingers into a later frame where
@@ -3810,7 +3844,7 @@ class RPG2k
           status = run_route_step(e.route, ch, @world) unless e.route.done?
         else
           dir = Game::MoveType.next_direction(e.move_type, ch, @world)
-          move_autonomous(e, dir, allow_trigger: allow_trigger) if dir
+          move_autonomous(e, dir, allow_trigger) if dir
         end
         # A Set Move Route (forced) or page-authored custom route stepping
         # into the hero's own tile fires this event's own Event Touch (2)
@@ -3933,7 +3967,7 @@ class RPG2k
       # only one foreground @interpreter, already mid-message, and RPG2000
       # never shows two message windows at once, so a second event's
       # commands have nowhere safe to run until the first message closes.
-      def move_autonomous(e, dir, allow_trigger: true)
+      def move_autonomous(e, dir, allow_trigger = true)
         ch = e.char
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
         if nx == @state.x && ny == @state.y
@@ -4094,7 +4128,9 @@ class RPG2k
         # this table in sync when they do, the same way ordinary movement
         # keeps @event_last_position current for a merely-hidden one.
         @erased_event_positions[ev.id] = tile
-        @parallels.reject! { |p| p.event.equal?(ev) }
+        # A new Array, not reject!: #step_parallels may be walking the old one.
+        @parallels = @parallels.reject { |p| p.event.equal?(ev) }
+        nil
       end
 
       # -- page refresh -------------------------------------------------------
@@ -4171,8 +4207,8 @@ class RPG2k
            !party_moved && !timer_moved
           return false
         end
-        live = {}
-        @events.each { |e| live[e.id] = e }
+        # Built on the first event whose page is re-selected: most sweeps skip them all.
+        live = nil
         changed = false
         evs.each do |id, src|
           next if changed || @erased_events[id]
@@ -4186,6 +4222,10 @@ class RPG2k
           selected = Game::EventPage.select(src[:pages], sw, va, @state.party,
                                             @state.timer_seconds, @state.timer2_seconds)
           page = selected && selected[1]
+          unless live
+            live = {}
+            @events.each { |ev| live[ev.id] = ev }
+          end
           e = live[id]
           changed = true unless page.equal?(e && e.page)
         end
@@ -4694,8 +4734,17 @@ class RPG2k
       # map-triggered Show Battle Animation with no fight running at all. A
       # sprite with no flash in flight costs nothing here (native #update
       # no-ops).
+      # Over TYPES (the keys #setup_sprites gives the Hash, in its order):
+      # each_value builds an Array of the values every frame.
       def update_vehicle_flashes
-        (@vehicle_sprites || {}).each_value { |s| s.update if s }
+        return unless @vehicle_sprites
+        types = Game::Vehicle::TYPES
+        i = 0
+        while i < types.size
+          s = @vehicle_sprites[types[i]]
+          s.update if s
+          i += 1
+        end
       end
 
       # The RGSS tone that paints `flash` over a CharSet frame: the flash colour
@@ -10129,7 +10178,8 @@ class RPG2k
       # frame regardless of whether a message is open, since a window can
       # still be shrinking after @message itself has already moved on.
       def update_closing_windows
-        return unless @closing_windows
+        # reject! allocates even on an empty Array.
+        return if @closing_windows.nil? || @closing_windows.empty?
         @closing_windows.reject! do |w|
           w.update
           unless w.closing?
@@ -11316,9 +11366,10 @@ class RPG2k
           # the view.
           dx -= @state.screen.shake_offset
         end
-        @picture_bmp.stretch_blt Rect.new(dx, dy, zw, zh), src,
-                                 Rect.new(0, 0, src.width, src.height),
-                                 pic.opacity
+        # stretch_blt copies the Rects, so they are reused.
+        dst_rect = (@picture_dst_rect ||= Rect.new(0, 0, 0, 0)).set(dx, dy, zw, zh)
+        src_rect = (@picture_src_rect ||= Rect.new(0, 0, 0, 0)).set(0, 0, src.width, src.height)
+        @picture_bmp.stretch_blt dst_rect, src, src_rect, pic.opacity
       rescue StandardError => e
         $stderr.puts "[RPG2k] picture ##{pic.id} draw failed: #{e.message}"
       end
@@ -11736,8 +11787,51 @@ class RPG2k
       # A translucent page is blitted at half opacity. Events with no graphic
       # (empty CharSet name and no tile substitution) draw nothing.
       def draw_events(cam_x, cam_y)
-        ordered = @events.sort_by { |e| [e.char.y, e.char.x, e.id] }
-        ordered.each { |e| draw_event e, cam_x, cam_y }
+        ordered = event_draw_order
+        i = 0
+        size = ordered.size
+        while i < size
+          draw_event ordered[i], cam_x, cam_y
+          i += 1
+        end
+        ordered
+      end
+
+      # @events sorted by (y, x, id), kept from the last frame and re-sorted by
+      # a stable insertion sort, which is linear while events do not pass each
+      # other: sort_by built two Arrays per event per frame. @events is only
+      # replaced or shrunk (#erase_event), so its identity and size say when
+      # the kept order is stale.
+      def event_draw_order
+        order = @event_draw_order
+        unless order && @event_draw_order_src.equal?(@events) && order.size == @events.size
+          order = @event_draw_order = @events.dup
+          @event_draw_order_src = @events
+        end
+        i = 1
+        size = order.size
+        while i < size
+          e = order[i]
+          j = i - 1
+          while j >= 0 && event_drawn_after?(order[j], e)
+            order[j + 1] = order[j]
+            j -= 1
+          end
+          order[j + 1] = e
+          i += 1
+        end
+        order
+      end
+
+      # Whether +a+ sorts after +b+ in #event_draw_order.
+      def event_drawn_after?(a, b)
+        ay = a.char.y
+        by = b.char.y
+        return ay > by unless ay == by
+        ax = a.char.x
+        bx = b.char.x
+        return ax > bx unless ax == bx
+        a.id > b.id
       end
 
       def draw_event(e, cam_x, cam_y)
@@ -11777,7 +11871,8 @@ class RPG2k
         epx, epy = event_pixel(e)
         dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE) - event_jump_offset(e)
-        src = Rect.new(sx, sy, sw, sh)
+        # The blts copy a Rect's fields, so one is reused per draw site.
+        src = (@event_src_rect ||= Rect.new(0, 0, 0, 0)).set(sx, sy, sw, sh)
         bush = event_bush_depth(e)
         toned = e.flash && flashed_charset(charset, src, e.flash)
         if toned
@@ -11812,15 +11907,15 @@ class RPG2k
       # the tile event is skipped.
       def draw_event_tile(e, bmp, cam_x, cam_y, opacity)
         return unless @chipset_bmp
-        sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e.char.graphic_index)
+        sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect_cached(e.char.graphic_index)
         epx, epy = event_pixel(e)
         dx = epx - cam_x
         dy = epy - cam_y - event_jump_offset(e)
         # A tile-graphic event wades like any other: RPG_RT sinks the sprite, not
         # a particular kind of graphic. The depth is scaled off this frame's own
         # height, which is one tile rather than the 32px charset frame.
-        blt_bushed bmp, dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity,
-                   event_bush_depth(e, sh)
+        src = (@event_src_rect ||= Rect.new(0, 0, 0, 0)).set(sx, sy, sw, sh)
+        blt_bushed bmp, dx, dy, @chipset_bmp, src, opacity, event_bush_depth(e, sh)
       end
 
       # Blit one map tile from the chipset image into `bmp` at (dx, dy). A plain
@@ -11907,9 +12002,10 @@ class RPG2k
           bmp.blt dx, dy, src_bmp, src, sunk
         else
           top = src.height - bush
-          bmp.blt dx, dy, src_bmp, Rect.new(src.x, src.y, src.width, top), opacity
-          bmp.blt dx, dy + top, src_bmp,
-                  Rect.new(src.x, src.y + top, src.width, bush), sunk
+          # Reused like the callers' src Rects: blt copies the fields.
+          part = (@bush_part_rect ||= Rect.new(0, 0, 0, 0))
+          bmp.blt dx, dy, src_bmp, part.set(src.x, src.y, src.width, top), opacity
+          bmp.blt dx, dy + top, src_bmp, part.set(src.x, src.y + top, src.width, bush), sunk
         end
       end
 

@@ -21,7 +21,15 @@ require 'tmpdir'
 # -- RGSS stubs (just enough for Scene::Map to build, render and tick) --------
 
 module RGSS
-  Rect = Struct.new(:x, :y, :width, :height)
+  Rect = Struct.new(:x, :y, :width, :height) do
+    def set(x, y, w, h)
+      self.x = x
+      self.y = y
+      self.width = w
+      self.height = h
+      self
+    end
+  end
 
   # The real Profiler is a native mruby module (mruby-rgss/src/profiler.cxx),
   # so it does not exist under this CRuby host. Scene::Map#render and #update
@@ -76,7 +84,10 @@ module RGSS
     # Recorded so the bush-depth checks can assert *how* a character frame was
     # laid down — one blit or a split pair, and at what opacity — rather than
     # only that drawing happened.
-    def blt(*a); (@blt_calls ||= []) << a; end
+    # The native draws copy a Rect argument, and the renderer reuses one per
+    # draw site, so the recorders keep copies.
+    def self.copied(a); a.map { |v| v.is_a?(Rect) ? v.dup : v }; end
+    def blt(*a); (@blt_calls ||= []) << Bitmap.copied(a); end
     attr_reader :blt_calls
     # Bitmap#blt_quads batches several #blt source rects into one native
     # dispatch (see Bitmap#blt_quads in mruby-rgss/src/lib.cxx). The stub
@@ -92,12 +103,12 @@ module RGSS
     # (see Bitmap#copy_blt in mruby-rgss/src/lib.cxx). Recorded apart from
     # #blt_calls so a check counting *tile* draws is not confused by the one
     # whole-grid copy per frame.
-    def copy_blt(*a); (@copy_blt_calls ||= []) << a; end
+    def copy_blt(*a); (@copy_blt_calls ||= []) << Bitmap.copied(a); end
     attr_reader :copy_blt_calls
     def clear_copy_blt_calls; @copy_blt_calls = []; end
     # Recorded so the picture layering check can assert *which order* sources
     # were composited in, not only that drawing happened.
-    def stretch_blt(*a); (@stretch_calls ||= []) << a; end
+    def stretch_blt(*a); (@stretch_calls ||= []) << Bitmap.copied(a); end
     attr_reader :stretch_calls
     def clear_stretch_calls; @stretch_calls = []; end
     # Recorded so the Mosaic/Wave transition checks can assert the native
