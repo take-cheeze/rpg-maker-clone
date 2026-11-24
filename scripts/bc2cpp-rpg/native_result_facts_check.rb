@@ -602,6 +602,11 @@ if ENV['MRBC']
   body_of_impl = lambda do |code, fn|
     code[/^mrb_value #{fn}_impl\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m].to_s
   end
+  # COLD_COMPACT_TAIL (bc2cpp cold_compact.rb): an operator's slow path may sit in the helper its tail calls.
+  slow_path = lambda do |code, body, name|
+    tails = body.scan(/bc2cpp_compact_\h{16}/).map { |h| code[/^static[^\n]* #{h}\(.*?^\}$/m].to_s }
+    [body, *tails].any? { |t| t.include?(name) }
+  end
 
   # The RGSS reopenings and `include RGSS` give `Bitmap` and friends the class-name proofs the
   # shipped Ruby has.
@@ -641,7 +646,7 @@ if ENV['MRBC']
   code = generate.call(WORLD, 'nr_world')
   half = body_of_impl.call(code, 'NrBox_half')
   check.call('an ivar-held Bitmap#width is a proven Fixnum: the division has no check and no fallback',
-             half.include?('operands proven Fixnum') && !half.include?('bc2cpp_slow_div') && !half.include?('bc2cpp_send(') &&
+             half.include?('operands proven Fixnum') && !slow_path.call(code, half, 'bc2cpp_slow_div') && !half.include?('bc2cpp_send(') &&
                !half.include?('mrb_div_float'))
   check.call('and the receiver is exact, so the call is the entry point with no class-guard chain',
              half.include?('NATIVE_EXACT_DIRECT :width -> RGSS::Bitmap') && !half.include?('POLY_SMALL_N'))
@@ -650,11 +655,11 @@ if ENV['MRBC']
              below.include?('NATIVE_EXACT_DIRECT :height') && !below.include?('bc2cpp_slow_lt('))
   tint = body_of_impl.call(code, 'NrBox_tint')
   check.call('Color#red is a Float: the product is proven numeric, not Fixnum, with no slow path',
-             tint.include?('NUMERIC_OPERAND_PROOF') && !tint.include?('bc2cpp_slow_mul') && !tint.include?('operands proven Fixnum'))
+             tint.include?('NUMERIC_OPERAND_PROOF') && !slow_path.call(code, tint, 'bc2cpp_slow_mul') && !tint.include?('operands proven Fixnum'))
   label = body_of_impl.call(code, 'NrBox_label_width')
   check.call('text_size is defined only by Bitmap, so its result is a Rect whatever the receiver: `.width` is exact',
              label.include?('NATIVE_EXACT_DIRECT :width -> RGSS::Rect') && label.include?('operands proven Fixnum'))
-  check.call('and the sum has no by-name fallback', !label.include?('bc2cpp_slow_add'))
+  check.call('and the sum has no by-name fallback', !slow_path.call(code, label, 'bc2cpp_slow_add'))
   # LEAF_OWNER_ELSE: RGSS::Bitmap is a leaf and text_size's only definer, so any other receiver raises NoMethodError.
   check.call('the unproven receiver of text_size keeps its class guard, and its else is the leaf owner\'s nomethod',
              label.match?(/bc2cpp_class_is\(M, r\d+, rgss::native_bitmap_class\(\)\)\) \{\n\s*r\d+ = rgss::bitmap_text_size_direct[^\n]*\n\} else \{\n\s*\/\/ LEAF_OWNER_ELSE :text_size[^\n]*\n\s*r\d+ = bc2cpp_nomethod\(/))
@@ -676,15 +681,13 @@ if ENV['MRBC']
     end
   RUBY
   label = body_of_impl.call(rebound, 'NrBox_label_width')
-  # COLD_COMPACT_TAIL (bc2cpp cold_compact.rb): the slow path may sit in the helper the sum's tail calls.
-  tails = label.scan(/bc2cpp_compact_\h{16}/).map { |h| rebound[/^static[^\n]* #{h}\(.*?^\}$/m].to_s }
   check.call('a rebound Rect constant voids the class fact: the sum keeps its slow path',
-             [label, *tails].any? { |t| t.include?('bc2cpp_slow_add') } && !label.include?('NATIVE_EXACT_DIRECT :width -> RGSS::Rect'))
+             slow_path.call(rebound, label, 'bc2cpp_slow_add') && !label.include?('NATIVE_EXACT_DIRECT :width -> RGSS::Rect'))
 
   extended = generate.call(WORLD + "\nObject.new.extend(Comparable)\n", 'nr_extend')
   half = body_of_impl.call(extended, 'NrBox_half')
   check.call('a singleton maker anywhere withdraws every exact-class fact',
-             half.include?('bc2cpp_slow_div') && !half.include?('NATIVE_EXACT_DIRECT'))
+             slow_path.call(extended, half, 'bc2cpp_slow_div') && !half.include?('NATIVE_EXACT_DIRECT'))
 
   unproven = generate.call(PRELUDE + UNKNOWN_WIDTH + <<~'RUBY', 'nr_unproven')
     class NrBox
@@ -693,7 +696,7 @@ if ENV['MRBC']
   RUBY
   half = body_of_impl.call(unproven, 'NrBox_half')
   check.call('a receiver nothing proves keeps the class-guard chain and the slow path',
-             half.include?('bc2cpp_slow_div') && half.include?('native_bitmap_class()') && !half.include?('NATIVE_EXACT_DIRECT'))
+             slow_path.call(unproven, half, 'bc2cpp_slow_div') && half.include?('native_bitmap_class()') && !half.include?('NATIVE_EXACT_DIRECT'))
 
   mixed = generate.call(PRELUDE + UNKNOWN_WIDTH + <<~'RUBY', 'nr_mixed')
     class NrBox
@@ -709,7 +712,7 @@ if ENV['MRBC']
   RUBY
   half = body_of_impl.call(mixed, 'NrBox_half')
   check.call('a receiver that may be a second class gets no fact',
-             half.include?('bc2cpp_slow_div') && !half.include?('NATIVE_EXACT_DIRECT') && !half.include?('operands proven Fixnum'))
+             slow_path.call(mixed, half, 'bc2cpp_slow_div') && !half.include?('NATIVE_EXACT_DIRECT') && !half.include?('operands proven Fixnum'))
   named = generate.call(PRELUDE + <<~'RUBY', 'nr_named')
     class NrBox
       def half(bitmap); bitmap.width / 2; end
@@ -717,7 +720,7 @@ if ENV['MRBC']
   RUBY
   half = body_of_impl.call(named, 'NrBox_half')
   check.call('with no other `width` anywhere the NAME is proven Integer, whatever the receiver',
-             half.include?('NUMERIC_OPERAND_PROOF') && !half.include?('bc2cpp_slow_div'))
+             half.include?('NUMERIC_OPERAND_PROOF') && !slow_path.call(named, half, 'bc2cpp_slow_div'))
 
   # INSTANCE_RECEIVER: a `def self.width` next to instance readers of the same name.
   singleton_world = <<~'RUBY'
