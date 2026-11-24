@@ -18,6 +18,7 @@
 #include <uni_algo/ranges_conv.h>
 
 #include <lvgl.h>
+#include <src/draw/lv_image_decoder_private.h>
 
 #include "default_font.hxx"
 #include "mrb_array_access.hxx"
@@ -4580,40 +4581,273 @@ static Tone viewport_tone(mrb_state* M, mrb_value vp) {
   return t;
 }
 
+// Everything spr_bind_display bakes into a sprite's picture besides the
+// bitmap's own pixels, captured when the sprite is (re)bound.
+struct SpriteFx {
+  int cx = 0, cy = 0, cw = 0, ch = 0;  // src_rect (the whole bitmap if none)
+  bool mirror = false;
+  bool has_tone = false, has_color = false, has_vp_tone = false;
+  bool flash_color_on = false, flash_empty = false;
+  Tone tn{}, vtn{};
+  Color cl{0, 0, 0, 0}, fcl{0, 0, 0, 0};
+  int fa = 0, flash_count = 0, flash_dur = 0, bush = 0;
+  // Whether any pixel differs from the bitmap's own (crop and mirror only move
+  // pixels).
+  bool colour() const {
+    return has_tone || has_color || has_vp_tone || flash_color_on ||
+           flash_empty || bush > 0;
+  }
+};
+
+// Pixel (x, y) of a sprite's picture, written as `bpp` bytes of B, G, R(, A):
+// the bytes bmp_put stores for it in a direct-format scratch bitmap.
+inline void sprite_fx_pixel(const Bitmap& src,
+                            const SpriteFx& f,
+                            int x,
+                            int y,
+                            unsigned bpp,
+                            uint8_t* out) {
+  const int srcx = f.cx + (f.mirror ? f.cw - 1 - x : x);
+  const int srcy = f.cy + y;
+  int r = 0, g = 0, b = 0, a = 0;
+  if (srcx >= 0 && srcy >= 0 && srcx < src.width && srcy < src.height)
+    bmp_read(src, srcx, srcy, r, g, b, a);
+  if (f.has_tone)
+    apply_tone_px(r, g, b, f.tn);
+  if (f.has_color) {
+    const int ca = static_cast<int>(f.cl.alpha);
+    r = clamp_byte(r + (static_cast<int>(f.cl.red) - r) * ca / 255);
+    g = clamp_byte(g + (static_cast<int>(f.cl.green) - g) * ca / 255);
+    b = clamp_byte(b + (static_cast<int>(f.cl.blue) - b) * ca / 255);
+  }
+  if (f.flash_color_on) {
+    r = clamp_byte(r + (static_cast<int>(f.fcl.red) - r) * f.fa / 255);
+    g = clamp_byte(g + (static_cast<int>(f.fcl.green) - g) * f.fa / 255);
+    b = clamp_byte(b + (static_cast<int>(f.fcl.blue) - b) * f.fa / 255);
+  }
+  if (f.has_vp_tone)
+    apply_tone_px(r, g, b, f.vtn);
+  if (f.flash_empty)
+    a = a * (f.flash_dur - f.flash_count) / f.flash_dur;
+  if (f.bush > 0 && y >= f.ch - f.bush)
+    a /= 2;
+  out[0] = static_cast<uint8_t>(b);
+  out[1] = static_cast<uint8_t>(g);
+  out[2] = static_cast<uint8_t>(r);
+  if (bpp >= 4)
+    out[3] = static_cast<uint8_t>(a);
+}
+
+// DRAW_TIME_SPRITE: a sprite whose bitmap is indexed or needs effects is drawn
+// through a SpriteView instead of a canvas buffer. LVGL asks the decoder below
+// for the rows of each strip it renders, and they are expanded with
+// sprite_fx_pixel then, so neither a promoted copy of the bitmap nor an
+// @_fx_bitmap exists. The rows are the bytes the scratch bitmap would hold, in
+// the same colour format, so LVGL blends exactly what it blended before. Only
+// an untransformed sprite qualifies: LVGL's software renderer can only
+// transform a fully decoded image (see spr_bind_display).
+// RGSS_DRAW_TIME_SPRITES=0 (environment or build define) turns it off.
+#ifndef RGSS_DRAW_TIME_SPRITES
+#define RGSS_DRAW_TIME_SPRITES 1
+#endif
+static bool draw_time_sprites_enabled() {
+#if RGSS_DRAW_TIME_SPRITES
+  static const bool on = [] {
+    const char* e = std::getenv("RGSS_DRAW_TIME_SPRITES");
+    return !(e && std::strcmp(e, "0") == 0);
+  }();
+  return on;
+#else
+  return false;
+#endif
+}
+
+struct SpriteView {
+  // LVGL's image source; first so the source pointer is the view.
+  lv_image_dsc_t dsc;
+  // Shared with the Ruby Bitmap, so disposing it cannot free pixels a pending
+  // draw still reads.
+  std::shared_ptr<Bitmap> src;
+  SpriteFx fx;
+};
+
+// Marks a SpriteView's header; its data pointer also points back at the view.
+constexpr uint16_t kSpriteViewFlag = LV_IMAGE_FLAGS_USER8;
+// Rows are expanded at most this many bytes at a time (at least one row).
+constexpr uint32_t kSpriteViewChunkBytes = 4096;
+
+const SpriteView* sprite_view_of(const void* src) {
+  const auto* img = static_cast<const lv_image_dsc_t*>(src);
+  if (!(img->header.flags & kSpriteViewFlag) ||
+      img->data != static_cast<const void*>(img))
+    return nullptr;
+  return reinterpret_cast<const SpriteView*>(img);
+}
+
+lv_result_t sprite_view_info(lv_image_decoder_t*,
+                             lv_image_decoder_dsc_t* dsc,
+                             lv_image_header_t* header) {
+  if (dsc->src_type != LV_IMAGE_SRC_VARIABLE || !sprite_view_of(dsc->src))
+    return LV_RESULT_INVALID;
+  *header = static_cast<const lv_image_dsc_t*>(dsc->src)->header;
+  return LV_RESULT_OK;
+}
+
+lv_result_t sprite_view_open(lv_image_decoder_t*, lv_image_decoder_dsc_t* dsc) {
+  // No whole image: img_decode_and_draw then draws the rows get_area yields.
+  dsc->decoded = nullptr;
+  dsc->user_data = nullptr;
+  return LV_RESULT_OK;
+}
+
+lv_result_t sprite_view_get_area(lv_image_decoder_t*,
+                                 lv_image_decoder_dsc_t* dsc,
+                                 const lv_area_t* full_area,
+                                 lv_area_t* decoded_area) {
+  const SpriteView* v = sprite_view_of(dsc->src);
+  const int32_t y1 =
+      decoded_area->y1 == LV_COORD_MIN ? full_area->y1 : decoded_area->y2 + 1;
+  if (y1 > full_area->y2)
+    return LV_RESULT_INVALID;
+  const lv_color_format_t cf = static_cast<lv_color_format_t>(v->dsc.header.cf);
+  const unsigned bpp = lv_color_format_get_size(cf);
+  const int32_t w = lv_area_get_width(full_area);
+  const int32_t chunk = std::max<int32_t>(
+      1, static_cast<int32_t>(kSpriteViewChunkBytes / (w * bpp)));
+  const int32_t rows = std::min<int32_t>(chunk, full_area->y2 - y1 + 1);
+  auto* buf = static_cast<lv_draw_buf_t*>(dsc->user_data);
+  lv_draw_buf_t* out =
+      buf ? lv_draw_buf_reshape(buf, cf, w, rows, LV_STRIDE_AUTO) : nullptr;
+  if (!out) {
+    if (buf)
+      lv_draw_buf_destroy(buf);
+    buf = out = lv_draw_buf_create(
+        w, std::min<int32_t>(chunk, lv_area_get_height(full_area)), cf,
+        LV_STRIDE_AUTO);
+    dsc->user_data = buf;
+    if (!buf) {
+      std::fprintf(stderr, "[RGSS] sprite draw: no memory for %dx%d rows\n",
+                   static_cast<int>(w), static_cast<int>(chunk));
+      return LV_RESULT_INVALID;
+    }
+    out = lv_draw_buf_reshape(buf, cf, w, rows, LV_STRIDE_AUTO);
+  }
+  const Bitmap& src = *v->src;
+  const SpriteFx& f = v->fx;
+  const bool plain = !f.colour();
+  for (int32_t r = 0; r < rows; ++r) {
+    uint8_t* d = out->data + static_cast<size_t>(r) * out->header.stride;
+    const int y = y1 + r;
+    for (int32_t x = full_area->x1; x <= full_area->x2; ++x, d += bpp) {
+      if (!plain) {
+        sprite_fx_pixel(src, f, x, y, bpp, d);
+        continue;
+      }
+      // Crop and mirror only: the source pixel's bytes, or transparent black
+      // outside the bitmap.
+      const int sx = f.cx + (f.mirror ? f.cw - 1 - x : x);
+      const int sy = f.cy + y;
+      if (sx < 0 || sy < 0 || sx >= src.width || sy >= src.height) {
+        std::memset(d, 0, bpp);
+      } else if (src.indexed()) {
+        std::memcpy(
+            d,
+            src.palette.data() +
+                src.buffer[static_cast<size_t>(sy) * src.width + sx] * 4u,
+            bpp);
+      } else {
+        const unsigned sbpp = lv_color_format_get_size(src.format);
+        const uint8_t* p = src.buffer.data() +
+                           (static_cast<size_t>(sy) * src.width + sx) * sbpp;
+        std::memcpy(d, p, std::min(bpp, sbpp));
+        if (bpp > sbpp)
+          d[3] = 255;
+      }
+    }
+  }
+  decoded_area->x1 = full_area->x1;
+  decoded_area->x2 = full_area->x2;
+  decoded_area->y1 = y1;
+  decoded_area->y2 = y1 + rows - 1;
+  dsc->decoded = out;
+  return LV_RESULT_OK;
+}
+
+void sprite_view_close(lv_image_decoder_t*, lv_image_decoder_dsc_t* dsc) {
+  if (dsc->user_data)
+    lv_draw_buf_destroy(static_cast<lv_draw_buf_t*>(dsc->user_data));
+  dsc->user_data = nullptr;
+}
+
+void sprite_view_delete(lv_event_t* e) {
+  delete static_cast<SpriteView*>(lv_event_get_user_data(e));
+}
+
+// The view owned by a sprite's canvas (freed with it), created on demand.
+SpriteView* sprite_view(lv_obj_t* obj, bool create) {
+  for (uint32_t i = 0, n = lv_obj_get_event_count(obj); i < n; ++i) {
+    lv_event_dsc_t* d = lv_obj_get_event_dsc(obj, i);
+    if (lv_event_dsc_get_cb(d) == sprite_view_delete)
+      return static_cast<SpriteView*>(lv_event_dsc_get_user_data(d));
+  }
+  if (!create)
+    return nullptr;
+  static bool registered = false;
+  if (!registered) {
+    lv_image_decoder_t* dec = lv_image_decoder_create();
+    if (!dec)
+      return nullptr;
+    lv_image_decoder_set_info_cb(dec, sprite_view_info);
+    lv_image_decoder_set_open_cb(dec, sprite_view_open);
+    lv_image_decoder_set_get_area_cb(dec, sprite_view_get_area);
+    lv_image_decoder_set_close_cb(dec, sprite_view_close);
+    dec->name = "rgss-sprite";
+    registered = true;
+  }
+  auto* v = new (std::nothrow) SpriteView();
+  if (v)
+    lv_obj_add_event_cb(obj, sprite_view_delete, LV_EVENT_DELETE, v);
+  return v;
+}
+
+bool sprite_transformed(lv_obj_t* obj) {
+  return lv_image_get_scale_x(obj) != LV_SCALE_NONE ||
+         lv_image_get_scale_y(obj) != LV_SCALE_NONE ||
+         lv_image_get_rotation(obj) != 0;
+}
+
 // Point the sprite's canvas at the bitmap it should display: the assigned
-// bitmap directly, or — when the sprite is mirrored, toned or colour-overlaid —
-// a scratch copy with those effects baked in (LVGL can express none of them, so
-// they are a software pre-composite). The scratch Bitmap is kept in @_fx_bitmap
-// so it lives as long as the sprite. The effects are a snapshot taken here; a
-// sprite that redraws its bitmap, or mutates its tone/color in place, must
-// re-assign bitmap= / tone= / color= to refresh (tracked in the gap doc).
+// bitmap directly, a SpriteView of it (see DRAW_TIME_SPRITE), or -- for a
+// transformed sprite that needs effects -- a scratch copy with them baked in,
+// kept in @_fx_bitmap. Effects are a snapshot taken here; a sprite that
+// mutates its tone/color in place must re-assign tone= / color= to refresh
+// (tracked in the gap doc).
 void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   const mrb_value bmp_v = mrb_iv_get(M, self, MRB_IVSYM(bitmap));
   if (mrb_nil_p(bmp_v))
     return;
   Bitmap& src = DataType<Bitmap>::get(M, bmp_v);
 
-  const bool mirror = mrb_test(mrb_iv_get(M, self, MRB_IVSYM(mirror)));
+  SpriteFx f;
+  f.mirror = mrb_test(mrb_iv_get(M, self, MRB_IVSYM(mirror)));
   const mrb_value tone_v = mrb_iv_get(M, self, MRB_IVSYM(tone));
   const mrb_value color_v = mrb_iv_get(M, self, MRB_IVSYM(color));
-  Tone tn{};
-  Color cl{0, 0, 0, 0};
   if (mrb_test(tone_v) && DATA_PTR(tone_v))
-    tn = DataType<Tone>::get(M, tone_v);
+    f.tn = DataType<Tone>::get(M, tone_v);
   if (mrb_test(color_v) && DATA_PTR(color_v))
-    cl = DataType<Color>::get(M, color_v);
-  const bool has_tone = tone_is_set(tn);
-  const bool has_color = cl.alpha != 0;
+    f.cl = DataType<Color>::get(M, color_v);
+  f.has_tone = tone_is_set(f.tn);
+  f.has_color = f.cl.alpha != 0;
   // The viewport's tone applies to everything it draws, so it is folded into
   // this composite after the sprite's own tone/colour/flash (RGSS tints the
   // viewport's contents, not its sources).
-  const Tone vtn = viewport_tone(M, mrb_iv_get(M, self, MRB_IVSYM(viewport)));
-  const bool has_vp_tone = tone_is_set(vtn);
+  f.vtn = viewport_tone(M, mrb_iv_get(M, self, MRB_IVSYM(viewport)));
+  f.has_vp_tone = tone_is_set(f.vtn);
 
   // bush_depth: the bottom N rows are drawn at half opacity, so a character
   // wading through bushes fades out below the waist.
   const mrb_value bush_v = mrb_iv_get(M, self, MRB_IVSYM(bush_depth));
-  const int bush = mrb_test(bush_v) ? mrb_as_int(M, bush_v) : 0;
+  f.bush = mrb_test(bush_v) ? mrb_as_int(M, bush_v) : 0;
 
   // flash: a timed colour pulse (Sprite#flash) that decays over its duration,
   // advanced one frame per Sprite#update. A colour flash overlays that colour
@@ -4622,22 +4856,22 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   const mrb_value fcnt_v = mrb_iv_get(M, self, MRB_IVSYM(flash_count));
   const mrb_value fdur_v = mrb_iv_get(M, self, MRB_IVSYM(flash_duration));
   const mrb_value fcol_v = mrb_iv_get(M, self, MRB_IVSYM(flash_color));
-  const int flash_count = mrb_test(fcnt_v) ? mrb_as_int(M, fcnt_v) : 0;
-  const int flash_dur = mrb_test(fdur_v) ? mrb_as_int(M, fdur_v) : 0;
-  const bool flash_on = flash_count > 0 && flash_dur > 0;
-  const bool flash_color_on = flash_on && mrb_test(fcol_v) && DATA_PTR(fcol_v);
-  const bool flash_empty = flash_on && !flash_color_on;
-  Color fcl{0, 0, 0, 0};
-  if (flash_color_on)
-    fcl = DataType<Color>::get(M, fcol_v);
+  f.flash_count = mrb_test(fcnt_v) ? mrb_as_int(M, fcnt_v) : 0;
+  f.flash_dur = mrb_test(fdur_v) ? mrb_as_int(M, fdur_v) : 0;
+  const bool flash_on = f.flash_count > 0 && f.flash_dur > 0;
+  f.flash_color_on = flash_on && mrb_test(fcol_v) && DATA_PTR(fcol_v);
+  f.flash_empty = flash_on && !f.flash_color_on;
+  if (f.flash_color_on)
+    f.fcl = DataType<Color>::get(M, fcol_v);
   // Colour flash intensity fades from full (count == duration) to nothing.
-  const int fa = flash_color_on
-                     ? static_cast<int>(fcl.alpha) * flash_count / flash_dur
-                     : 0;
+  f.fa = f.flash_color_on
+             ? static_cast<int>(f.fcl.alpha) * f.flash_count / f.flash_dur
+             : 0;
 
   // src_rect: display only a sub-region of the bitmap (character-animation
   // cells set this every frame). A non-default rect crops to (cx, cy, cw, ch).
-  int cx = 0, cy = 0, cw = src.width, ch = src.height;
+  f.cw = src.width;
+  f.ch = src.height;
   bool cropped = false;
   const mrb_value sr_v = mrb_iv_get(M, self, MRB_IVSYM(src_rect));
   if (mrb_test(sr_v) && DATA_PTR(sr_v)) {
@@ -4645,64 +4879,65 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     if (sr.width > 0 && sr.height > 0 &&
         (sr.x != 0 || sr.y != 0 || sr.width != src.width ||
          sr.height != src.height)) {
-      cx = sr.x;
-      cy = sr.y;
-      cw = sr.width;
-      ch = sr.height;
+      f.cx = sr.x;
+      f.cy = sr.y;
+      f.cw = sr.width;
+      f.ch = sr.height;
       cropped = true;
     }
   }
+  const bool needs_fx = cropped || f.mirror || f.colour();
 
-  if (cropped || mirror || has_tone || has_color || has_vp_tone || bush > 0 ||
-      flash_on) {
+  if ((needs_fx || src.indexed()) && draw_time_sprites_enabled() &&
+      !sprite_transformed(obj)) {
+    if (SpriteView* v = sprite_view(obj, true)) {
+      mrb_iv_set(M, self, MRB_IVSYM(_fx_bitmap), mrb_nil_value());
+      v->src = *reinterpret_cast<std::shared_ptr<Bitmap>*>(DATA_PTR(bmp_v));
+      v->fx = f;
+      lv_image_header_t& h = v->dsc.header;
+      h = lv_image_header_t{};
+      h.magic = LV_IMAGE_HEADER_MAGIC;
+      h.cf = src.direct_format;
+      h.flags = kSpriteViewFlag;
+      h.w = f.cw;
+      h.h = f.ch;
+      h.stride = f.cw * lv_color_format_get_size(src.direct_format);
+      v->dsc.data = reinterpret_cast<const uint8_t*>(&v->dsc);
+      v->dsc.data_size = 0;
+      lv_image_set_src(obj, &v->dsc);
+      src.dirty = true;
+      return;
+    }
+  }
+  if (SpriteView* v = sprite_view(obj, false))
+    v->src.reset();
+
+  if (needs_fx) {
     // Reuse the scratch bitmap when its size still matches (src_rect changes
     // every frame, so re-allocating here would churn the GC).
     mrb_value fx_v = mrb_iv_get(M, self, MRB_IVSYM(_fx_bitmap));
     Bitmap* fxp = nullptr;
     if (mrb_test(fx_v) && DATA_PTR(fx_v)) {
       Bitmap& e = DataType<Bitmap>::get(M, fx_v);
-      if (e.width == cw && e.height == ch && e.format == src.direct_format)
+      if (e.width == f.cw && e.height == f.ch && e.format == src.direct_format)
         fxp = &e;
     }
     if (!fxp) {
       RClass* bmp_class = mrb_class_get_under_id(
           M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
-      fx_v = DataType<Bitmap>::make(M, bmp_class, cw, ch, src.direct_format);
+      fx_v =
+          DataType<Bitmap>::make(M, bmp_class, f.cw, f.ch, src.direct_format);
       mrb_iv_set(M, self, MRB_IVSYM(_fx_bitmap), fx_v);
       fxp = &DataType<Bitmap>::get(M, fx_v);
     }
     Bitmap& fx = *fxp;
-    const int ca = static_cast<int>(cl.alpha);
-    for (int y = 0; y < ch; ++y) {
-      for (int x = 0; x < cw; ++x) {
-        const int srcx = cx + (mirror ? cw - 1 - x : x);
-        const int srcy = cy + y;
-        int r = 0, g = 0, b = 0, a = 0;
-        if (srcx >= 0 && srcy >= 0 && srcx < src.width && srcy < src.height)
-          bmp_read(src, srcx, srcy, r, g, b, a);
-        if (has_tone)
-          apply_tone_px(r, g, b, tn);
-        if (has_color) {
-          r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
-          g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
-          b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
-        }
-        if (flash_color_on) {
-          r = clamp_byte(r + (static_cast<int>(fcl.red) - r) * fa / 255);
-          g = clamp_byte(g + (static_cast<int>(fcl.green) - g) * fa / 255);
-          b = clamp_byte(b + (static_cast<int>(fcl.blue) - b) * fa / 255);
-        }
-        if (has_vp_tone)
-          apply_tone_px(r, g, b, vtn);
-        if (flash_empty)
-          a = a * (flash_dur - flash_count) / flash_dur;
-        if (bush > 0 && y >= ch - bush)
-          a /= 2;
-        bmp_put(fx, x, y, r, g, b, a);
-      }
-    }
+    const unsigned bpp = lv_color_format_get_size(fx.format);
+    uint8_t* d = fx.buffer.data();
+    for (int y = 0; y < f.ch; ++y)
+      for (int x = 0; x < f.cw; ++x, d += bpp)
+        sprite_fx_pixel(src, f, x, y, bpp, d);
     fx.dirty = true;
-    lv_canvas_set_buffer(obj, fx.buffer.data(), cw, ch, fx.format);
+    lv_canvas_set_buffer(obj, fx.buffer.data(), f.cw, f.ch, fx.format);
   } else {
     mrb_iv_set(M, self, MRB_IVSYM(_fx_bitmap), mrb_nil_value());
     // Shown whole, the bitmap itself becomes the canvas buffer.
@@ -4762,6 +4997,13 @@ mrb_value spr_set_opacity_body(mrb_state* M, mrb_value self, mrb_int opa) {
   return self;
 }
 
+// A SpriteView can only be drawn untransformed (see DRAW_TIME_SPRITE), so a
+// zoom or rotation that starts or ends one re-binds the sprite.
+void spr_retransform(mrb_state* M, mrb_value self, lv_obj_t* obj, bool was) {
+  if (was != sprite_transformed(obj))
+    spr_bind_display(M, self, obj);
+}
+
 // RGSS Sprite#zoom_x= / #zoom_y= (a float multiplier, 1.0 = normal size). A
 // Sprite's native handle is an lv_canvas, an LVGL image that scales its content
 // by an integer factor where LV_SCALE_NONE (256) == 1.0. Convert the RGSS float
@@ -4773,7 +5015,9 @@ mrb_value spr_set_zoom_x_native_body(mrb_state* M, mrb_value self, double z) {
   if (z < 0.0)
     z = 0.0;
   lv_obj_t* obj = obj_require(M, self);
+  const bool was = sprite_transformed(obj);
   lv_image_set_scale_x(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
+  spr_retransform(M, self, obj, was);
   mrb_iv_set(M, self, MRB_IVSYM(zoom_x), rgss::num_value(M, z));
   return self;
 }
@@ -4789,7 +5033,9 @@ mrb_value spr_set_zoom_y_native_body(mrb_state* M, mrb_value self, double z) {
   if (z < 0.0)
     z = 0.0;
   lv_obj_t* obj = obj_require(M, self);
+  const bool was = sprite_transformed(obj);
   lv_image_set_scale_y(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
+  spr_retransform(M, self, obj, was);
   mrb_iv_set(M, self, MRB_IVSYM(zoom_y), rgss::num_value(M, z));
   return self;
 }
@@ -4818,7 +5064,9 @@ mrb_value spr_set_angle_native_body(mrb_state* M, mrb_value self, double deg) {
   lv_image_set_pivot(
       obj, mrb_nil_p(ox) ? 0 : static_cast<int32_t>(mrb_as_int(M, ox)),
       mrb_nil_p(oy) ? 0 : static_cast<int32_t>(mrb_as_int(M, oy)));
+  const bool was = sprite_transformed(obj);
   lv_image_set_rotation(obj, static_cast<int32_t>(tenths));
+  spr_retransform(M, self, obj, was);
   mrb_iv_set(M, self, MRB_IVSYM(angle), rgss::num_value(M, deg));
   return self;
 }
