@@ -7516,7 +7516,7 @@ module Game
     # event auto-start gate), so it stays nil. #load sets every other field
     # right after `.new`; `id` is the only one typed up front.
     class CommonEventRecord
-      attr_accessor :id, :trigger, :need_flag, :switch_id, :lcf_chunk, :commands, :guarded
+      attr_accessor :id, :trigger, :need_flag, :switch_id, :lcf_chunk, :guarded
 
       def initialize
         @id = 0
@@ -7526,23 +7526,79 @@ module Game
         @lcf_chunk = nil
         @commands = nil
         @guarded = nil
+        @table = nil
+      end
+
+      # LAZY_COMMON_EVENTS: a record #load built over +table+ (the database's
+      # common event table) keeps no row; #commands reads its row then.
+      def lazy_in(table)
+        @table = table
+      end
+
+      # The command list, decoded on the first call and kept. A row that does
+      # not decode is logged and has none, as a table that does not load has
+      # no common events.
+      def commands
+        table = @table
+        return @commands unless table
+        @table = nil
+        row = table.peek(@id)
+        @commands = row ? row[:event] : nil
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] common event #{@id} commands unreadable, none run: #{e.message}"
+        @commands = nil
+      end
+
+      def commands=(list)
+        @table = nil
+        @commands = list
       end
     end
-    # Load the common events from the database into plain hashes.
+
+    # LAZY_COMMON_EVENTS: off when a host defines RPG2K_EAGER_COMMON_EVENTS
+    # true, which keeps every row decoded and the auto-start and parallel
+    # command lists decoded at load.
+    def self.eager?
+      RPG2K_EAGER_COMMON_EVENTS ? true : false
+    rescue NameError
+      false
+    end
+
+    # Load the common events from the database into records.
     #
-    # `:commands` is decoded eagerly only for AUTO_START/PARALLEL common
-    # events -- the only ones anything here scans for every Scene::Map visit
-    # (see #eligible and its callers in scene/map.rb), so their command lists
-    # are genuinely needed up front. A CALLED-only common event (trigger 5,
-    # invoked solely via a Call Event command) is never scanned that way; its
-    # `:chunk` (the raw, undecoded LCF entry) is kept instead, and
-    # EventResolver#common_event_commands decodes-and-caches it lazily, the
-    # first time (if ever) a Call Event actually resolves that id. A real
-    # project's common events skew heavily toward reusable CALLED-only
-    # subroutines, so decoding all of them on every single map transition
-    # (this method reruns per Scene::Map.new, not once per game) was pure
-    # waste for however many of them a given map visit never calls.
+    # LAZY_COMMON_EVENTS: a record holds the four fields every Scene::Map
+    # visit scans and decodes its command list on first use (#commands), so
+    # neither the rows nor the lists of common events whose gate stays shut
+    # are held. The records are kept per database: this reruns per
+    # Scene::Map.new, and a record is never written after its first decode.
     def self.load(db)
+      return eager_load(db) if eager?
+      return @loaded if @loaded && @loaded_db.equal?(db)
+
+      list = []
+      ce = db[:common_event]
+      return list unless ce
+      ce.each_peek do |id, c|
+        rec = CommonEventRecord.new
+        rec.id = id
+        rec.trigger = c[:start_term]
+        rec.need_flag = c[:need_flag]
+        rec.switch_id = c[:switch_id]
+        rec.lazy_in(ce)
+        list.push(rec)
+      end
+      @loaded_db = db
+      @loaded = list
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] common event load failed, none available: #{e.message}"
+      []
+    end
+
+    # #load before LAZY_COMMON_EVENTS. `:commands` is decoded here only for
+    # AUTO_START/PARALLEL common events; a CALLED-only one keeps its row in
+    # `lcf_chunk`, which EventResolver#common_event_commands decodes on the
+    # first Call Event that resolves it.
+    def self.eager_load(db)
       list = []
       ce = db[:common_event]
       return list unless ce
