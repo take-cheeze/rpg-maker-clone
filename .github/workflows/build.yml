@@ -1185,8 +1185,8 @@ jobs:
               ruby scripts/rpg2k/lsd_adversarial_check.rb
               # Every mrblib file with a Float use has a no-Float form (mruby-rpg2k/gen_rpg2k_nofloat.rb).
               ruby scripts/rpg2k/nofloat_wiring_check.rb
-              # The wio-only mrblib rewrites still apply to the sources, and the wio gem trims stay unused (no CI job
-              # builds wio).
+              # The wio-only mrblib rewrites still apply to the sources, and the wio gem trims stay unused (`wio`
+              # builds it on master pushes only).
               ruby scripts/wio/strip_scripts_check.rb
               ruby scripts/wio/dropped_gems_check.rb
 
@@ -1465,26 +1465,30 @@ jobs:
             wasm-build/timidity.js
             wasm-build/timidity*.data
 
-  # Wio Terminal (SAMD51) firmwares, built with PlatformIO. Disabled until the
-  # bc2cpp cross-build path is more stable.
+  # Wio Terminal (SAMD51) firmwares, built with PlatformIO. Push to master and
+  # manual dispatch only: the closed-world wio build takes long (docs/ci.md).
   wio:
     # Builds the Wio game firmware `wio` (closed world only) and the
     # `wio_sd_upload` SD loader. See app/wio/README.md.
-    if: false
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RUBY_YJIT_ENABLE: "1"
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # PlatformIO's wio envs never reference 3rd/SDL, 3rd/SDL_mixer or
-          # 3rd/optcarrot. LVGL is vendored and linked, so it is still needed.
+          # Same submodule set as the `maix` job.
           submodules: false
           show-progress: false
           persist-credentials: false
 
       - name: Init submodules
         env:
-          SKIP_SUBMODULES: 3rd/optcarrot
+          SKIP_SUBMODULES: >-
+            3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
@@ -1501,18 +1505,67 @@ jobs:
           restore-keys: pio-${{ runner.os }}-
 
       - name: Install PlatformIO
-        # -q leaves only warnings and errors in the log.
+        # Before the nix shell, so pio keeps setup-python's interpreter.
         run: pip install -q --disable-pip-version-check --upgrade platformio
 
-      - name: Build firmware
-        run: |
-          pio run -e wio 2>&1 | tee wio-build.log
-          pio run -e wio_sd_upload 2>&1 | tee -a wio-build.log
+      # The wio libmruby is a bc2cpp closed-world build, so it needs the bc2cpp shell's Ruby with Prism.
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-bc2cpp-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-bc2cpp-${{ runner.os }}-
+
+      - name: Set up development environment
+        run: ./scripts/nix/develop-export-env.bash .#bc2cpp
+
+      - name: Cache bc2cpp scan cache
+        uses: actions/cache@v6
+        with:
+          path: build/bc2cpp-cache
+          key: bc2cpp-scan-cache-${{ hashFiles('tools/bc2cpp/*.rb') }}
+          restore-keys: bc2cpp-scan-cache-
+
+      # STATIC_DISPATCH_LISTS: wio takes lists of its own world, so `bc2cpp-lists`' closed file does not serve it.
+      - name: Key for the wio static dispatch lists
+        id: lists-key
+        run: echo "digest=$(BC2CPP_LISTS_WORLD=wio ruby tools/bc2cpp/static_dispatch_registrations.rb --digest)" >> "$GITHUB_OUTPUT"
+      - name: Cache the wio static dispatch lists
+        uses: actions/cache@v6
+        with:
+          path: build-wio/bc2cpp-wio
+          key: bc2cpp-lists-wio-${{ steps.lists-key.outputs.digest }}
+          # A prefix hit seeds a fresh fixed-point proof; its stale digest is never trusted.
+          restore-keys: bc2cpp-lists-wio-
+
+      - name: Build the wio firmware
+        # Fails on an undefined reference or a vector-table problem, not on the flash overflow.
+        run: scripts/wio/build.bash build-wio
+
+      - name: Upload the wio firmware
+        # `pio run -e wio_sd_upload` below prunes .pio/build/wio.
+        uses: actions/upload-artifact@v7
+        with:
+          name: wio-firmware
+          path: |
+            .pio/build/wio/firmware.elf
+            .pio/build/wio/firmware.map
+          if-no-files-found: error
+
+      - name: Build the SD uploader
+        run: pio run -e wio_sd_upload 2>&1 | tee build-wio/pio-wio_sd_upload.log
+
+      - name: Upload the SD uploader
+        uses: actions/upload-artifact@v7
+        with:
+          name: wio-sd-upload-firmware
+          path: .pio/build/wio_sd_upload/firmware.elf
+          if-no-files-found: error
 
       # Summarises the flash and SRAM budget, which is tight on this board.
       - name: wio size report
         if: always()
-        run: ruby scripts/wio/size_report.rb wio-build.log
+        run: ruby scripts/wio/size_report.rb build-wio/pio-wio.log build-wio/pio-wio_sd_upload.log
 
   # Maix Amigo (Kendryte K210). Like the PSP job, this builds the P0 and
   # game firmwares plus the `maix` mruby cross-build, so a patch or gem that
@@ -1795,57 +1848,46 @@ jobs:
             --expect-color 1004 --min-fraction 0.30 --min-colors 4 --expect-size 480x320
 
   # Boots the Wio firmwares under Renode, with the ILI9341 pixel regression
-  # and the SD tooling check. Disabled with `wio` above.
+  # and the SD tooling check. Runs with `wio`, on its firmware.
   wio-renode:
     # Covers the CPU running setup()/loop() and the ILI9341 model's pixels.
     # Not covered: a firmware-driven map render (the walk firmware's tile pushes go
     # through Adafruit_ZeroDMA, which this platform does not model yet).
-    if: false
+    needs: wio
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     steps:
-      - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # Same PlatformIO envs as `wio`, so the same submodules go unused.
+          # Only scripts/ and app/wio/renode/ are read here.
           submodules: false
           show-progress: false
           persist-credentials: false
 
-      - name: Init submodules
-        env:
-          SKIP_SUBMODULES: 3rd/optcarrot
-        run: ./scripts/checkout-submodules.bash
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.x"
       - uses: actions/setup-dotnet@v6
         with:
           # The portable Renode release bundles only the runtime, which cannot
           # compile a new peripheral, so Renode is built from source below.
           dotnet-version: "8.0.x"
 
-      - name: Cache PlatformIO
-        uses: actions/cache@v6
+      - name: Download the wio firmware
+        uses: actions/download-artifact@v8
         with:
-          path: |
-            ~/.platformio
-            ~/.cache/pip
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: pio-${{ runner.os }}-
-
-      - name: Install PlatformIO
-        run: pip install -q --disable-pip-version-check --upgrade platformio
-
-      - name: Build firmware
-        run: |
-          pio run -e wio
-          pio run -e wio_sd_upload
+          name: wio-firmware
+          path: firmware/wio
+      - name: Download the SD uploader
+        uses: actions/download-artifact@v8
+        with:
+          name: wio-sd-upload-firmware
+          path: firmware/wio_sd_upload
 
       - name: Install mtools/dosfstools/ImageMagick
         # mtools and dosfstools test renode_sdcard.bash. ImageMagick reads pixels
         # from the ILI9341 model's PNG dump.
-        run: sudo apt-get update -q && sudo apt-get install -y -q mtools dosfstools imagemagick
+        # binutils-arm-none-eabi gives the boot script its nm, with no PlatformIO here.
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q mtools dosfstools imagemagick binutils-arm-none-eabi
 
       - name: Cache the Renode build
         id: renode-cache
@@ -1866,7 +1908,10 @@ jobs:
           "$RENODE_BIN" --version
           for env in wio wio_sd_upload; do
             echo "::group::$env"
-            out="$(scripts/wio/renode_boot.bash ".pio/build/$env/firmware.elf" "00:00:00.300")"
+            # The game image is bigger than the board's 512 KB flash; this board has 2 MB of it.
+            platform=app/wio/renode/wio_terminal.repl
+            [ "$env" = wio ] && platform=app/wio/renode/wio_terminal_oversized_flash.repl
+            out="$(RENODE_PLATFORM="$PWD/$platform" scripts/wio/renode_boot.bash "firmware/$env/firmware.elf" "00:00:00.300")"
             echo "$out"
             # Markers go through the matcher, since a Renode [WARNING] can land inside one.
             echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED setup()" || { echo "::error::$env did not reach setup()"; exit 1; }
