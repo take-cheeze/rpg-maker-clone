@@ -2176,6 +2176,118 @@ assert "RGSS::Bitmap loads a PNG whose deflate stream trips \"bad dist\"" do
   end
 end
 
+# A 4x2 8-bit palette PNG: palette 0 = (10,20,30), 1 = (200,40,90),
+# 2 = (0,250,120) with tRNS alpha 128; pixels 0,1,2,1 / 2,1,0,0. Decoders keep
+# such images as palette indices until something writes to them.
+PAL_PNG_4X2 = "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52" \
+              "\x00\x00\x00\x04\x00\x00\x00\x02\x08\x03\x00\x00\x00\x48\x76\x8d" \
+              "\x51\x00\x00\x00\x09\x50\x4c\x54\x45\x0a\x14\x1e\xc8\x28\x5a\x00" \
+              "\xfa\x78\xc1\x6a\x5c\xff\x00\x00\x00\x03\x74\x52\x4e\x53\xff\xff" \
+              "\x80\x3a\x72\x8e\x61\x00\x00\x00\x10\x49\x44\x41\x54\x78\xda\x63" \
+              "\x60\x60\x64\x62\x64\x00\x22\x06\x00\x00\x31\x00\x08\x46\xd1\x5e" \
+              "\x6d\x00\x00\x00\x00\x49\x45\x4e\x44\xae\x42\x60\x82"
+
+def pixels_of(b)
+  out = []
+  b.height.times do |y|
+    b.width.times do |x|
+      c = b.get_pixel(x, y)
+      out << [c.red.to_i, c.green.to_i, c.blue.to_i, c.alpha.to_i]
+    end
+  end
+  out
+end
+
+assert "RGSS::Bitmap reads a palette PNG's colours and tRNS" do
+  path = "test-palette.png"
+  File.open(path, "wb") { |io| io.write(PAL_PNG_4X2) }
+  begin
+    expected = [[10, 20, 30, 255], [200, 40, 90, 255], [0, 250, 120, 128],
+                [200, 40, 90, 255], [0, 250, 120, 128], [200, 40, 90, 255],
+                [10, 20, 30, 255], [10, 20, 30, 255]]
+    assert_equal expected, pixels_of(RGSS::Bitmap.new(path))
+    # tRNS names index 0's alpha (255), which wins over the colour key.
+    assert_equal expected, pixels_of(RGSS::Bitmap.new(path, true))
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Bitmap blits from a palette PNG like from a direct-colour one" do
+  path = "test-palette-blt.png"
+  File.open(path, "wb") { |io| io.write(PAL_PNG_4X2) }
+  begin
+    src = RGSS::Bitmap.new(path, true)
+    # The same pixels in a direct-colour bitmap, as a reference.
+    ref = RGSS::Bitmap.new(4, 2)
+    pixels_of(src).each_with_index do |p, i|
+      ref.set_pixel(i % 4, i / 4, RGSS::Color.new(*p))
+    end
+    bg = RGSS::Color.new(50, 60, 70, 200)
+    [[255, :blt], [100, :blt], [255, :copy_blt]].each do |opa, m|
+      a = RGSS::Bitmap.new(6, 4)
+      b = RGSS::Bitmap.new(6, 4)
+      a.fill_rect(0, 0, 6, 4, bg)
+      b.fill_rect(0, 0, 6, 4, bg)
+      if m == :blt
+        a.blt(1, 1, src, RGSS::Rect.new(0, 0, 4, 2), opa)
+        b.blt(1, 1, ref, RGSS::Rect.new(0, 0, 4, 2), opa)
+      else
+        a.copy_blt(1, 1, src, RGSS::Rect.new(0, 0, 4, 2))
+        b.copy_blt(1, 1, ref, RGSS::Rect.new(0, 0, 4, 2))
+      end
+      assert_equal pixels_of(b), pixels_of(a), "#{m} at #{opa}"
+    end
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Bitmap#hue_change on a palette PNG matches the per-pixel pass" do
+  path = "test-palette-hue.png"
+  File.open(path, "wb") { |io| io.write(PAL_PNG_4X2) }
+  begin
+    a = RGSS::Bitmap.new(path, true)
+    b = a.clone
+    # A write converts `b` to direct colour without changing any pixel.
+    b.set_pixel(0, 0, b.get_pixel(0, 0))
+    assert_equal pixels_of(a), pixels_of(b)
+    a.hue_change(130)
+    b.hue_change(130)
+    assert_equal pixels_of(b), pixels_of(a)
+    # A write after the palette rotation keeps every other pixel.
+    before = pixels_of(a)
+    a.fill_rect(3, 1, 1, 1, RGSS::Color.new(1, 2, 3, 4))
+    after = pixels_of(a)
+    assert_equal [1, 2, 3, 4], after[7]
+    assert_equal before[0, 7], after[0, 7]
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Bitmap unpacks a 2-bit palette PNG and keys its colour 0" do
+  # 5x1, palette 0..3 = (1,2,3) (4,5,6) (7,8,9) (250,251,252); pixels 3,0,1,2,3.
+  bytes = "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52" \
+          "\x00\x00\x00\x05\x00\x00\x00\x01\x02\x03\x00\x00\x00\x6b\x90\x8c" \
+          "\x60\x00\x00\x00\x0c\x50\x4c\x54\x45\x01\x02\x03\x04\x05\x06\x07" \
+          "\x08\x09\xfa\xfb\xfc\xc0\xa6\x57\xdd\x00\x00\x00\x0b\x49\x44\x41" \
+          "\x54\x78\xda\x63\x38\x76\x00\x00\x02\x4f\x01\x87\x67\x8d\xa7\x78" \
+          "\x00\x00\x00\x00\x49\x45\x4e\x44\xae\x42\x60\x82"
+  path = "test-palette-2bit.png"
+  File.open(path, "wb") { |io| io.write(bytes) }
+  begin
+    b = RGSS::Bitmap.new(path)
+    assert_equal [[250, 251, 252, 255], [1, 2, 3, 255], [4, 5, 6, 255],
+                  [7, 8, 9, 255], [250, 251, 252, 255]], pixels_of(b)
+    # The colour key clears index 0 only.
+    assert_equal [[250, 251, 252, 255], [1, 2, 3, 0], [4, 5, 6, 255]],
+                 pixels_of(RGSS::Bitmap.new(path, true))[0, 3]
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end
+
 assert "RGSS::Plane API surface" do
   # Plane is now native: Plane.new builds an lv_canvas the size of the viewport
   # and tiles the bitmap into it, so construction needs a live display the

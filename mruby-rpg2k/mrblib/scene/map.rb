@@ -387,12 +387,12 @@ class RPG2k
 
         private
 
-        # width * height * 4 -- every Bitmap this build decodes from a file is
-        # ARGB8888 (mruby-rgss/src/lib.cxx's file-loading Bitmap.new overload
-        # always passes LV_COLOR_FORMAT_ARGB8888), so this is the buffer size
-        # the native Bitmap struct actually allocates, not a guess. 0 for a
-        # poisoned (nil) or otherwise non-Bitmap entry -- it costs nothing and
-        # so creates no eviction pressure on its own.
+        # width * height * 4: the ARGB8888 size, so an upper bound -- a
+        # palette image is held at one byte per pixel until something draws
+        # into it (mruby-rgss/src/lib.cxx, promote_to_direct), and only then
+        # grows to this. 0 for a poisoned (nil) or otherwise non-Bitmap
+        # entry -- it costs nothing and so creates no eviction pressure on its
+        # own.
         def bitmap_bytes(v)
           return 0 unless v.respond_to?(:width) && v.respond_to?(:height)
           v.width * v.height * 4

@@ -316,8 +316,15 @@ static size_t g_bitmap_bytes_blank = 0;
 struct Bitmap {
   static constexpr const char* kTypeName = "Bitmap";
   int32_t width, height;
+  // LV_COLOR_FORMAT_I8 while the bitmap keeps the palette form it was decoded
+  // from: `buffer` then holds one palette index per pixel and `palette` 256
+  // B, G, R, A entries. See promote_to_direct for what may touch it then.
   lv_color_format_t format;
+  // The format promote_to_direct expands an indexed bitmap to -- the one the
+  // decoder would have produced -- and `format` itself otherwise.
+  lv_color_format_t direct_format;
   std::vector<uint8_t> buffer;
+  std::vector<uint8_t> palette;
   // Set whenever `buffer` is mutated so Graphics.update can invalidate the
   // sprites showing this bitmap and have LVGL redraw them. Starts true so the
   // initial contents are painted on the first frame after assignment.
@@ -334,14 +341,18 @@ struct Bitmap {
       : width(w),
         height(h),
         format(f),
+        direct_format(f),
         buffer(w * h * lv_color_format_get_size(f)),
         decoded_from_source(decoded) {
-    (decoded ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank) += buffer.size();
+    counter() += bytes();
   }
 
-  ~Bitmap() {
-    (decoded_from_source ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank) -=
-        buffer.size();
+  ~Bitmap() { counter() -= bytes(); }
+
+  bool indexed() const { return format == LV_COLOR_FORMAT_I8; }
+  size_t bytes() const { return buffer.size() + palette.size(); }
+  size_t& counter() const {
+    return decoded_from_source ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank;
   }
 
   // Only ever assigned through Bitmap#clone's `dst = src;` (this file's
@@ -356,15 +367,15 @@ struct Bitmap {
   Bitmap& operator=(const Bitmap& other) {
     if (this == &other)
       return *this;
-    size_t& counter =
-        decoded_from_source ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank;
-    counter -= buffer.size();
+    counter() -= bytes();
     width = other.width;
     height = other.height;
     format = other.format;
+    direct_format = other.direct_format;
     buffer = other.buffer;
+    palette = other.palette;
     dirty = other.dirty;
-    counter += buffer.size();
+    counter() += bytes();
     return *this;
   }
 
@@ -379,6 +390,62 @@ extern "C" size_t rgss_bitmap_bytes_decoded(void) {
 }
 extern "C" size_t rgss_bitmap_bytes_blank(void) {
   return g_bitmap_bytes_blank;
+}
+
+// Whether decoders keep palette images indexed (see promote_to_direct). On by
+// default; RGSS_INDEXED_BITMAPS=0 at build time or in the environment turns it
+// off, so every bitmap is decoded straight to direct colour as before.
+#ifndef RGSS_INDEXED_BITMAPS
+#define RGSS_INDEXED_BITMAPS 1
+#endif
+static bool indexed_bitmaps_enabled() {
+#if RGSS_INDEXED_BITMAPS
+  static const bool on = [] {
+    const char* e = std::getenv("RGSS_INDEXED_BITMAPS");
+    return !(e && std::strcmp(e, "0") == 0);
+  }();
+  return on;
+#else
+  return false;
+#endif
+}
+
+void bmp_read(const Bitmap& b,
+              mrb_int x,
+              mrb_int y,
+              int& r,
+              int& g,
+              int& bl,
+              int& a);
+
+// INDEXED_BITMAP: an indexed bitmap's buffer holds palette indices, so only
+// bmp_read and the indexed row paths of the blits may read it, and nothing may
+// write it or hand it to LVGL (whose software renderer would expand an I8
+// image to a full ARGB copy anyway). Every writer, and anything that hands the
+// buffer out, calls this first; bmp_put does too, as the backstop. Replacing
+// `buffer` here is safe precisely because an indexed buffer was never handed
+// out. `keep` false skips the expansion for a caller about to overwrite every
+// pixel.
+void promote_to_direct(Bitmap& b, bool keep = true) {
+  if (!b.indexed())
+    return;
+  const unsigned bpp = lv_color_format_get_size(b.direct_format);
+  std::vector<uint8_t> out(static_cast<size_t>(b.width) * b.height * bpp);
+  if (keep) {
+    // Palette entries are B, G, R, A: their first `bpp` bytes are the pixel in
+    // either direct format.
+    const uint8_t* pal = b.palette.data();
+    uint8_t* d = out.data();
+    for (const uint8_t idx : b.buffer) {
+      std::memcpy(d, pal + idx * 4u, bpp);
+      d += bpp;
+    }
+  }
+  b.counter() -= b.bytes();
+  b.buffer.swap(out);
+  std::vector<uint8_t>().swap(b.palette);
+  b.format = b.direct_format;
+  b.counter() += b.bytes();
 }
 
 // Every DataType<T>-wrapped Ruby object is backed by a std::shared_ptr<T>
@@ -1004,23 +1071,19 @@ static void set_bitmap_load_error(const char* fmt, ...) {
 //   zlib stream                768-byte RGB palette + width*height indices
 //
 // which stb_image does not understand, so games that ship their System
-// (windowskin) or other graphics as .xyz would otherwise fail to load. On
-// success returns a freshly stb-allocated buffer (free with stbi_image_free)
-// of width*height*4 bytes in LVGL's B, G, R, A byte order and sets *w/*h/*c;
-// returns nullptr when the bytes are not an XYZ image. When `trans` is set the
-// first palette entry is treated as the transparent colour, matching stb's
-// transparent-palette handling for PNGs.
+// (windowskin) or other graphics as .xyz would otherwise fail to load. This
+// returns the inflated palette-and-indices block (free with stbi_image_free)
+// and sets *w/*h, or nullptr when the bytes are not an XYZ image or do not
+// decode.
 //
 // Takes the bytes rather than a path so the same decoder serves a loose file
 // and an entry pulled out of an encrypted RGSSAD archive; `label` only names
 // the source in the diagnostics.
-static uint8_t* load_xyz_mem(const uint8_t* data,
-                             size_t sz,
-                             const char* label,
-                             int* w,
-                             int* h,
-                             int* c,
-                             bool trans) {
+static char* xyz_inflate(const uint8_t* data,
+                         size_t sz,
+                         const char* label,
+                         int* w,
+                         int* h) {
   // Not an XYZ file: stay silent and let the caller keep stb_image's own error.
   if (sz < 8 || std::memcmp(data, "XYZ1", 4) != 0)
     return nullptr;
@@ -1066,6 +1129,26 @@ static uint8_t* load_xyz_mem(const uint8_t* data,
     stbi_image_free(raw);
     return nullptr;
   }
+  *w = width;
+  *h = height;
+  return raw;
+}
+
+// An XYZ image as a freshly stb-allocated buffer (free with stbi_image_free)
+// of width*height*4 bytes in LVGL's B, G, R, A byte order, setting *w/*h/*c.
+// When `trans` is set the first palette entry is treated as the transparent
+// colour, matching stb's transparent-palette handling for PNGs.
+static uint8_t* load_xyz_mem(const uint8_t* data,
+                             size_t sz,
+                             const char* label,
+                             int* w,
+                             int* h,
+                             int* c,
+                             bool trans) {
+  int width = 0, height = 0;
+  char* raw = xyz_inflate(data, sz, label, &width, &height);
+  if (!raw)
+    return nullptr;
   const uint8_t* pal = reinterpret_cast<const uint8_t*>(raw);
   const uint8_t* idx = pal + 768;
 
@@ -1319,6 +1402,46 @@ uint32_t be32(const uint8_t* p) {
   return ((uint32_t)p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
 }
 
+// Reverse the per-scanline filters of `h` rows of `rowbytes` (each preceded by
+// its filter byte in `filt`) into `raw`. An unknown filter type reads as none.
+void unfilter(const uint8_t* filt,
+              size_t rowbytes,
+              int bpp,
+              int h,
+              std::vector<uint8_t>& raw) {
+  raw.assign((size_t)rowbytes * h, 0);
+  std::vector<uint8_t> prev(rowbytes, 0);
+  for (int r = 0; r < h; r++) {
+    const uint8_t* srow = &filt[(rowbytes + 1) * (size_t)r];
+    const int ft = srow[0];
+    uint8_t* cur = &raw[(size_t)rowbytes * r];
+    for (size_t x = 0; x < rowbytes; x++) {
+      const int a = (x >= (size_t)bpp) ? cur[x - bpp] : 0;
+      const int b = prev[x];
+      const int cc = (x >= (size_t)bpp) ? prev[x - bpp] : 0;
+      int v = srow[1 + x];
+      switch (ft) {
+        case 1:
+          v += a;
+          break;
+        case 2:
+          v += b;
+          break;
+        case 3:
+          v += (a + b) >> 1;
+          break;
+        case 4:
+          v += paeth(a, b, cc);
+          break;
+        default:
+          break;
+      }
+      cur[x] = (uint8_t)v;
+    }
+    std::memcpy(prev.data(), cur, rowbytes);
+  }
+}
+
 }  // namespace png_tol
 
 // Decode `d` as a PNG using the tolerant inflater above. Returns a freshly
@@ -1409,38 +1532,8 @@ static uint8_t* load_png_tolerant_mem(const uint8_t* d,
     return nullptr;
   }
 
-  // Reverse the per-scanline filters in place.
-  std::vector<uint8_t> raw((size_t)rowbytes * h);
-  std::vector<uint8_t> prev(rowbytes, 0);
-  for (int r = 0; r < h; r++) {
-    const uint8_t* srow = &filt[(rowbytes + 1) * (size_t)r];
-    const int ft = srow[0];
-    uint8_t* cur = &raw[(size_t)rowbytes * r];
-    for (size_t x = 0; x < rowbytes; x++) {
-      const int a = (x >= (size_t)bpp) ? cur[x - bpp] : 0;
-      const int b = prev[x];
-      const int cc = (x >= (size_t)bpp) ? prev[x - bpp] : 0;
-      int v = srow[1 + x];
-      switch (ft) {
-        case 1:
-          v += a;
-          break;
-        case 2:
-          v += b;
-          break;
-        case 3:
-          v += (a + b) >> 1;
-          break;
-        case 4:
-          v += png_tol::paeth(a, b, cc);
-          break;
-        default:
-          break;
-      }
-      cur[x] = (uint8_t)v;
-    }
-    std::memcpy(prev.data(), cur, rowbytes);
-  }
+  std::vector<uint8_t> raw;
+  png_tol::unfilter(filt.data(), rowbytes, bpp, h, raw);
 
   uint8_t* out = (uint8_t*)stbi__malloc((size_t)w * h * 4);
   if (!out)
@@ -1490,6 +1583,163 @@ static uint8_t* load_png_tolerant_mem(const uint8_t* d,
   *hout = h;
   *c = 4;
   return out;
+}
+
+// A palette image decoded to indices rather than colours (INDEXED_BITMAP).
+struct IndexedImage {
+  int w = 0, h = 0;
+  std::vector<uint8_t> idx;
+  // 256 B, G, R, A entries: the colours the direct decode gives each index.
+  std::vector<uint8_t> pal = std::vector<uint8_t>(256 * 4, 0);
+  // What that direct decode would have produced.
+  lv_color_format_t direct = LV_COLOR_FORMAT_ARGB8888;
+};
+
+// A colour type 3 PNG kept as indices. Exactness rests on accepting only what
+// the usual chain decodes, to the same colours and channel count: stb_image,
+// or the tolerant fallback where stb rejects only the pixel data. Anything
+// else -- a chunk layout stb refuses, an index past the end of the palette --
+// answers false, and the caller's usual chain decodes it as before.
+static bool load_png_indexed(const uint8_t* d,
+                             size_t sz,
+                             bool trans,
+                             IndexedImage& out) {
+  static const uint8_t sig[8] = {0x89, 0x50, 0x4e, 0x47,
+                                 0x0d, 0x0a, 0x1a, 0x0a};
+  if (sz < 8 || std::memcmp(d, sig, 8) != 0)
+    return false;
+  int w = 0, h = 0, depth = 0;
+  const uint8_t *plte = nullptr, *trns = nullptr;
+  size_t plte_len = 0, trns_len = 0;
+  bool iend = false;
+  std::vector<uint8_t> idat;
+  for (size_t i = 8; i + 12 <= sz;) {
+    const uint32_t len = png_tol::be32(d + i);
+    const uint8_t* typ = d + i + 4;
+    const uint8_t* body = d + i + 8;
+    if (len > sz - i - 12)
+      return false;
+    if (i == 8) {
+      if (std::memcmp(typ, "IHDR", 4) != 0 || len != 13)
+        return false;
+      w = (int)png_tol::be32(body);
+      h = (int)png_tol::be32(body + 4);
+      depth = body[8];
+      if (body[9] != 3 || body[10] != 0 || body[11] != 0 || body[12] != 0)
+        return false;
+      if (depth != 1 && depth != 2 && depth != 4 && depth != 8)
+        return false;
+      if (w <= 0 || h <= 0 || w > (1 << 24) || h > (1 << 24) ||
+          (1 << 30) / w / 4 < h)
+        return false;
+    } else if (!std::memcmp(typ, "PLTE", 4)) {
+      if (plte || !idat.empty() || len == 0 || len > 768 || len % 3 != 0)
+        return false;
+      plte = body;
+      plte_len = len / 3;
+    } else if (!std::memcmp(typ, "tRNS", 4)) {
+      if (trns || !plte || !idat.empty() || len > plte_len)
+        return false;
+      trns = body;
+      trns_len = len;
+    } else if (!std::memcmp(typ, "IDAT", 4)) {
+      if (!plte)
+        return false;
+      idat.insert(idat.end(), body, body + len);
+    } else if (!std::memcmp(typ, "IEND", 4)) {
+      iend = true;
+      break;
+    } else if (!(typ[0] & 0x20) || !std::memcmp(typ, "CgBI", 4)) {
+      return false;  // a critical chunk stb does not know
+    }
+    i += 12 + len;
+  }
+  if (!iend || idat.empty())
+    return false;
+
+  const size_t rowbytes = ((size_t)w * depth + 7) / 8;
+  const size_t need = (rowbytes + 1) * (size_t)h;
+  int got = 0;
+  std::unique_ptr<char, void (*)(void*)> z(
+      stbi_zlib_decode_malloc_guesssize_headerflag(
+          reinterpret_cast<const char*>(idat.data()), (int)idat.size(),
+          (int)need, &got, 1),
+      stbi_image_free);
+  bool by_stb = z && (size_t)got >= need;
+  for (int r = 0; by_stb && r < h; ++r)
+    by_stb = (uint8_t)z.get()[(rowbytes + 1) * (size_t)r] <= 4;
+  // Where stb gives up on the pixel data, the tolerant fallback decodes it,
+  // always to ARGB8888 (see load_png_tolerant_mem).
+  std::vector<uint8_t> tol;
+  if (!by_stb) {
+    z.reset();
+    tol.assign(need, 0);
+    if (png_tol::inflate_tolerant(idat.data(), idat.size(), tol) < (long)need)
+      return false;
+  }
+  const uint8_t* filt =
+      by_stb ? reinterpret_cast<const uint8_t*>(z.get()) : tol.data();
+  std::vector<uint8_t> raw;
+  png_tol::unfilter(filt, rowbytes, 1, h, raw);
+  z.reset();
+  std::vector<uint8_t>().swap(tol);
+
+  out.w = w;
+  out.h = h;
+  out.idx.resize((size_t)w * h);
+  const int per = 8 / depth;
+  const int mask = (1 << depth) - 1;
+  for (int y = 0; y < h; ++y) {
+    const uint8_t* row = &raw[rowbytes * (size_t)y];
+    uint8_t* o = &out.idx[(size_t)w * y];
+    for (int x = 0; x < w; ++x) {
+      const int v =
+          depth == 8 ? row[x]
+                     : (row[x / per] >> ((per - 1 - x % per) * depth)) & mask;
+      if ((size_t)v >= plte_len)
+        return false;
+      o[x] = (uint8_t)v;
+    }
+  }
+  // stb's palette alpha: opaque, index 0 cleared for a colour-keyed load, then
+  // tRNS over the top; and its channel count (see bmp_decode_into's `req`).
+  const bool alpha = trans || trns;
+  for (size_t k = 0; k < plte_len; ++k) {
+    uint8_t* e = &out.pal[k * 4];
+    e[0] = plte[k * 3 + 2];
+    e[1] = plte[k * 3 + 1];
+    e[2] = plte[k * 3 + 0];
+    e[3] = k < trns_len ? trns[k] : (trans && k == 0) ? 0 : 255;
+  }
+  out.direct =
+      (alpha || !by_stb) ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888;
+  return true;
+}
+
+// An XYZ image kept as indices, coloured exactly as load_xyz_mem expands it.
+static bool load_xyz_indexed(const uint8_t* d,
+                             size_t sz,
+                             const char* label,
+                             bool trans,
+                             IndexedImage& out) {
+  int w = 0, h = 0;
+  std::unique_ptr<char, void (*)(void*)> raw(xyz_inflate(d, sz, label, &w, &h),
+                                             stbi_image_free);
+  if (!raw)
+    return false;
+  const uint8_t* pal = reinterpret_cast<const uint8_t*>(raw.get());
+  out.w = w;
+  out.h = h;
+  out.idx.assign(pal + 768, pal + 768 + (size_t)w * h);
+  for (int k = 0; k < 256; ++k) {
+    uint8_t* e = &out.pal[k * 4];
+    e[0] = pal[k * 3 + 2];
+    e[1] = pal[k * 3 + 1];
+    e[2] = pal[k * 3 + 0];
+    e[3] = (trans && k == 0) ? 0 : 255;
+  }
+  out.direct = LV_COLOR_FORMAT_ARGB8888;
+  return true;
 }
 
 // Ruby: Bitmap._load_error -> the detailed diagnostic set by the last decoder
@@ -1627,8 +1877,9 @@ mrb_value bmp_transition_alpha_native_body(mrb_state* M,
                                            double vague) {
   Bitmap& dst = DataType<Bitmap>::get(M, self);
   const Bitmap& map = DataType<Bitmap>::get(M, map_v);
+  promote_to_direct(dst);
   const unsigned bpp = lv_color_format_get_size(dst.format);
-  const unsigned map_bpp = lv_color_format_get_size(map.format);
+  const unsigned map_bpp = lv_color_format_get_size(map.direct_format);
   // Without an alpha channel on the still there is nothing to dissolve, and
   // without colour channels on the map there is no brightness to read. Either
   // way the caller's plain fade is a better answer than a no-op.
@@ -1639,12 +1890,12 @@ mrb_value bmp_transition_alpha_native_body(mrb_state* M,
     const int32_t my =
         static_cast<int32_t>(static_cast<int64_t>(y) * map.height / dst.height);
     uint8_t* row = dst.buffer.data() + static_cast<size_t>(y) * dst.width * bpp;
-    const uint8_t* map_row =
-        map.buffer.data() + static_cast<size_t>(my) * map.width * map_bpp;
     for (int32_t x = 0; x < dst.width; ++x) {
       const int32_t mx =
           static_cast<int32_t>(static_cast<int64_t>(x) * map.width / dst.width);
-      const double t = map_row[static_cast<size_t>(mx) * map_bpp + 2] / 255.0;
+      int mr, mg, mb, ma;
+      bmp_read(map, mx, my, mr, mg, mb, ma);
+      const double t = mr / 255.0;
       double keep = vague <= 0.0 ? (t > prog ? 1.0 : 0.0) : (t - prog) / vague;
       if (keep < 0.0)
         keep = 0.0;
@@ -1701,6 +1952,22 @@ static bool bmp_decode_into(mrb_state* M,
   int w, h, c;
   // Bytes in hand: from here on a failure is a decoder's, and worth reporting.
   g_bitmap_decoder_ran = true;
+  if (indexed_bitmaps_enabled()) {
+    IndexedImage ix;
+    // XYZ goes straight to its own decoder below too: stb knows no format
+    // that starts "XYZ1", so this is the decoder that would have run.
+    if (load_png_indexed(data, size, trans, ix) ||
+        load_xyz_indexed(data, size, label, trans, ix)) {
+      Bitmap& bmp = DataType<Bitmap>::alloc_obj(
+          M, self, ix.w, ix.h, LV_COLOR_FORMAT_I8, /* decoded = */ true);
+      bmp.counter() -= bmp.bytes();
+      bmp.buffer.swap(ix.idx);
+      bmp.palette.swap(ix.pal);
+      bmp.direct_format = ix.direct;
+      bmp.counter() += bmp.bytes();
+      return true;
+    }
+  }
   stbi__png_transparent_palette = trans;
   // Every loader here hands back LVGL's B, G, R(, A) byte order (see
   // load_xyz_mem and load_png_tolerant_mem, which build it themselves). stb
@@ -1838,6 +2105,7 @@ void bmp_put(Bitmap& b,
              double a) {
   if (x < 0 || y < 0 || x >= b.width || y >= b.height)
     return;
+  promote_to_direct(b);
   const unsigned bpp = lv_color_format_get_size(b.format);
   uint8_t* p = b.buffer.data() + ((size_t)y * b.width + x) * bpp;
   p[0] = (uint8_t)bl;
@@ -1854,6 +2122,15 @@ void bmp_read(const Bitmap& b,
               int& g,
               int& bl,
               int& a) {
+  if (b.indexed()) {
+    const uint8_t* p =
+        b.palette.data() + b.buffer[(size_t)y * b.width + x] * 4u;
+    bl = p[0];
+    g = p[1];
+    r = p[2];
+    a = p[3];
+    return;
+  }
   const unsigned bpp = lv_color_format_get_size(b.format);
   const uint8_t* p = b.buffer.data() + ((size_t)y * b.width + x) * bpp;
   bl = p[0];
@@ -1916,6 +2193,7 @@ mrb_value bmp_rect(mrb_state* M, V self) {
 
 mrb_value bmp_clear(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
+  promote_to_direct(b, /* keep = */ false);
   std::fill(b.buffer.begin(), b.buffer.end(), 0);
   b.dirty = true;
   return self;
@@ -2062,6 +2340,7 @@ mrb_value bmp_blur(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   if (b.width < 1 || b.height < 1)
     return self;
+  promote_to_direct(b);
   const std::vector<uint8_t> src = b.buffer;
   // Read through the untouched copy, not the bitmap being written.
   auto read_src = [&](int32_t x, int32_t y, int& r, int& g, int& bl, int& a) {
@@ -2123,6 +2402,7 @@ mrb_value bmp_radial_blur(mrb_state* M, V self) {
   mrb_get_args(M, "ii", &angle, &division);
   if (division < 2 || angle == 0 || b.width < 1 || b.height < 1)
     return self;
+  promote_to_direct(b);
   const std::vector<uint8_t> src = b.buffer;
   const unsigned bpp = lv_color_format_get_size(b.format);
   auto read_src = [&](int32_t x, int32_t y, int& r, int& g, int& bl, int& a) {
@@ -2171,6 +2451,61 @@ mrb_value bmp_radial_blur(mrb_state* M, V self) {
 #endif  // !defined(WIO_TERMINAL)
 
 #if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+// One pixel's hue rotated by `hue` degrees, as the doubles bmp_put truncates.
+static void hue_rotate_px(int r, int g, int bl, mrb_int hue, double out[3]) {
+  const double rf = r / 255.0, gf = g / 255.0, bf = bl / 255.0;
+  const double mx = std::max(rf, std::max(gf, bf));
+  const double mn = std::min(rf, std::min(gf, bf));
+  const double delta = mx - mn;
+  double h = 0.0;
+  if (delta > 0.0) {
+    if (mx == rf)
+      h = 60.0 * std::fmod((gf - bf) / delta, 6.0);
+    else if (mx == gf)
+      h = 60.0 * ((bf - rf) / delta + 2.0);
+    else
+      h = 60.0 * ((rf - gf) / delta + 4.0);
+    if (h < 0.0)
+      h += 360.0;
+  }
+  const double s = mx == 0.0 ? 0.0 : delta / mx;
+  const double v = mx;
+  h = std::fmod(h + hue, 360.0);
+  // HSV -> RGB.
+  const double c = v * s;
+  const double xx = c * (1.0 - std::fabs(std::fmod(h / 60.0, 2.0) - 1.0));
+  const double m = v - c;
+  double nr, ng, nb;
+  if (h < 60.0) {
+    nr = c;
+    ng = xx;
+    nb = 0.0;
+  } else if (h < 120.0) {
+    nr = xx;
+    ng = c;
+    nb = 0.0;
+  } else if (h < 180.0) {
+    nr = 0.0;
+    ng = c;
+    nb = xx;
+  } else if (h < 240.0) {
+    nr = 0.0;
+    ng = xx;
+    nb = c;
+  } else if (h < 300.0) {
+    nr = xx;
+    ng = 0.0;
+    nb = c;
+  } else {
+    nr = c;
+    ng = 0.0;
+    nb = xx;
+  }
+  out[0] = (nr + m) * 255.0;
+  out[1] = (ng + m) * 255.0;
+  out[2] = (nb + m) * 255.0;
+}
+
 mrb_value bmp_hue_change(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int hue;
@@ -2178,59 +2513,26 @@ mrb_value bmp_hue_change(mrb_state* M, V self) {
   hue = ((hue % 360) + 360) % 360;
   if (hue == 0)
     return self;
+  double o[3];
+  if (b.indexed()) {
+    // Each pixel's result depends on its colour alone, so rotating the
+    // palette is the per-pixel pass exactly; alpha is untouched either way.
+    for (size_t k = 0; k < b.palette.size(); k += 4) {
+      uint8_t* e = &b.palette[k];
+      hue_rotate_px(e[2], e[1], e[0], hue, o);
+      e[0] = (uint8_t)o[2];
+      e[1] = (uint8_t)o[1];
+      e[2] = (uint8_t)o[0];
+    }
+    b.dirty = true;
+    return self;
+  }
   for (int32_t y = 0; y < b.height; ++y) {
     for (int32_t x = 0; x < b.width; ++x) {
       int r, g, bl, a;
       bmp_read(b, x, y, r, g, bl, a);
-      const double rf = r / 255.0, gf = g / 255.0, bf = bl / 255.0;
-      const double mx = std::max(rf, std::max(gf, bf));
-      const double mn = std::min(rf, std::min(gf, bf));
-      const double delta = mx - mn;
-      double h = 0.0;
-      if (delta > 0.0) {
-        if (mx == rf)
-          h = 60.0 * std::fmod((gf - bf) / delta, 6.0);
-        else if (mx == gf)
-          h = 60.0 * ((bf - rf) / delta + 2.0);
-        else
-          h = 60.0 * ((rf - gf) / delta + 4.0);
-        if (h < 0.0)
-          h += 360.0;
-      }
-      const double s = mx == 0.0 ? 0.0 : delta / mx;
-      const double v = mx;
-      h = std::fmod(h + hue, 360.0);
-      // HSV -> RGB.
-      const double c = v * s;
-      const double xx = c * (1.0 - std::fabs(std::fmod(h / 60.0, 2.0) - 1.0));
-      const double m = v - c;
-      double nr, ng, nb;
-      if (h < 60.0) {
-        nr = c;
-        ng = xx;
-        nb = 0.0;
-      } else if (h < 120.0) {
-        nr = xx;
-        ng = c;
-        nb = 0.0;
-      } else if (h < 180.0) {
-        nr = 0.0;
-        ng = c;
-        nb = xx;
-      } else if (h < 240.0) {
-        nr = 0.0;
-        ng = xx;
-        nb = c;
-      } else if (h < 300.0) {
-        nr = xx;
-        ng = 0.0;
-        nb = c;
-      } else {
-        nr = c;
-        ng = 0.0;
-        nb = xx;
-      }
-      bmp_put(b, x, y, (nr + m) * 255.0, (ng + m) * 255.0, (nb + m) * 255.0, a);
+      hue_rotate_px(r, g, bl, hue, o);
+      bmp_put(b, x, y, o[0], o[1], o[2], a);
     }
   }
   b.dirty = true;
@@ -2296,6 +2598,36 @@ static void blt_row_pixels(Bitmap& dst,
   }
 }
 
+// blt_row_pixels at full opacity from an indexed source, with the palette
+// lookup inlined: the chipset/charset blits of the map renderer's hot path.
+static void blt_row_indexed(Bitmap& dst,
+                            const Bitmap& sb,
+                            mrb_int x,
+                            mrb_int y,
+                            mrb_int sx,
+                            mrb_int sy,
+                            mrb_int w) {
+  const unsigned bpp = lv_color_format_get_size(dst.format);
+  const uint8_t* s = sb.buffer.data() + (size_t)sy * sb.width + sx;
+  uint8_t* d = dst.buffer.data() + ((size_t)y * dst.width + x) * bpp;
+  const uint8_t* pal = sb.palette.data();
+  for (mrb_int col = 0; col < w; ++col, d += bpp) {
+    const uint8_t* p = pal + s[col] * 4u;
+    const int a = p[3];
+    if (a == 255) {
+      d[0] = p[0];
+      d[1] = p[1];
+      d[2] = p[2];
+      if (bpp >= 4)
+        d[3] = 255;
+    } else if (a > 0) {
+      int dr, dg, db, da;
+      bmp_read(dst, x + col, y, dr, dg, db, da);
+      blend_over(dst, x + col, y, p[2], p[1], p[0], a, dr, dg, db, da);
+    }
+  }
+}
+
 // The pixel loop #blt and #blt_quads share: composite src_rect over (x, y)
 // at `opacity`. Kept in one place so the batched form cannot drift from the
 // single-rect one.
@@ -2308,6 +2640,8 @@ static void blt_pixels(Bitmap& dst,
   mrb_int sx = rc.x, sy = rc.y, w = rc.width, h = rc.height;
   if (w <= 0 || h <= 0)
     return;
+  // Before any format test below: `sb` may be this same bitmap.
+  promote_to_direct(dst);
   // Clip against both bitmaps up front, carrying the destination along with
   // the source the way bmp_copy_blt does. The old loop checked every pixel
   // against both bitmaps instead; iterating only the intersection draws the
@@ -2342,6 +2676,12 @@ static void blt_pixels(Bitmap& dst,
     h = dst.height - y;
   if (w <= 0 || h <= 0)
     return;
+
+  if (opacity >= 255 && sb.indexed()) {
+    for (mrb_int row = 0; row < h; ++row)
+      blt_row_indexed(dst, sb, x, y + row, sx, sy + row, w);
+    return;
+  }
 
   // Row-copy fast path. Chipset tiles -- the map renderer's rebuild and
   // animation-step hot path through #blt_quads -- are fully opaque rows of
@@ -2470,6 +2810,8 @@ mrb_value bmp_copy_blt_body(mrb_state* M,
   Bitmap& dst = bmp_self(M, self);
   Bitmap& sb = bmp_require(M, src);
   Rect& rc = DataType<Rect>::get(M, srect);
+  // Before the format test below: `sb` may be this same bitmap.
+  promote_to_direct(dst);
 
   mrb_int sx = rc.x, sy = rc.y, w = rc.width, h = rc.height;
   // Clip against the source's origin, carrying the destination along so the
@@ -2513,6 +2855,21 @@ mrb_value bmp_copy_blt_body(mrb_state* M,
       uint8_t* d =
           dst.buffer.data() + ((size_t)(y + row) * dst.width + x) * bpp;
       std::memcpy(d, s, (size_t)w * bpp);
+    }
+  } else if (sb.indexed()) {
+    const unsigned bpp = lv_color_format_get_size(dst.format);
+    for (mrb_int row = 0; row < h; ++row) {
+      const uint8_t* s = sb.buffer.data() + (size_t)(sy + row) * sb.width + sx;
+      uint8_t* d =
+          dst.buffer.data() + ((size_t)(y + row) * dst.width + x) * bpp;
+      const uint8_t* pal = sb.palette.data();
+      if (bpp == 4) {
+        for (mrb_int col = 0; col < w; ++col)
+          std::memcpy(d + col * 4, pal + s[col] * 4u, 4);
+      } else {
+        for (mrb_int col = 0; col < w; ++col)
+          std::memcpy(d + col * 3, pal + s[col] * 4u, 3);
+      }
     }
   } else {
     // Different pixel formats have no shared byte layout to copy, so go
@@ -3480,6 +3837,7 @@ mrb_value bmp_draw_text_body(mrb_state* M,
                              mrb_value text_obj,
                              mrb_int align) {
   auto& bmp = bmp_self(M, self);
+  promote_to_direct(bmp);
   if (!mrb_string_p(text_obj)) {
     text_obj = mrb_obj_as_string(M, text_obj);
   }
@@ -4303,13 +4661,13 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     Bitmap* fxp = nullptr;
     if (mrb_test(fx_v) && DATA_PTR(fx_v)) {
       Bitmap& e = DataType<Bitmap>::get(M, fx_v);
-      if (e.width == cw && e.height == ch && e.format == src.format)
+      if (e.width == cw && e.height == ch && e.format == src.direct_format)
         fxp = &e;
     }
     if (!fxp) {
       RClass* bmp_class = mrb_class_get_under_id(
           M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
-      fx_v = DataType<Bitmap>::make(M, bmp_class, cw, ch, src.format);
+      fx_v = DataType<Bitmap>::make(M, bmp_class, cw, ch, src.direct_format);
       mrb_iv_set(M, self, MRB_IVSYM(_fx_bitmap), fx_v);
       fxp = &DataType<Bitmap>::get(M, fx_v);
     }
@@ -4344,9 +4702,11 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
       }
     }
     fx.dirty = true;
-    lv_canvas_set_buffer(obj, fx.buffer.data(), cw, ch, src.format);
+    lv_canvas_set_buffer(obj, fx.buffer.data(), cw, ch, fx.format);
   } else {
     mrb_iv_set(M, self, MRB_IVSYM(_fx_bitmap), mrb_nil_value());
+    // Shown whole, the bitmap itself becomes the canvas buffer.
+    promote_to_direct(src);
     lv_canvas_set_buffer(obj, src.buffer.data(), src.width, src.height,
                          src.format);
   }
@@ -7426,6 +7786,8 @@ uint8_t* bitmap_pixels(mrb_state* M, mrb_value v, int* w, int* h) {
     *w = b->width;
   if (h)
     *h = b->height;
+  // The caller writes through this pointer.
+  promote_to_direct(*b);
   return b->buffer.data();
 }
 
