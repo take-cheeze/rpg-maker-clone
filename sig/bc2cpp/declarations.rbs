@@ -2112,40 +2112,6 @@ class RPG2k::Scene::Title < RPG2k::Scene::Base
   def move_selection: (untyped) -> untyped
   def play_cursor_se: () -> untyped
 end
-# bc2cpp-native: base_rpg2k
-class RPG2k::Window
-  def x: () -> untyped
-  def y: () -> untyped
-  def width: () -> untyped
-  def height: () -> untyped
-  def contents: () -> untyped
-  def windowskin: () -> untyped
-  def cursor_rect: () -> untyped
-  def active: () -> untyped
-  def visible: () -> untyped
-  def pause: () -> untyped
-  def active=: (untyped) -> untyped
-  def close_animation: (untyped) -> untyped
-  def contents=: (untyped) -> untyped
-  def cursor_rect=: (untyped) -> untyped
-  def draw_arrow_fallback: () -> untyped
-  def draw_cursor_fallback: (untyped, untyped, untyped, untyped) -> untyped
-  def draw_frame: (untyped, untyped) -> untyped
-  def draw_skin: () -> untyped
-  def height=: (untyped) -> untyped
-  def initialize: (?untyped, ?untyped, ?untyped, ?untyped) -> untyped
-  def pause=: (untyped) -> untyped
-  def position_arrow: () -> untyped
-  def transparent=: (untyped) -> untyped
-  def update: () -> untyped
-  def update_rect: () -> untyped
-  def visible=: (untyped) -> untyped
-  def width=: (untyped) -> untyped
-  def windowskin=: (untyped) -> untyped
-  def x=: (untyped) -> untyped
-  def y=: (untyped) -> untyped
-  def z=: (untyped) -> untyped
-end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rpg2k
@@ -6359,6 +6325,43 @@ class StringIO
   def write_nonblock: (*untyped) -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rpg
+class RPG2k::Window
+  def x: () -> untyped
+  def y: () -> untyped
+  def width: () -> untyped
+  def height: () -> untyped
+  def contents: () -> untyped
+  def windowskin: () -> untyped
+  def cursor_rect: () -> untyped
+  def active: () -> untyped
+  def visible: () -> untyped
+  def pause: () -> untyped
+  def active=: (untyped) -> untyped
+  def close_animation: (untyped) -> untyped
+  def contents=: (untyped) -> untyped
+  def cursor_rect=: (untyped) -> untyped
+  def draw_arrow_fallback: () -> untyped
+  def draw_cursor_fallback: (untyped, untyped, untyped, untyped) -> untyped
+  def draw_frame: (untyped, untyped) -> untyped
+  def draw_skin: () -> untyped
+  def height=: (untyped) -> untyped
+  def initialize: (?untyped, ?untyped, ?untyped, ?untyped) -> untyped
+  def install_skin: () -> untyped
+  def pause=: (untyped) -> untyped
+  def position_arrow: () -> untyped
+  def transparent=: (untyped) -> untyped
+  def update: () -> untyped
+  def update_rect: () -> untyped
+  def visible=: (untyped) -> untyped
+  def width=: (untyped) -> untyped
+  def windowskin=: (untyped) -> untyped
+  def x=: (untyped) -> untyped
+  def y=: (untyped) -> untyped
+  def z=: (untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -7903,6 +7906,18 @@ class RPG2k
       @scene: RPG2k::Scene::Map
       @rng: Game::Rng
     end
+  end
+end
+
+# ---- native_ivars.rbs
+# Slots holding a native-class object (RbsParamCheck.native_ivar_kind: an exact class test at every store). Each was
+# checked against every writer in mruby-rpg2k/mrblib.
+class RPG2k
+  class Window
+    # #initialize stores a `Bitmap.new` in each before its first call on self; the one other writer, #allocate_skin
+    # (#width= / #height=), stores a fresh `Bitmap.new` too. #dispose leaves both set.
+    @skin_bmp: RGSS::Bitmap
+    @cursor_bmp: RGSS::Bitmap
   end
 end
 
@@ -10233,10 +10248,8 @@ class RPG2k::Window
   @arrow_bmp: RGSS::Bitmap | nil
   @arrow_sprite: RGSS::Sprite | nil
   @contents_sprite: RGSS::Sprite | nil
-  @cursor_bmp: RGSS::Bitmap | nil
   @cursor_sprite: RGSS::Sprite | nil
   @pause: bool
-  @skin_bmp: RGSS::Bitmap | nil
   @skin_sprite: RGSS::Sprite | nil
   @transparent: bool
   @viewport: RGSS::Viewport | nil
