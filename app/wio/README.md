@@ -22,6 +22,9 @@ WIO_UNIALGO_LIB_DIR=<uni-algo lib dir> \
   pio run -e wio
 ```
 
+`scripts/wio/build.bash` runs all of it from a bare checkout (in `nix develop .#bc2cpp`), as CI's
+`wio` job does. The image is bigger than the board's flash, so it links with `--noinhibit-exec`.
+
 `MRUBY_TARGET=wio` without `RPGMAKER_BC2CPP=1` fails in `build_config.rb`.
 `env:wio` is `app/wio/src/wio_rgss_boot_main.cxx`, which boots the compiled
 engine.
