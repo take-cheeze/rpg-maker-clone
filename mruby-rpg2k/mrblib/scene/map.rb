@@ -1045,6 +1045,9 @@ class RPG2k
         @animation_sprite.z = 150
         @animation_sprite.visible = false
         @animation_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        # This and the other screen-sized layers below (fade, flash, weather,
+        # panorama) keep their draws rather than pixels (Bitmap#_defer).
+        @animation_bmp._defer
         @animation_sprite.bitmap = @animation_bmp
         # Fallback marker when the CharSet graphic is unavailable -- a debug
         # aid, so it only shows during Test Play; a released game with a
@@ -1077,6 +1080,7 @@ class RPG2k
         @fade_sprite = Sprite.new
         @fade_sprite.z = 500
         @fade_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @fade_bmp._defer
         @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255)
         @fade_sprite.bitmap = @fade_bmp
         @fade_sprite.opacity = 0
@@ -1136,6 +1140,7 @@ class RPG2k
           if @flash_rgb != rgb
             unless @flash_bmp
               @flash_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+              @flash_bmp._defer
               @flash_sprite.bitmap = @flash_bmp
             end
             @flash_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(r, g, b, 255)
@@ -1318,6 +1323,7 @@ class RPG2k
         end
         unless @weather_bmp
           @weather_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+          @weather_bmp._defer
           @weather_sprite.bitmap = @weather_bmp
         end
         @weather_sprite.visible = true
@@ -1497,6 +1503,7 @@ class RPG2k
         @parallax_sprite = Sprite.new(@map_viewport)
         @parallax_sprite.z = -1
         @parallax_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @parallax_bmp._defer
         @parallax_sprite.bitmap = @parallax_bmp
       rescue StandardError => e
         $stderr.puts "[RPG2k] parallax load failed, no backdrop drawn: #{e.message}"

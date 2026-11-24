@@ -2243,6 +2243,8 @@ assert "RGSS::Bitmap#_defer composes to the immediate draws" do
       12.times { |i| b.blt_quads(0, 3, pal, [[0, 0, i % 4, 0, 1, 2]]) }
       b.blt(-1, 3, blank, RGSS::Rect.new(0, 0, 3, 3))
       b.copy_blt(5, 0, grid, RGSS::Rect.new(0, 1, 3, 3))
+      b.stretch_blt(RGSS::Rect.new(-2, 1, 9, 7), pal, RGSS::Rect.new(-1, 0, 6, 2), 140)
+      b.stretch_blt(RGSS::Rect.new(4, 2, 5, 3), blank, RGSS::Rect.new(1, -1, 4, 3))
     end
     # Sources that change afterwards: the deferred draws keep what they read.
     blank.fill_rect(0, 0, 3, 3, RGSS::Color.new(1, 2, 3, 255))
@@ -2260,6 +2262,18 @@ assert "RGSS::Bitmap#_defer composes to the immediate draws" do
     # And _defer(false) keeps what it shows as pixels.
     src._defer(false)
     assert_equal pixels_of(pal), pixels_of(src)
+
+    # Read (and so materialized), then wholly painted over, it records again.
+    again = RGSS::Bitmap.new(3, 2)
+    again._defer
+    again.blt(0, 0, pal, RGSS::Rect.new(0, 0, 3, 2))
+    assert_equal pixels_of(pal).values_at(0, 1, 2, 4, 5, 6), pixels_of(again)
+    again.fill_rect(0, 0, 3, 2, RGSS::Color.new(7, 8, 9, 255))
+    again.blt(1, 0, pal, RGSS::Rect.new(0, 0, 1, 1), 128)
+    flat = RGSS::Bitmap.new(3, 2)
+    flat.fill_rect(0, 0, 3, 2, RGSS::Color.new(7, 8, 9, 255))
+    flat.blt(1, 0, pal, RGSS::Rect.new(0, 0, 1, 1), 128)
+    assert_equal pixels_of(flat), pixels_of(again)
 
     gone = RGSS::Bitmap.new(2, 2)
     gone._defer
