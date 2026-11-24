@@ -539,6 +539,7 @@ class RPG2k
           @chipset = build_chipset
           @chipset_bmp = load_chipset_graphic
         end
+        prepare_tile_quads
         RGSS::Profiler.section(:"map.transition.charset_windowskin") do
           @charset = load_charset
           @windowskin = load_windowskin
@@ -9098,6 +9099,7 @@ class RPG2k
           @chipset_bmp = load_chipset_graphic
           old_bmp.dispose if old_bmp && !old_bmp.equal?(@chipset_bmp)
         end
+        prepare_tile_quads
         # ... nor does the timer's sticky "message was at top" flag: ported
         # from a reference implementation, not independently confirmed
         # against genuine RPG_RT under wine: it rebuilds its own message
@@ -11596,6 +11598,16 @@ class RPG2k
       # recorded by the full pass below), which on a real map is a handful of
       # water/animated chips rather than all 336 cells -- the difference between
       # an ~80ms rebuild ten times a second and a few ms.
+      # See Game::ChipsetLayout.prepare_quads.
+      def prepare_tile_quads
+        Game::ChipsetLayout.prepare_quads(@map.drawn_tile_ids) if @map
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] tile quads not prepared, built as drawn: #{e.message}"
+      end
+
+      # Fields per #anim_cells entry: rx, ry, lower, upper, upper_drawn.
+      ANIM_CELL_FIELDS = 5
+
       def rebuild_tile_cache(first_tx, first_ty, abf, cf)
         if @tiles_built && @anim_cells &&
            @tiles_tx == first_tx && @tiles_ty == first_ty &&
@@ -11614,10 +11626,14 @@ class RPG2k
         # assuming every map animates.
         @tiles_uses_abf = false
         @tiles_uses_cf = false
-        @anim_cells = []
+        # Flat and reused (ANIM_CELL_FIELDS per cell): a scroll rebuilds the
+        # grid every tile step, and a tuple per cell was made each time.
+        (@anim_cells ||= []).clear
 
-        (0...ROWS).each do |ry|
-          (0...COLS).each do |rx|
+        ry = 0
+        while ry < ROWS
+          rx = 0
+          while rx < COLS
             tx = first_tx + rx
             ty = first_ty + ry
             dx = rx * TILE
@@ -11628,7 +11644,7 @@ class RPG2k
             upper_drawn = !Game::ChipsetLayout.upper_blank?(upper)
             lower_input = note_anim_input lower
             upper_input = upper_drawn ? note_anim_input(upper) : nil
-            @anim_cells << [rx, ry, lower, upper, upper_drawn] if
+            @anim_cells.push(rx, ry, lower, upper, upper_drawn) if
               lower_input || upper_input
 
             if @chipset_bmp
@@ -11657,7 +11673,9 @@ class RPG2k
               @lower_tiles.fill_rect dx, dy, TILE, TILE, tile_color(lower)
               @upper_tiles.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper_drawn
             end
+            rx += 1
           end
+          ry += 1
         end
 
         @tiles_built = true
@@ -11675,9 +11693,15 @@ class RPG2k
       # #rebuild_tile_cache). Reads exactly what the full pass draws for those
       # cells, so the patched grid is pixel-identical to a full rebuild.
       def patch_anim_cells(abf, cf)
-        @anim_cells.each do |rx, ry, lower, upper, upper_drawn|
-          dx = rx * TILE
-          dy = ry * TILE
+        cells = @anim_cells
+        i = 0
+        while i < cells.size
+          dx = cells[i] * TILE
+          dy = cells[i + 1] * TILE
+          lower = cells[i + 2]
+          upper = cells[i + 3]
+          upper_drawn = cells[i + 4]
+          i += ANIM_CELL_FIELDS
           draw_tile @lower_tiles, lower, dx, dy, abf, cf
           if upper_drawn
             if @chipset.elevated?(upper)
