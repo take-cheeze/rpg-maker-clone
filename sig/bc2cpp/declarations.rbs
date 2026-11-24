@@ -635,6 +635,11 @@ end
 
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_rgss
+class Array
+  def _rgss_native_sort!: () -> untyped
+end
+
+# bc2cpp-native: base_rgss
 module RGSS
   def __log_bridge_write: (String) -> String?
   def default_font_path: () -> String?
@@ -849,6 +854,7 @@ end
 
 # bc2cpp-native: base_rgss
 class RGSS::Window
+  def _rgss1_initialize: (?untyped) -> self
   def active=: (untyped) -> self
   def back_opacity=: (Numeric) -> self
   def contents=: (untyped) -> untyped
@@ -4324,27 +4330,6 @@ class Win32API
   def initialize: (untyped, untyped, ?untyped, ?untyped) -> untyped
 end
 
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_stringio
-class StringIO
-  def string: () -> untyped
-  def string=: (untyped) -> untyped
-  def each: (*untyped) -> untyped
-  def fileno: () -> untyped
-  def flush: () -> untyped
-  def fsync: () -> untyped
-  def open: (?untyped, ?untyped) -> untyped
-  def print: (*untyped) -> untyped
-  def puts: (*untyped) -> untyped
-  def read_nonblock: (*untyped) -> untyped
-  def readchar: () -> untyped
-  def sync: () -> untyped
-  def sync=: (untyped) -> untyped
-  def sysread: (*untyped) -> untyped
-  def ungetc: (untyped) -> untyped
-  def write_nonblock: (*untyped) -> untyped
-end
-
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_stringio
 class EOFError < IOError
@@ -4362,12 +4347,14 @@ end
 class StringIO
   def close: () -> nil
   def closed?: () -> bool
+  def eof: () -> bool
   def eof?: () -> bool
   def getbyte: () -> Integer?
   def getc: (*untyped) -> String?
   def gets: (*untyped) -> untyped
   def initialize: (?String, ?String) -> self
   def initialize_copy: (untyped) -> untyped
+  def length: () -> Integer
   def lineno: () -> Integer
   def lineno=: (Numeric) -> Integer
   def pos: () -> Integer
@@ -4377,6 +4364,8 @@ class StringIO
   def rewind: () -> Integer
   def seek: (Numeric, ?untyped) -> Integer
   def size: () -> Integer
+  def syswrite: (untyped) -> Integer
+  def tell: () -> Integer
   def write: (untyped) -> Integer
 end
 
@@ -6348,6 +6337,28 @@ class LCF::MapTree < LCF::File
   def self.eager?: () -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_stringio
+class StringIO
+  def string: () -> untyped
+  def string=: (untyped) -> untyped
+  def each: (*untyped) -> untyped
+  def fileno: () -> untyped
+  def flush: () -> untyped
+  def fsync: () -> untyped
+  def open: (?untyped, ?untyped) -> untyped
+  def print: (*untyped) -> untyped
+  def puts: (*untyped) -> untyped
+  def read_nonblock: (*untyped) -> untyped
+  def readchar: () -> untyped
+  def sync: () -> untyped
+  def sync=: (untyped) -> untyped
+  def sysread: (*untyped) -> untyped
+  def tty?: () -> untyped
+  def ungetc: (untyped) -> untyped
+  def write_nonblock: (*untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -7872,21 +7883,25 @@ class RPG2k
       # Scene::Map's and MapViewer's map: Scene::Map stores `state.map` (Game::State#@map) or RPG2k#load_map's
       # `Game::Map.new`; MapViewer its `map:` keyword (#load_map's result or `@state.map`) or `state.map`.
       @map: Game::Map?
+      # Touched only by Scene::Map and Scene::Battle. Scene::Map#initialize stores `Game::Rng.new(0x2000)` before any
+      # call on self, Scene::Battle#initialize `map.rng` (that same object) right after `super`. Never nil.
+      @rng: Game::Rng
     end
     class Battle
-      # One writer; both construction sites (Scene::Map#drive_battle) pass the Scene::Map `self`.
-      @map_scene: RPG2k::Scene::Map?
+      # One writer, in #initialize right after `super` (Scene::Base#initialize reads none of it); both construction
+      # sites (Scene::Map#drive_battle) pass the Scene::Map `self`, so never nil (no `?`: see Game::Actor's @db).
+      @map_scene: RPG2k::Scene::Map
     end
-    # One writer each, in #initialize; the only construction sites are in Scene::Map#initialize:
-    # `MapWorld.new(self, @rng)` / `VehicleWorld.new(self, @rng, type)`, Scene::Map's one @rng writer being
-    # `Game::Rng.new(0x2000)`.
+    # One writer each, in #initialize before any call; the only construction sites are in Scene::Map#initialize:
+    # `MapWorld.new(self, @rng)` / `VehicleWorld.new(self, @rng, type)`, after Scene::Map's one @rng writer,
+    # `Game::Rng.new(0x2000)`, so neither is ever nil.
     class MapWorld
-      @scene: RPG2k::Scene::Map?
-      @rng: Game::Rng?
+      @scene: RPG2k::Scene::Map
+      @rng: Game::Rng
     end
     class VehicleWorld
-      @scene: RPG2k::Scene::Map?
-      @rng: Game::Rng?
+      @scene: RPG2k::Scene::Map
+      @rng: Game::Rng
     end
   end
 end
@@ -7977,8 +7992,9 @@ module RPG2k
       # :contents) and `= nil` in #close_number_input. :model is the one `Game::NumberInput.new`.
       @number_input: { model: Game::NumberInput, interp: untyped, ?embedded: untyped, ?x: untyped, ?y: untyped,
                        ?window: untyped, ?contents: RGSS::Bitmap }?
-      # #build_parallels' `[]`, filled only with #new_parallel results or entries of the previous @parallels.
-      @parallels: Array[RPG2k::Scene::Map::Parallel]?
+      # #initialize's `[]` (before any call on self) and #build_parallels' `[]`, filled only with #new_parallel results
+      # or entries of the previous @parallels. Never nil.
+      @parallels: Array[RPG2k::Scene::Map::Parallel]
       # A Parallel Process: #new_parallel is the one construction, with its `Game::Interpreter.new`, a common
       # event's switch id or nil, and a common event id or nil; the Wait countdown is nil or
       # #frames_from_tenths' Integer counted down by 1 (#drive_parallel_wait).
@@ -11723,9 +11739,9 @@ end
 
 # bc2cpp-native: typed_returns
 class RPG2k::Scene::Battle
-  def ui: () -> RPG2k::Scene::Battle::Ui?
+  def ui: () -> RPG2k::Scene::Battle::Ui
   def owner: () -> Game::Interpreter?
-  def map: () -> RPG2k::Scene::Map?
+  def map: () -> RPG2k::Scene::Map
   def actor_placeholder_battler: () -> RGSS::Bitmap
   def actor_sprite_z: (untyped) -> Integer
   def advance_actor: () -> (Integer | RPG2k::Window)?
@@ -11872,7 +11888,7 @@ class RPG2k::Scene::Map
   def state: () -> Game::State?
   def events: () -> Array?
   def interpreter: () -> Game::Interpreter?
-  def rng: () -> Game::Rng?
+  def rng: () -> Game::Rng
   def monster_cache: () -> RPG2k::Scene::Map::LRUBitmapCache?
   def backdrop_cache: () -> RPG2k::Scene::Map::LRUBitmapCache?
   def battlecharset_cache: () -> RPG2k::Scene::Map::LRUBitmapCache?
@@ -13810,6 +13826,11 @@ class Game::Actor
   @equipment: Array
   # `[]` in #initialize, and `kept` in #clear_states, #states= and #prune_states!, each an Array.
   @states: Array
+end
+class RPG2k
+  # `[]` at the top of #initialize, then `[...]` literals (#push_title_screen, #show_game_over, #start_new_game,
+  # #continue_game); #push and #pop only push and pop. Never nil.
+  @scenes: Array
 end
 class Game::Party
   # `[]` then `<<` of non-nil Actors#[] results (#initialize, #add_actor), #reorder's `old[i]` over Scene::Order's
