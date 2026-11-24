@@ -38,12 +38,17 @@ module LCF
       end
     end
 
+    # LAZY_CHUNKS: the file a root record may leave chunks in (Array1D#initialize),
+    # or nil. Only a file whose object is the one live reader of its path, and
+    # writes it only through #save_to.
+    def lazy_io(_io) nil end
+
     def header; raise end
     def schema; raise end
 
     def build_root(io, root_schema)
       case LCF.sget(root_schema, :type)
-      when :Array1D then Array1D.new(io, root_schema)
+      when :Array1D then Array1D.new(io, root_schema, lazy_io(io))
       when :Array2D then Array2D.new(io, root_schema)
       else raise NameError, "uninitialized constant LCF::#{LCF.sget(root_schema, :type)}"
       end
@@ -85,13 +90,27 @@ module LCF
 
     # Write #to_lcf to a path (binary). Uses ::File since LCF::File shadows it.
     def save_to path
-      ::File.open(path, 'wb') { |f| f.write to_lcf }
+      bytes = to_lcf
+      @root.load_lazy if @root.is_a?(LCF::Array1D)
+      ::File.open(path, 'wb') { |f| f.write bytes }
     end
   end
 
   class Database < File
     def header; "LcfDataBase" end
     def schema; LCF::Schema::DATABASE end
+
+    # RPG2k#initialize's @db is the one Database, and only Scene::ChipsetEditor
+    # writes it back. A host defines LCF_EAGER_DATABASE true to read it whole.
+    def lazy_io(io)
+      io.is_a?(::File) && !LCF::Database.eager? ? io : nil
+    end
+
+    def self.eager?
+      LCF_EAGER_DATABASE ? true : false
+    rescue NameError
+      false
+    end
 
     # RPG Maker 2003 databases carry a Classes (職業) section, chunk 30, that
     # RPG2000 never writes. Its presence is the file-level signal that a project
