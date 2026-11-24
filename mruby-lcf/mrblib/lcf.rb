@@ -1165,15 +1165,20 @@ module LCF
     # missed it entirely -- confirmed by CI's real-game boot check).
     def read_row_bytes s
       out = String.new
+      # Every chunk is read into this one buffer before it is appended.
+      buf = String.new
       begin
         until s.eof?
           idx = LCF.read_ber s
           LCF.append_ber(out, idx)
           break if idx == 0
           len = LCF.read_ber s
-          d = len > 0 ? s.read(len) : ''
-          raise "truncated chunk #{idx}: #{len} bytes declared" if len < 0 || d.nil? || d.bytesize != len
-          LCF.append_ber(out, len) << d
+          raise "truncated chunk #{idx}: #{len} bytes declared" if len < 0
+          LCF.append_ber(out, len)
+          next if len == 0
+          d = s.read(len, buf)
+          raise "truncated chunk #{idx}: #{len} bytes declared" if d.nil? || d.bytesize != len
+          out << d
         end
       rescue StopIteration => e
         e.result
