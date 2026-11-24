@@ -89,6 +89,23 @@ module LCF
     ret >= INT32_SIGN_BIT ? ret - INT32_WRAP : ret
   end
 
+  # read_ber of the String +d+'s leading bytes, without a StringIO: an :int
+  # field is decoded on every #[] (render reads terrain bush depth per event per
+  # frame), and the StringIO was its only allocation.
+  def self.ber_value(d)
+    ret = 0
+    i = 0
+    loop do
+      b = d.getbyte(i)
+      raise 'truncated BER integer' if b.nil?
+      i += 1
+      ret = (ret << 7) | (b & 0x7f)
+      break if (b & 0x80) == 0
+    end
+    ret &= INT32_MASK
+    ret >= INT32_SIGN_BIT ? ret - INT32_WRAP : ret
+  end
+
   # Inverse of read_ber: encode an integer as a base-128 (BER) big-endian byte
   # string, every byte but the last carrying the 0x80 continuation bit. The
   # value is first reduced to its 32-bit two's-complement form so that negative
@@ -336,10 +353,10 @@ module LCF
     case sget(s, :type)
     when :Array1D ; return Array1D.new d, s
     when :Array2D ; return Array2D.new d, s
-    when :int ; return read_ber StringIO.new(d)
+    when :int ; return ber_value(d)
     when :bool
       raise "invalid bool size: #{d.size}" if d.size != 1
-      return d.bytes[0] != 0
+      return d.getbyte(0) != 0
     when :int16_array
       vals = d.unpack(int16_format(s))
       order = sget(s, :order)
@@ -348,7 +365,7 @@ module LCF
       order.each_with_index { |name, i| h[name] = vals[i] }
       return h
     when :int8_array ; return d.bytes
-    when :uint8 ; return d.bytes[0]
+    when :uint8 ; return d.getbyte(0)
     when :bool_array ; return d.bytes.map { |b| b != 0 }
     when :int32_array ; return unpack_int32(d)
     when :double ; return double_decode(d)
