@@ -109,6 +109,9 @@ checks:
   scripts/bc2cpp-rpg/schema_blob_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp-rpg/host_arena_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/core_ruby_query_check.rb:
     tier: fast
     capabilities: []
