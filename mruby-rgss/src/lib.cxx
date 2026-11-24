@@ -5547,13 +5547,21 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
       for (int x = 0; x < f.cw; ++x, d += bpp)
         sprite_fx_pixel(src, f, x, y, bpp, d);
     fx.dirty = true;
-    lv_canvas_set_buffer(obj, fx.buffer.data(), f.cw, f.ch, fx.format);
+    if (fx.buffer.empty())
+      lv_image_set_src(obj, nullptr);
+    else
+      lv_canvas_set_buffer(obj, fx.buffer.data(), f.cw, f.ch, fx.format);
   } else {
     mrb_iv_set(M, self, MRB_IVSYM(_fx_bitmap), mrb_nil_value());
-    // Shown whole, the bitmap itself becomes the canvas buffer.
+    // Shown whole, the bitmap itself becomes the canvas buffer. An empty
+    // bitmap has no buffer, which lv_canvas_set_buffer asserts against (a
+    // halt on the Wio); no image source draws the same nothing.
     promote_to_direct(src);
-    lv_canvas_set_buffer(obj, src.buffer.data(), src.width, src.height,
-                         src.format);
+    if (src.buffer.empty())
+      lv_image_set_src(obj, nullptr);
+    else
+      lv_canvas_set_buffer(obj, src.buffer.data(), src.width, src.height,
+                           src.format);
   }
   // Repaint on the next Graphics.update, even if the contents were drawn before
   // the bitmap was attached to this sprite.
