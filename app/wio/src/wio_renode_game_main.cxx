@@ -352,6 +352,9 @@ void setup(void) {
   probe("init");
 
   rgss_set_display(g_mrb, disp);
+  // What the boot leaves in the GC arena is kept by a constant or by the game,
+  // registered below; the arena entries would hold the rest forever.
+  const int boot_ai = mrb_gc_arena_save(g_mrb);
   // scripts/wio/game_rom.rb's decoded images, read in place (ROM_BITMAP).
   size_t bitmaps_len = 0;
   if (const void* bitmaps = wio_game_rom_file("/rgss/bitmaps", &bitmaps_len))
@@ -382,6 +385,7 @@ void setup(void) {
     return;
   }
   mrb_gc_register(g_mrb, g_game);
+  mrb_gc_arena_restore(g_mrb, boot_ai);
   probe("new");
 }
 
@@ -396,10 +400,14 @@ void loop(void) {
     g_result = kDone;
     return;
   }
+  // Every call below leaves its result in the GC arena (mrb_funcall's
+  // contract); without the restore it grows by a slot per frame.
+  const int ai = mrb_gc_arena_save(g_mrb);
   track_scene();
   tap_keys();
   if (!g_mrb->exc)
     bc2cpp_entry_RPG2k_main_loop(g_mrb, g_game);
+  mrb_gc_arena_restore(g_mrb, ai);
   if (g_mrb->exc) {
     const bool clean = MRB_EXC_EXIT_P(g_mrb->exc);
     if (!clean)

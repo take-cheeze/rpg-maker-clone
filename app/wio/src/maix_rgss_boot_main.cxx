@@ -100,8 +100,12 @@ void setup(void) {
 }
 
 void loop(void) {
-  if (g_mrb)
+  if (g_mrb) {
+    // Each RGSS::Input call leaves its result in the GC arena.
+    const int ai = mrb_gc_arena_save(g_mrb);
     rgss_maix_poll(g_mrb);
+    mrb_gc_arena_restore(g_mrb, ai);
+  }
   show_keys(maix_input_scan());
   lv_timer_handler();
   static bool on = false;

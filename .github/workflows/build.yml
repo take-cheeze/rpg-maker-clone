@@ -761,6 +761,7 @@ jobs:
           ruby scripts/bc2cpp-rpg/constructor_overloads_check.rb
           ruby scripts/bc2cpp-rpg/edition_default_check.rb
           ruby scripts/bc2cpp-rpg/generic_block_return_check.rb
+          ruby scripts/bc2cpp-rpg/host_arena_check.rb
           ruby scripts/bc2cpp-rpg/lcf_join_array_check.rb
           ruby scripts/bc2cpp-rpg/lcf_schema_rom_check.rb
           ruby scripts/bc2cpp-rpg/lcf_schema_tables_check.rb
