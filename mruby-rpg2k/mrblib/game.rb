@@ -1283,6 +1283,11 @@ module Game
       end
       [bx + sub % 6 * TS, by + sub / 6 * TS, TS, TS]
     end
+
+    # .event_tile_rect, kept per id (frozen): a tile-graphic event asks every frame it is drawn.
+    def self.event_tile_rect_cached(tile_id)
+      (@event_tile_rects ||= {})[tile_id] ||= event_tile_rect(tile_id).freeze
+    end
   end
 
   # How an RPG2000 map event's graphic is drawn each frame: which CharSet frame
@@ -8442,6 +8447,12 @@ module Game
     # value.
     def tint; [@r.to_i, @g.to_i, @b.to_i, @sat.to_i]; end
 
+    # Whether #tint would equal +t+, without building the Array: the map asks
+    # every frame and the tint rarely moves.
+    def tint_equal?(t)
+      !t.nil? && t.size == 4 && t[0] == @r.to_i && t[1] == @g.to_i && t[2] == @b.to_i && t[3] == @sat.to_i
+    end
+
     # True while a tint transition is still in progress.
     def tinting?; @frames > 0; end
 
@@ -10440,6 +10451,8 @@ module Game
 
     # Advance every shown picture's in-flight move one frame.
     def update_pictures
+      # each_value builds an Array of the values even for an empty Hash.
+      return if @pictures.empty?
       @pictures.each_value { |picture| picture.update }
     end
 

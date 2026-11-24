@@ -382,7 +382,7 @@ REWRITES = {
 ' }, # setup_screen_overlay
       { old: '        RGSS::Profiler.section(:"map.overlay") { update_screen_overlay }
 ',
-        new: '        RGSS::Profiler.section(:"map.overlay") { (screen = @state.screen; draw_transition_mask screen; update_map_tone screen.tint; r, g, b, strength = screen.flash_color; if strength <= 0
+        new: '        RGSS::Profiler.section(:"map.overlay") { (screen = @state.screen; draw_transition_mask screen; update_map_tone screen.tint unless screen.tint_equal?(@map_tint); r, g, b, strength = screen.flash_color; if strength <= 0
           @flash_sprite.opacity = 0
         else
           rgb = [r, g, b]
@@ -415,9 +415,9 @@ REWRITES = {
 ',
         new: '        (@state.tile_substitutions = @map.substitution_snapshot)
 ' }, # record_tile_substitutions
-      { old: '          step_events(allow_trigger: false) if events_move_during_message?
+      { old: '          step_events(false) if events_move_during_message?
 ',
-        new: '          step_events(allow_trigger: false) if (message_window_open? && @state.message_config.continue_events)
+        new: '          step_events(false) if (message_window_open? && @state.message_config.continue_events)
 ' }, # events_move_during_message?
       { old: '        paused = parallels_paused?
 ',
