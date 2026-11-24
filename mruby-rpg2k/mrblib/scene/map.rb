@@ -946,7 +946,12 @@ class RPG2k
 
         @lower_sprite = Sprite.new(@map_viewport)
         @lower_sprite.z = 0
+        # The two layers and the two tile grids below record their draws
+        # rather than holding pixels; the layers are composed a few rows at a
+        # time as the screen is drawn (Bitmap#_defer, DEFERRED_BITMAP in
+        # mruby-rgss/src/lib.cxx).
         @lower_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @lower_bmp._defer
         @lower_sprite.bitmap = @lower_bmp
 
         # The cached tile grids behind @lower_bmp / @upper_bmp: same size, but
@@ -955,7 +960,9 @@ class RPG2k
         # served by copying rather than by re-blitting the grid. Never attached
         # to a sprite -- #draw_layers copies them into the two buffers above.
         @lower_tiles = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @lower_tiles._defer
         @upper_tiles = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @upper_tiles._defer
         @tiles_built = false
 
         # The upper (above-character) chip layer lives in its own viewport
@@ -970,6 +977,7 @@ class RPG2k
         @upper_sprite = Sprite.new(@upper_viewport)
         @upper_sprite.z = 200 # sole child of @upper_viewport, so this is only for parity
         @upper_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @upper_bmp._defer
         @upper_sprite.bitmap = @upper_bmp
 
         @player_sprite = Sprite.new(@map_viewport)
@@ -1037,6 +1045,9 @@ class RPG2k
         @animation_sprite.z = 150
         @animation_sprite.visible = false
         @animation_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        # This and the other screen-sized layers below (fade, flash, weather,
+        # panorama) keep their draws rather than pixels (Bitmap#_defer).
+        @animation_bmp._defer
         @animation_sprite.bitmap = @animation_bmp
         # Fallback marker when the CharSet graphic is unavailable -- a debug
         # aid, so it only shows during Test Play; a released game with a
@@ -1069,6 +1080,7 @@ class RPG2k
         @fade_sprite = Sprite.new
         @fade_sprite.z = 500
         @fade_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @fade_bmp._defer
         @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255)
         @fade_sprite.bitmap = @fade_bmp
         @fade_sprite.opacity = 0
@@ -1128,6 +1140,7 @@ class RPG2k
           if @flash_rgb != rgb
             unless @flash_bmp
               @flash_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+              @flash_bmp._defer
               @flash_sprite.bitmap = @flash_bmp
             end
             @flash_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(r, g, b, 255)
@@ -1310,6 +1323,7 @@ class RPG2k
         end
         unless @weather_bmp
           @weather_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+          @weather_bmp._defer
           @weather_sprite.bitmap = @weather_bmp
         end
         @weather_sprite.visible = true
@@ -1489,6 +1503,7 @@ class RPG2k
         @parallax_sprite = Sprite.new(@map_viewport)
         @parallax_sprite.z = -1
         @parallax_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @parallax_bmp._defer
         @parallax_sprite.bitmap = @parallax_bmp
       rescue StandardError => e
         $stderr.puts "[RPG2k] parallax load failed, no backdrop drawn: #{e.message}"
@@ -11396,6 +11411,11 @@ class RPG2k
 
         rebuilt = false
         unless tile_cache_valid?(first_tx, first_ty, abf, cf)
+          # Cleared first so the layers drop the grids' old draws before the
+          # rebuild replaces them (a deferred grid is copied on write while a
+          # layer still refers to it).
+          @lower_bmp.clear
+          @upper_bmp.clear
           rebuild_tile_cache(first_tx, first_ty, abf, cf)
           rebuilt = true
         end

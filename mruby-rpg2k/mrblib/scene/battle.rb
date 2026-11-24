@@ -1170,6 +1170,7 @@ class RPG2k
       BATTLE_BACK_FLAT_COLOR = [0, 0, 0].freeze
       def flat_battle_back
         bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        bmp._defer # one fill, kept as a draw (DEFERRED_BITMAP)
         r, g, b = BATTLE_BACK_FLAT_COLOR
         bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(r, g, b, 255)
         bmp

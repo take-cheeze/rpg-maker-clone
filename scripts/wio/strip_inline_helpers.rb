@@ -210,10 +210,10 @@ REWRITES = {
         expect_lines: 4 },
       { first: '      def setup_screen_overlay',
         last: '      end', # def setup_screen_overlay's own `end`
-        expect_lines: 45 },
+        expect_lines: 46 },
       { first: '      def update_screen_overlay',
         last: '      end', # def update_screen_overlay's own `end`
-        expect_lines: 23 },
+        expect_lines: 24 },
       { first: '      def reset_fade_bitmap',
         last: '      end', # def reset_fade_bitmap's own `end`
         expect_lines: 4 },
@@ -378,7 +378,7 @@ REWRITES = {
         new: '        (interp.take_tiles_changed; nil)' },
       { old: '        setup_screen_overlay
 ',
-        new: '        (@fade_sprite = Sprite.new; @fade_sprite.z = 500; @fade_bmp = Bitmap.new(SCREEN_W, SCREEN_H); @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255); @fade_sprite.bitmap = @fade_bmp; @fade_sprite.opacity = 0; @fade_masked = false; @transition_capture = nil; @captured_transition = nil; @random_blocks_transition = nil; @flash_sprite = Sprite.new; @flash_sprite.z = 450; @flash_sprite.opacity = 0; @flash_rgb = nil; @weather_sprite = Sprite.new; @weather_sprite.z = 430; @weather_sprite.visible = false)
+        new: '        (@fade_sprite = Sprite.new; @fade_sprite.z = 500; @fade_bmp = Bitmap.new(SCREEN_W, SCREEN_H); @fade_bmp._defer; @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255); @fade_sprite.bitmap = @fade_bmp; @fade_sprite.opacity = 0; @fade_masked = false; @transition_capture = nil; @captured_transition = nil; @random_blocks_transition = nil; @flash_sprite = Sprite.new; @flash_sprite.z = 450; @flash_sprite.opacity = 0; @flash_rgb = nil; @weather_sprite = Sprite.new; @weather_sprite.z = 430; @weather_sprite.visible = false)
 ' }, # setup_screen_overlay
       { old: '        RGSS::Profiler.section(:"map.overlay") { update_screen_overlay }
 ',
@@ -389,6 +389,7 @@ REWRITES = {
           if @flash_rgb != rgb
             unless @flash_bmp
               @flash_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+              @flash_bmp._defer
               @flash_sprite.bitmap = @flash_bmp
             end
             @flash_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(r, g, b, 255)
