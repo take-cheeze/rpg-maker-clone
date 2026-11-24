@@ -6466,16 +6466,17 @@ module Game
 # `T?` ("T or nil", the contract every ClassLayout fact already has). Each was checked against every writer and every
 # construction site in the closed world (mruby-rpg2k/mrblib), as noted.
 #
-# @state: the only writer in each class is `@state = state` in #initialize. Every construction site passes nil, an
-# `@state` of another class below (or Scene::Battle's `map.state`, Scene::Map's attr_reader) or RPG2k's own `state`:
-# `Game::State.new(party, ...)` (#start_new_game, its party built in an RGSS::Profiler.section block),
-# `load_save_state` (Game::State.from_lsd, whose one return is `new(party, ...)`, or nil) or that same local.
+# @state: the only writer in each class is `@state = state` in #initialize, before any call. Interpreter.new is called
+# only by Scene::Map (#initialize, #new_parallel) and Scene::Battle#start with the scene's @state, and EnemyAi.new only
+# by Scene::Battle#start. Scene::Map#initialize stores its `state` argument, which RPG2k passes as a `Game::State.new`
+# (#start_new_game) or a load_save_state result past `unless state` (#continue_game); Scene::Battle stores
+# `map.state`, that same slot. So neither is nil: no `?` (see Game::Actor's @db).
   class Interpreter
-    @state: Game::State?
+    @state: Game::State
   end
   class EnemyAi
     # Constructed only by Scene::Battle: `Game::EnemyAi.new(db, @state)`, db being Scene::Base#db.
-    @state: Game::State?
+    @state: Game::State
     @db: LCF::Database
   end
   # @db: each class's one writer is `@db = db` in #initialize. Party.new gets RPG2k#db (main.rb, whose one writer
@@ -8126,10 +8127,10 @@ class Game::ChipSet
   @terrain: Array?
 end
 # Every store is an Array built from the class curve (Array.new, #dup, #map, #base_stats), or #restore_base's `dup`
-# of a saved total, which lsd_io builds with Array.new; nil before the first #set_level.
+# of a saved total, which lsd_io builds with Array.new. #initialize seeds both with `[]` before its first #set_level.
 class Game::Actor
-  @base: Array?
-  @base_raw: Array?
+  @base: Array
+  @base_raw: Array
 end
 class RPG2k
   module Scene
@@ -10840,16 +10841,16 @@ end
 
 # bc2cpp-native: typed_returns
 class Game::Actor
-  def id: () -> Integer?
-  def level: () -> Integer?
+  def id: () -> Integer
+  def level: () -> Integer
   def charset_name: () -> String?
   def charset_index: () -> Integer?
   def face_name: () -> String?
   def face_index: () -> Integer?
   def transparent: () -> bool?
-  def equipment: () -> Array?
-  def states: () -> Array?
-  def class_id: () -> Integer?
+  def equipment: () -> Array
+  def states: () -> Array
+  def class_id: () -> Integer
   def battle_combo: () -> Hash?
   def alive?: () -> bool
   def attack_all?: () -> bool
@@ -13803,6 +13804,12 @@ end
 class Game::Troop
   # `[]` in #initialize, then only `<<` of #build_member's `Enemy.new`.
   @members: Array[Game::Enemy]
+end
+class Game::Actor
+  # #initialize's #normalize_equipment (an Array.new), #equip's #normalize_equipment and #unequip's `EQUIP_ORDER.map`.
+  @equipment: Array
+  # `[]` in #initialize, and `kept` in #clear_states, #states= and #prune_states!, each an Array.
+  @states: Array
 end
 class Game::Party
   # `[]` then `<<` of non-nil Actors#[] results (#initialize, #add_actor), #reorder's `old[i]` over Scene::Order's
