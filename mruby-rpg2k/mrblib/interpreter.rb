@@ -904,7 +904,10 @@ module Game
     # or already finished) -- the overwhelming common case a save actually
     # happens in, matching real RPG_RT (see SAVE_FOREGROUND_EVENT/
     # SAVE_COMMON_EVENT's own schema.rb comments for when it is not).
-    def call_stack_snapshot
+    #
+    # +prev+, an earlier snapshot, is returned as is when it already holds
+    # these frames (Frames are immutable): the map records one every frame.
+    def call_stack_snapshot(prev = nil)
       return nil unless @running
       # A Key Input Proc's own wait (@wait_kind == :key_input -- cycle #193's
       # own confirmed-reachable case: a Parallel Process can be genuinely mid
@@ -940,6 +943,7 @@ module Game
       # current (innermost) frame is handled after the loop since it never
       # actually lived in @call_stack.
       n = @call_stack.size
+      return prev if prev && snapshot_matches?(prev, n, live_index)
       out = Array.new(n + 1)
       i = 0
       while i < n
@@ -952,6 +956,27 @@ module Game
                          n.zero? ? (@event_id || 0) : (@call_frame_event_id || @event_id || 0),
                          n.zero? && !!@triggered_by_decision_key)
       out
+    end
+
+    # Whether +prev+ is what #call_stack_snapshot would build now, given the
+    # @call_stack size +n+ and the innermost frame's +live_index+.
+    def snapshot_matches?(prev, n, live_index)
+      return false unless prev.is_a?(Array) && prev.size == n + 1
+      i = 0
+      while i < n
+        list, index, event_id = @call_stack[i]
+        return false unless frame_matches?(prev[i], list, index, (i.zero? ? @event_id : event_id) || 0,
+                                           i.zero? && !!@triggered_by_decision_key)
+        i += 1
+      end
+      frame_matches?(prev[n], @list, live_index,
+                     n.zero? ? (@event_id || 0) : (@call_frame_event_id || @event_id || 0),
+                     n.zero? && !!@triggered_by_decision_key)
+    end
+
+    def frame_matches?(f, commands, current_command, event_id, triggered_by_decision_key)
+      f.is_a?(Frame) && f.commands.equal?(commands) && f.current_command == current_command &&
+        f.event_id == event_id && f.triggered_by_decision_key == triggered_by_decision_key
     end
 
     # Restore a previously #call_stack_snapshot-captured stack (or the

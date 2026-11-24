@@ -408,8 +408,8 @@ REWRITES = {
 ' }, # setup_pictures
       { old: '        record_foreground_event_exec
 ',
-        new: '        (frames = @interpreter.call_stack_snapshot; @state.foreground_event_exec =
-          frames && Game::State::ForegroundExec.new(@active_event ? @active_event.id : 0, frames))
+        new: '        (prev = @state.foreground_event_exec; frames = @interpreter.call_stack_snapshot(prev && prev.frames); event_id = @active_event ? @active_event.id : 0
+          @state.foreground_event_exec = frames && Game::State::ForegroundExec.new(event_id, frames) unless prev && frames.equal?(prev.frames) && prev.event_id == event_id)
 ' }, # record_foreground_event_exec
       { old: '        record_tile_substitutions
 ',
