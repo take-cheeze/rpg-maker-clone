@@ -1817,9 +1817,12 @@ class RPG2k
       # overwhelming majority of the time -- carries no stale chunk 113 at
       # all when #to_lsd runs, matching genuine RPG_RT.
       def record_foreground_event_exec
-        frames = @interpreter.call_stack_snapshot
-        @state.foreground_event_exec =
-          frames && Game::State::ForegroundExec.new(@active_event ? @active_event.id : 0, frames)
+        prev = @state.foreground_event_exec
+        frames = @interpreter.call_stack_snapshot(prev && prev.frames)
+        event_id = @active_event ? @active_event.id : 0
+        # An unchanged record is kept rather than rebuilt every frame.
+        return if prev && frames.equal?(prev.frames) && prev.event_id == event_id
+        @state.foreground_event_exec = frames && Game::State::ForegroundExec.new(event_id, frames)
       end
 
       # Resume whatever event was mid-execution in the shared foreground
@@ -2495,10 +2498,10 @@ class RPG2k
         if p.common_event_id
           idx = p.interp.resumable_index
           @state.common_event_progress[p.common_event_id] = idx if idx
-          frames = p.interp.call_stack_snapshot
+          frames = p.interp.call_stack_snapshot(@state.common_event_exec[p.common_event_id])
           @state.common_event_exec[p.common_event_id] = frames if frames
         elsif p.event
-          frames = p.interp.call_stack_snapshot
+          frames = p.interp.call_stack_snapshot(@state.map_event_exec[p.event.id])
           @state.map_event_exec[p.event.id] = frames if frames
         end
       end

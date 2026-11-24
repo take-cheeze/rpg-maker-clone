@@ -1158,184 +1158,6 @@ module Game::EventPage
   def self.select: (untyped, untyped, untyped, untyped, ?untyped, ?untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
-class Game::Interpreter
-  def wait_kind: () -> untyped
-  def message_lines: () -> untyped
-  def choice_labels: () -> untyped
-  def wait_frames: () -> untyped
-  def teleport: () -> untyped
-  def input_digits: () -> untyped
-  def key_input_request: () -> untyped
-  def inn_request: () -> untyped
-  def shop_request: () -> untyped
-  def battle_request: () -> untyped
-  def name_input_request: () -> untyped
-  def battle_animation: () -> untyped
-  def choice_cancel_type: () -> untyped
-  def message_followup: () -> untyped
-  def resolver: () -> untyped
-  def resolver=: (untyped) -> untyped
-  def triggered_by_decision_key: () -> untyped
-  def triggered_by_decision_key=: (untyped) -> untyped
-  def battle: () -> untyped
-  def battle=: (untyped) -> untyped
-  def battle_screen: () -> untyped
-  def battle_screen=: (untyped) -> untyped
-  def battle_source: () -> untyped
-  def battle_source=: (untyped) -> untyped
-  def map_info: () -> untyped
-  def map_info=: (untyped) -> untyped
-  def event_id: () -> untyped
-  def event_id=: (untyped) -> untyped
-  def call_frame_event_id: () -> untyped
-  def battle_actor_condition: (untyped) -> untyped
-  def battle_command_condition: (untyped) -> untyped
-  def battle_enemy_condition: (untyped) -> untyped
-  def battle_target_enemy_condition: (untyped) -> untyped
-  def block_pending_battle_command: () -> untyped
-  def block_pending_exp_level_command: (untyped) -> untyped
-  def block_pending_key_input_command: (untyped) -> untyped
-  def block_pending_message_config_command: () -> untyped
-  def block_pending_picture_command: () -> untyped
-  def cancel_choice: () -> untyped
-  def character_facing: (untyped) -> untyped
-  def common_event_commands: (untyped) -> untyped
-  def compare: (untyped, untyped, untyped) -> untyped
-  def diagnostic_position: () -> untyped
-  def do_break_loop: (untyped) -> untyped
-  def do_call_common_event: (untyped) -> untyped
-  def do_call_event: (untyped) -> untyped
-  def do_change_actor_face: (untyped) -> untyped
-  def do_change_actor_name: (untyped) -> untyped
-  def do_change_actor_title: (untyped) -> untyped
-  def do_change_battle_bg: (untyped) -> untyped
-  def do_change_battle_commands: (untyped) -> untyped
-  def do_change_class: (untyped) -> untyped
-  def do_change_condition: (untyped) -> untyped
-  def do_change_equipment: (untyped) -> untyped
-  def do_change_event_location: (untyped) -> untyped
-  def do_change_exp: (untyped) -> untyped
-  def do_change_face: (untyped) -> untyped
-  def do_change_hp: (untyped) -> untyped
-  def do_change_items: (untyped) -> untyped
-  def do_change_level: (untyped) -> untyped
-  def do_change_monster_condition: (untyped) -> untyped
-  def do_change_monster_hp: (untyped) -> untyped
-  def do_change_monster_mp: (untyped) -> untyped
-  def do_change_mp: (untyped) -> untyped
-  def do_change_parallax: (untyped) -> untyped
-  def do_change_params: (untyped) -> untyped
-  def do_change_skills: (untyped) -> untyped
-  def do_change_system_bgm: (untyped) -> untyped
-  def do_change_system_graphic: (untyped) -> untyped
-  def do_change_system_sfx: (untyped) -> untyped
-  def do_change_vehicle_graphic: (untyped) -> untyped
-  def do_conditional_battle: (untyped) -> untyped
-  def do_control_switches: (untyped) -> untyped
-  def do_control_vars: (untyped) -> untyped
-  def do_control_vars_range_variable: (untyped, untyped, untyped, untyped) -> untyped
-  def do_enable_combo: (untyped) -> untyped
-  def do_end_loop: (untyped) -> untyped
-  def do_enemy_encounter: (untyped) -> untyped
-  def do_erase_picture: (untyped) -> untyped
-  def do_erase_screen: (untyped) -> untyped
-  def do_exit_game: (untyped) -> untyped
-  def do_flash_screen: (untyped) -> untyped
-  def do_flash_sprite: (untyped) -> untyped
-  def do_force_flee: (untyped) -> untyped
-  def do_full_heal: (untyped) -> untyped
-  def do_game_over: (untyped) -> untyped
-  def do_input_number: (untyped) -> untyped
-  def do_jump_label: (untyped) -> untyped
-  def do_key_input: (untyped) -> untyped
-  def do_memorize_bgm: (untyped) -> untyped
-  def do_memorize_location: (untyped) -> untyped
-  def do_message_options: (untyped) -> untyped
-  def do_move_event: (untyped) -> untyped
-  def do_move_picture: (untyped) -> untyped
-  def do_name_input: (untyped) -> untyped
-  def do_open_load_menu: (untyped) -> untyped
-  def do_open_main_menu: (untyped) -> untyped
-  def do_open_save_menu: (untyped) -> untyped
-  def do_open_shop: (untyped) -> untyped
-  def do_open_video_options: (untyped) -> untyped
-  def do_pan_screen: (untyped) -> untyped
-  def do_play_memorized_bgm: (untyped) -> untyped
-  def do_play_movie: (untyped) -> untyped
-  def do_player_visibility: (untyped) -> untyped
-  def do_recall_location: (untyped) -> untyped
-  def do_return_to_title: (untyped) -> untyped
-  def do_set_escape_target: (untyped) -> untyped
-  def do_set_teleport_target: (untyped) -> untyped
-  def do_set_vehicle_location: (untyped) -> untyped
-  def do_shake_screen: (untyped) -> untyped
-  def do_show_battle_animation: (untyped) -> untyped
-  def do_show_battle_animation_b: (untyped) -> untyped
-  def do_show_hidden_monster: (untyped) -> untyped
-  def do_show_inn: (untyped) -> untyped
-  def do_show_picture: (untyped) -> untyped
-  def do_simulated_attack: (untyped) -> untyped
-  def do_store_event_id: (untyped) -> untyped
-  def do_store_terrain_id: (untyped) -> untyped
-  def do_terminate_battle: (untyped) -> untyped
-  def do_tile_substitution: (untyped) -> untyped
-  def do_timer: (untyped) -> untyped
-  def do_tint_screen: (untyped) -> untyped
-  def do_toggle_atb_mode: (untyped) -> untyped
-  def do_toggle_fullscreen: (untyped) -> untyped
-  def do_trade_event_locations: (untyped) -> untyped
-  def do_weather: (untyped) -> untyped
-  def enemy_operand: (untyped) -> untyped
-  def eval_battle_condition: (untyped) -> untyped
-  def eval_condition: (untyped) -> untyped
-  def find_battle_option: (untyped) -> untyped
-  def find_choice_option: (untyped) -> untyped
-  def find_inn_option: (untyped) -> untyped
-  def find_shop_option: (untyped) -> untyped
-  def item_operand: (untyped) -> untyped
-  def key_input_result: (untyped) -> untyped
-  def level_up_message: (untyped, untyped) -> untyped
-  def map_event_call: (untyped, untyped) -> untyped
-  def monster_change_amount: (untyped, untyped) -> untyped
-  def other_operand: (untyped) -> untyped
-  def party_term: (untyped) -> untyped
-  def picture_coord: (untyped, untyped) -> untyped
-  def picture_name: (untyped) -> untyped
-  def query_position: (untyped) -> untyped
-  def queue_level_up_messages: (untyped, untyped, untyped, untyped) -> untyped
-  def range_first: (untyped) -> untyped
-  def range_last: (untyped) -> untyped
-  def restore_call_stack: (untyped) -> untyped
-  def resume_battle: (untyped) -> untyped
-  def resume_inn: (untyped) -> untyped
-  def resume_key_input: (untyped) -> untyped
-  def resume_name_input: (untyped) -> untyped
-  def resume_number: (untyped) -> untyped
-  def resume_shop: (untyped) -> untyped
-  def screen_operand: (untyped, untyped) -> untyped
-  def simulated_attack_variance: (untyped, untyped) -> untyped
-  def skill_learned_message: (untyped, untyped) -> untyped
-  def skip_invalid_troop: (untyped) -> untyped
-  def skip_to: (untyped, untyped) -> untyped
-  def start: (untyped) -> untyped
-  def start_at: (untyped, untyped) -> untyped
-  def start_death_handler: () -> untyped
-  def start_random_battle: (untyped, ?first_strike: untyped, ?headless: untyped) -> untyped
-  def stat_amount: (untyped) -> untyped
-  def step_cost: (untyped) -> untyped
-  def stop: () -> untyped
-  def take_battle_background: () -> untyped
-  def take_fled_monsters: () -> untyped
-  def take_monster_kills: () -> untyped
-  def take_revealed_monsters: () -> untyped
-  def teleport_facing: (untyped) -> untyped
-  def teleport_transition: (untyped) -> untyped
-  def timer_condition: (untyped, untyped) -> untyped
-  def trans_to_opacity: (untyped) -> untyped
-  def vehicle_operand: (untyped, untyped) -> untyped
-  def vehicle_target: (untyped) -> untyped
-end
-# bc2cpp-native: base_rpg2k
 class Game::Interpreter::BattleRequest
   def troop_id: () -> untyped
   def troop_id=: (untyped) -> untyped
@@ -6365,6 +6187,188 @@ module LCF
   def self.var_min: () -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rpg
+class Game::Interpreter
+  def wait_kind: () -> untyped
+  def message_lines: () -> untyped
+  def choice_labels: () -> untyped
+  def wait_frames: () -> untyped
+  def teleport: () -> untyped
+  def input_digits: () -> untyped
+  def key_input_request: () -> untyped
+  def inn_request: () -> untyped
+  def shop_request: () -> untyped
+  def battle_request: () -> untyped
+  def name_input_request: () -> untyped
+  def battle_animation: () -> untyped
+  def choice_cancel_type: () -> untyped
+  def message_followup: () -> untyped
+  def resolver: () -> untyped
+  def resolver=: (untyped) -> untyped
+  def triggered_by_decision_key: () -> untyped
+  def triggered_by_decision_key=: (untyped) -> untyped
+  def battle: () -> untyped
+  def battle=: (untyped) -> untyped
+  def battle_screen: () -> untyped
+  def battle_screen=: (untyped) -> untyped
+  def battle_source: () -> untyped
+  def battle_source=: (untyped) -> untyped
+  def map_info: () -> untyped
+  def map_info=: (untyped) -> untyped
+  def event_id: () -> untyped
+  def event_id=: (untyped) -> untyped
+  def call_frame_event_id: () -> untyped
+  def battle_actor_condition: (untyped) -> untyped
+  def battle_command_condition: (untyped) -> untyped
+  def battle_enemy_condition: (untyped) -> untyped
+  def battle_target_enemy_condition: (untyped) -> untyped
+  def block_pending_battle_command: () -> untyped
+  def block_pending_exp_level_command: (untyped) -> untyped
+  def block_pending_key_input_command: (untyped) -> untyped
+  def block_pending_message_config_command: () -> untyped
+  def block_pending_picture_command: () -> untyped
+  def cancel_choice: () -> untyped
+  def character_facing: (untyped) -> untyped
+  def common_event_commands: (untyped) -> untyped
+  def compare: (untyped, untyped, untyped) -> untyped
+  def diagnostic_position: () -> untyped
+  def do_break_loop: (untyped) -> untyped
+  def do_call_common_event: (untyped) -> untyped
+  def do_call_event: (untyped) -> untyped
+  def do_change_actor_face: (untyped) -> untyped
+  def do_change_actor_name: (untyped) -> untyped
+  def do_change_actor_title: (untyped) -> untyped
+  def do_change_battle_bg: (untyped) -> untyped
+  def do_change_battle_commands: (untyped) -> untyped
+  def do_change_class: (untyped) -> untyped
+  def do_change_condition: (untyped) -> untyped
+  def do_change_equipment: (untyped) -> untyped
+  def do_change_event_location: (untyped) -> untyped
+  def do_change_exp: (untyped) -> untyped
+  def do_change_face: (untyped) -> untyped
+  def do_change_hp: (untyped) -> untyped
+  def do_change_items: (untyped) -> untyped
+  def do_change_level: (untyped) -> untyped
+  def do_change_monster_condition: (untyped) -> untyped
+  def do_change_monster_hp: (untyped) -> untyped
+  def do_change_monster_mp: (untyped) -> untyped
+  def do_change_mp: (untyped) -> untyped
+  def do_change_parallax: (untyped) -> untyped
+  def do_change_params: (untyped) -> untyped
+  def do_change_skills: (untyped) -> untyped
+  def do_change_system_bgm: (untyped) -> untyped
+  def do_change_system_graphic: (untyped) -> untyped
+  def do_change_system_sfx: (untyped) -> untyped
+  def do_change_vehicle_graphic: (untyped) -> untyped
+  def do_conditional_battle: (untyped) -> untyped
+  def do_control_switches: (untyped) -> untyped
+  def do_control_vars: (untyped) -> untyped
+  def do_control_vars_range_variable: (untyped, untyped, untyped, untyped) -> untyped
+  def do_enable_combo: (untyped) -> untyped
+  def do_end_loop: (untyped) -> untyped
+  def do_enemy_encounter: (untyped) -> untyped
+  def do_erase_picture: (untyped) -> untyped
+  def do_erase_screen: (untyped) -> untyped
+  def do_exit_game: (untyped) -> untyped
+  def do_flash_screen: (untyped) -> untyped
+  def do_flash_sprite: (untyped) -> untyped
+  def do_force_flee: (untyped) -> untyped
+  def do_full_heal: (untyped) -> untyped
+  def do_game_over: (untyped) -> untyped
+  def do_input_number: (untyped) -> untyped
+  def do_jump_label: (untyped) -> untyped
+  def do_key_input: (untyped) -> untyped
+  def do_memorize_bgm: (untyped) -> untyped
+  def do_memorize_location: (untyped) -> untyped
+  def do_message_options: (untyped) -> untyped
+  def do_move_event: (untyped) -> untyped
+  def do_move_picture: (untyped) -> untyped
+  def do_name_input: (untyped) -> untyped
+  def do_open_load_menu: (untyped) -> untyped
+  def do_open_main_menu: (untyped) -> untyped
+  def do_open_save_menu: (untyped) -> untyped
+  def do_open_shop: (untyped) -> untyped
+  def do_open_video_options: (untyped) -> untyped
+  def do_pan_screen: (untyped) -> untyped
+  def do_play_memorized_bgm: (untyped) -> untyped
+  def do_play_movie: (untyped) -> untyped
+  def do_player_visibility: (untyped) -> untyped
+  def do_recall_location: (untyped) -> untyped
+  def do_return_to_title: (untyped) -> untyped
+  def do_set_escape_target: (untyped) -> untyped
+  def do_set_teleport_target: (untyped) -> untyped
+  def do_set_vehicle_location: (untyped) -> untyped
+  def do_shake_screen: (untyped) -> untyped
+  def do_show_battle_animation: (untyped) -> untyped
+  def do_show_battle_animation_b: (untyped) -> untyped
+  def do_show_hidden_monster: (untyped) -> untyped
+  def do_show_inn: (untyped) -> untyped
+  def do_show_picture: (untyped) -> untyped
+  def do_simulated_attack: (untyped) -> untyped
+  def do_store_event_id: (untyped) -> untyped
+  def do_store_terrain_id: (untyped) -> untyped
+  def do_terminate_battle: (untyped) -> untyped
+  def do_tile_substitution: (untyped) -> untyped
+  def do_timer: (untyped) -> untyped
+  def do_tint_screen: (untyped) -> untyped
+  def do_toggle_atb_mode: (untyped) -> untyped
+  def do_toggle_fullscreen: (untyped) -> untyped
+  def do_trade_event_locations: (untyped) -> untyped
+  def do_weather: (untyped) -> untyped
+  def enemy_operand: (untyped) -> untyped
+  def eval_battle_condition: (untyped) -> untyped
+  def eval_condition: (untyped) -> untyped
+  def find_battle_option: (untyped) -> untyped
+  def find_choice_option: (untyped) -> untyped
+  def find_inn_option: (untyped) -> untyped
+  def find_shop_option: (untyped) -> untyped
+  def frame_matches?: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def item_operand: (untyped) -> untyped
+  def key_input_result: (untyped) -> untyped
+  def level_up_message: (untyped, untyped) -> untyped
+  def map_event_call: (untyped, untyped) -> untyped
+  def monster_change_amount: (untyped, untyped) -> untyped
+  def other_operand: (untyped) -> untyped
+  def party_term: (untyped) -> untyped
+  def picture_coord: (untyped, untyped) -> untyped
+  def picture_name: (untyped) -> untyped
+  def query_position: (untyped) -> untyped
+  def queue_level_up_messages: (untyped, untyped, untyped, untyped) -> untyped
+  def range_first: (untyped) -> untyped
+  def range_last: (untyped) -> untyped
+  def restore_call_stack: (untyped) -> untyped
+  def resume_battle: (untyped) -> untyped
+  def resume_inn: (untyped) -> untyped
+  def resume_key_input: (untyped) -> untyped
+  def resume_name_input: (untyped) -> untyped
+  def resume_number: (untyped) -> untyped
+  def resume_shop: (untyped) -> untyped
+  def screen_operand: (untyped, untyped) -> untyped
+  def simulated_attack_variance: (untyped, untyped) -> untyped
+  def skill_learned_message: (untyped, untyped) -> untyped
+  def skip_invalid_troop: (untyped) -> untyped
+  def skip_to: (untyped, untyped) -> untyped
+  def snapshot_matches?: (untyped, untyped, untyped) -> untyped
+  def start: (untyped) -> untyped
+  def start_at: (untyped, untyped) -> untyped
+  def start_death_handler: () -> untyped
+  def start_random_battle: (untyped, ?first_strike: untyped, ?headless: untyped) -> untyped
+  def stat_amount: (untyped) -> untyped
+  def step_cost: (untyped) -> untyped
+  def stop: () -> untyped
+  def take_battle_background: () -> untyped
+  def take_fled_monsters: () -> untyped
+  def take_monster_kills: () -> untyped
+  def take_revealed_monsters: () -> untyped
+  def teleport_facing: (untyped) -> untyped
+  def teleport_transition: (untyped) -> untyped
+  def timer_condition: (untyped, untyped) -> untyped
+  def trans_to_opacity: (untyped) -> untyped
+  def vehicle_operand: (untyped, untyped) -> untyped
+  def vehicle_target: (untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -6928,7 +6932,7 @@ class Game::Interpreter
   %a{bc2cpp:hint}
   def apply: (Integer, Integer, Integer) -> Integer
   %a{bc2cpp:hint}
-  def call_stack_snapshot: () -> (Array | nil)
+  def call_stack_snapshot: (?untyped) -> (Array | nil)
   %a{bc2cpp:hint}
   def character_ref: (Integer) -> Integer
   %a{bc2cpp:hint}
