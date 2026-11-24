@@ -600,7 +600,8 @@ maker gem. Their engine mrblib is the closed one, less a few files (psp drops
 the debug tools), and the proof already reads their native sources. Fewer
 sources only remove references. The interpreter, though, looks up by name what
 the closed build's compiled class bodies call directly (`attr_writer`,
-`public`), so these builds keep every listed entry whose name any mrblib spells
+`public`) and sends an operator its fast path does not cover, so these builds
+keep every listed operator and every listed entry whose name any mrblib spells
 (`bc2cpp_interpreted_sends` in `build_config.rb`). The
 maix firmware's `mrb_load_string` probe evaluates a string literal and sends
 nothing.

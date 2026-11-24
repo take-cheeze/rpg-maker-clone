@@ -692,7 +692,8 @@ abort 'MRUBY_TARGET=wio requires RPGMAKER_BC2CPP=1 (the Wio build is closed-worl
 
 # INTERPRETED_SENDS: the closed build compiles its class bodies, so the proof counts no lookup for what they call
 # (attr_writer, public, ...), but an interpreted build runs its mrblib in the VM, which looks every send up by name.
-# The excluded keys whose name some mrblib spells as an identifier stay; operators keep the proof's verdict.
+# The excluded keys whose name some mrblib spells as an identifier stay, and every operator does: the VM's fast
+# paths cover only some operand types (OP_GETIDX sends Array#[] for a range or a second argument).
 def bc2cpp_interpreted_sends(keys)
   require 'set'
   words = Set.new
@@ -701,7 +702,7 @@ def bc2cpp_interpreted_sends(keys)
   end
   keys.select do |key|
     name = key.split('#', 2)[1]
-    name.match?(/\A[A-Za-z_]/) && words.include?(name.sub(/[?!=]\z/, ''))
+    !name.match?(/\A[A-Za-z_]/) || words.include?(name.sub(/[?!=]\z/, ''))
   end
 end
 
