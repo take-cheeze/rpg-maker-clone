@@ -914,6 +914,8 @@ jobs:
           BC2CPP_PROFILE_TIMINGS: '1'
           RAKEOPT: -m -j4
           BC2CPP_UNREGISTERED_VERIFY: '1'
+          # An owner call that finds a definer it does not list aborts (CLASS_REACH, bc2cpp's class_reach.rb).
+          BC2CPP_CLASS_REACH_VERIFY: '1'
           # A native called without its frame aborts when it reaches a service that reads the frame.
           BC2CPP_FRAMEFREE_VERIFY: '1'
           BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists

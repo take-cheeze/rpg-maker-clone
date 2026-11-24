@@ -9717,10 +9717,30 @@ static mrb_value class_new_warn(mrb_state* M, mrb_value self) {
 }
 #endif
 
+// Array#_rgss_native_sort! is the core sort! as it stands before mrblib
+// installs the comparator-normalizing wrapper. A row calling the captured C
+// function is what the alias of that C method copied: same function, same
+// receiver and block, no heap method entry.
+static mrb_func_t native_sort_orig;
+static mrb_value native_sort_bang(mrb_state* M, mrb_value self) {
+  return native_sort_orig(M, self);
+}
+
 extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
-  // Capture the core sort before mrblib installs the comparator-normalizing
-  // wrapper.
-  mrb_define_alias(M, M->array_class, "_rgss_native_sort!", "sort!");
+  mrb_method_t sort_bang =
+      mrb_method_search(M, M->array_class, MRB_SYM_B(sort));
+  if (!MRB_METHOD_FUNC_P(sort_bang)) {
+    mrb_raise(M, mrb_exc_get_id(M, MRB_SYM(RuntimeError)),
+              "Array#sort! is not a C function");
+  }
+  native_sort_orig = MRB_METHOD_FUNC(sort_bang);
+#define MRB_MT_CLASS Array
+  static const mrb_mt_entry array_methods[] = {
+      MRB_MT_ENTRY(native_sort_bang, MRB_SYM_B(_rgss_native_sort),
+                   MRB_ARGS_NONE())  //
+  };
+#undef MRB_MT_CLASS
+  MRB_MT_INIT_ROM(M, M->array_class, array_methods);
 #ifdef MRB_VM_FREE
   // The metaclass of Class holds the core Class.new. A singleton-class call
   // here would mark this file a singleton maker
@@ -9729,6 +9749,9 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       mrb_method_search(M, M->class_class->c, MRB_SYM(new));
   if (MRB_METHOD_FUNC_P(class_new)) {
     class_new_orig = MRB_METHOD_FUNC(class_new);
+    // A run-time registration, not a row: the closed world's owner map reads
+    // this call as Class.singleton#new, and a ROM table installed into the
+    // metaclass names no class it can resolve.
     mrb_define_class_method(M, M->class_class, "new", class_new_warn,
                             MRB_ARGS_ANY());
   }
@@ -9947,6 +9970,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   static const mrb_mt_entry window_methods[] = {
       MRB_MT_ENTRY(window_init, MRB_SYM(initialize),
                    MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)  //
+      // The Ruby initializer delegates the RGSS1 viewport form here: the
+      // alias of initialize, private as initialize is.
+      MRB_MT_ENTRY(window_init, MRB_SYM(_rgss1_initialize),
+                   MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)  //
       MRB_MT_ENTRY(window_set_contents, MRB_SYM_E(contents),
                    MRB_ARGS_REQ(1))                                        //
       MRB_MT_ENTRY(obj_set_x, MRB_SYM_E(x), MRB_ARGS_REQ(1))               //
@@ -9984,9 +10011,6 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   };
 #undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, window, window_methods);
-  // The Ruby initializer delegates the RGSS1 viewport form to this native
-  // entry.
-  mrb_define_alias(M, window, "_rgss1_initialize", "initialize");
 #endif  // defined(WIO_TERMINAL)
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
