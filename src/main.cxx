@@ -1076,6 +1076,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
   mrb_state* M = em_mrb.get();
   if (M == nullptr)
     return 1;
+  // What the construction leaves in the GC arena is kept by the registered
+  // game_obj; the arena entries would hold the rest for the whole session.
+  const int boot_ai = mrb_gc_arena_save(M);
 
   const fs::path game_dir_path = "/game";
   const GameKind kind = detect_game_kind(game_dir_path);
@@ -1171,8 +1174,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
   // callback stays valid after this function returns. simulate_infinite_loop=0
   // so control returns cleanly to the JS caller instead of unwinding the stack.
   mrb_gc_register(M, game_obj);
+  mrb_gc_arena_restore(M, boot_ai);
   main_loop_ = [M, game_obj]() {
+    // mrb_funcall leaves its result in the GC arena; restored, so the arena
+    // does not grow by a slot per frame.
+    const int ai = mrb_gc_arena_save(M);
     mrb_funcall(M, game_obj, "main_loop", 0);
+    mrb_gc_arena_restore(M, ai);
     if (M->exc) {
       int status = EXIT_SUCCESS;
       if (pending_exit(M, &status)) {
@@ -2007,6 +2015,9 @@ int main(int argc, char** argv) {
   const GameKind kind = detect_game_kind(game_dir_path);
   init_maker_gem(M, kind);
   CHECK_NO_EXC(M);
+  // The construction's arena entries would live as long as #start; only
+  // game_obj needs a root past it.
+  const int boot_ai = mrb_gc_arena_save(M);
   switch (kind) {
     case GameKind::kRpg2k:
       error_dump_set_context("project", "RPG Maker 2000/2003 (RPG_RT.ldb)");
@@ -2048,6 +2059,8 @@ int main(int argc, char** argv) {
       CHECK(false) << "Unknown game directory: " << game_dir_path;
   }
   CHECK_NO_EXC(M);
+  mrb_gc_arena_restore(M, boot_ai);
+  mrb_gc_protect(M, game_obj);
 
   // WolfRPG#initialize (unlike XP/VX, above) reads its screen size from the
   // project's own Game.dat rather than a fixed per-maker constant, so it

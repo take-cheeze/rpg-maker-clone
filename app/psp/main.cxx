@@ -797,6 +797,9 @@ int main(void) {
                   mrb_intern_lit(M, "RPG2K_BATTLE_TROOP"), mrb_fixnum_value(0));
 
     const char* game_start_result;
+    // What the boot leaves in the GC arena is kept by a constant or by the
+    // registered game_obj; the arena entries would hold the rest forever.
+    const int boot_ai = mrb_gc_arena_save(M);
     if (game_info) {
       // No TestPlay/HideTitle words -- this build has no command line to
       // carry them on.
@@ -823,6 +826,7 @@ int main(void) {
     } else {
       game_start_result = "not_found";
     }
+    mrb_gc_arena_restore(M, boot_ai);
     char buf[64];
     StrBuf sb(buf, sizeof(buf));
     sb.str("RPG2K_PSP_GAME_START ");
@@ -863,6 +867,9 @@ int main(void) {
   // sizing that pool once the interpreter is linked. stack_free/stack_used_max
   // are the same idea applied to the main-thread stack the module
   // metadata above now sizes explicitly.
+  // Every Ruby call in a frame leaves its result in the GC arena (mrb_funcall's
+  // contract); without the restore it grows by a slot per frame.
+  const int frame_ai = M ? mrb_gc_arena_save(M) : 0;
   for (uint32_t frame = 0;; ++frame) {
     if (have_game) {
       // The maker's #main_loop (RPG2k#main_loop, mruby-rpg2k/mrblib/main.rb;
@@ -933,6 +940,8 @@ int main(void) {
       sb.str("\n");
       psp_write(buf, sb.length());
     }
+    if (M)
+      mrb_gc_arena_restore(M, frame_ai);
     sceKernelDelayThread(5000);  // ~5 ms, matching the Wio loop's delay(5)
   }
 

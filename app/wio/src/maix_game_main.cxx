@@ -138,6 +138,9 @@ void setup(void) {
   mrb_const_set(g_mrb, mrb_obj_value(g_mrb->object_class),
                 mrb_intern_lit(g_mrb, "RTP_DIR"), mrb_str_new_cstr(g_mrb, ""));
 
+  // What the boot leaves in the GC arena is kept by a constant or by the game,
+  // registered below; the arena entries would hold the rest forever.
+  const int boot_ai = mrb_gc_arena_save(g_mrb);
   mrb_value args = mrb_ary_new(g_mrb);
   // KNOWN ISSUE (env:maix_game_sd only, real hardware): this hangs, dead,
   // reading the SD card. Isolated with a raw fopen/fread bypassing mruby
@@ -167,10 +170,14 @@ void setup(void) {
     return;
   }
   mrb_gc_register(g_mrb, g_game);
+  mrb_gc_arena_restore(g_mrb, boot_ai);
   Serial.println("maix-game: boot ok");
 }
 
 void loop(void) {
+  // Every Ruby call below leaves its result in the GC arena (mrb_funcall's
+  // contract); without the restore it grows by a slot per frame.
+  const int ai = g_mrb ? mrb_gc_arena_save(g_mrb) : 0;
   if (g_mrb && !g_failed && !mrb_nil_p(g_game)) {
     bc2cpp_entry_RPG2k_main_loop(g_mrb, g_game);
     if (g_mrb->exc) {
@@ -180,8 +187,10 @@ void loop(void) {
       report_scene();
     }
   }
-  if (g_mrb)
+  if (g_mrb) {
     rgss_maix_poll(g_mrb);
+    mrb_gc_arena_restore(g_mrb, ai);
+  }
   lv_timer_handler();
   delay(5);
 }
