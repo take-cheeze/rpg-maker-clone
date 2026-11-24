@@ -670,6 +670,11 @@ bc2cpp: UNREGISTERED_VERIFY: unregistered method looked up by name: Class#name
 
 A plain build would raise `NoMethodError` at that point, and game code may
 rescue it. The abort makes a lookup the proof missed fail loudly instead.
+
+`BC2CPP_CLASS_REACH_VERIFY=1` checks the core entries left out because only
+owner calls of other classes name them (the lists' `class_reach`). It builds
+with those stubs, and it also makes an owner call that finds a definer it does
+not list abort (`bc2cpp: CLASS_REACH_VERIFY: owner-call violation: ...`).
 The debug builds that turn a proof-failure helper back into a dispatch
 (`-DBC2CPP_HINT_VIOLATION_LOG`, `-DBC2CPP_*_DISPATCH`) may also reach a stub.
 Use verify mode to run a game trace against the lists, for example
