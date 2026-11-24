@@ -222,7 +222,7 @@ REWRITES = {
         expect_lines: 12 },
       { first: '      def record_foreground_event_exec',
         last: '      end', # def record_foreground_event_exec's own `end`
-        expect_lines: 5 },
+        expect_lines: 8 },
       { first: '      def record_tile_substitutions',
         last: '      end', # def record_tile_substitutions's own `end`
         expect_lines: 3 },
