@@ -279,6 +279,12 @@ and every `--expect` regex matched. The firmware has no LCD output (no DMA
 model) and no audio. On the 192 KB board a game does not reach its title
 screen yet: the title graphic alone is a 300 KB 32-bit bitmap.
 
+The image carries palette graphics already decoded (`game_rom.rb --bitmaps`,
+`--no-bitmaps`), which the firmware reads in place from the window instead of
+the heap. They take about seven times their PNG's room, so only some fit: by
+default System, ChipSet, FaceSet, then as many CharSet and other images as the
+16 MB still holds; the rest load from their files as before.
+
 ```sh
 pio run -e wio_renode_game
 scripts/wio/renode_game.bash .pio/build/wio_renode_game/firmware.elf \

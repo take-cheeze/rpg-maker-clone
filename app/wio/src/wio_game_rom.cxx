@@ -94,6 +94,14 @@ const char* wio_game_rom_config(const char* key, char* buf, size_t cap) {
   return nullptr;
 }
 
+const void* wio_game_rom_file(const char* path, size_t* len) {
+  const RomEntry* e = find(path);
+  if (!e)
+    return nullptr;
+  *len = e->len;
+  return rom() + e->data_off;
+}
+
 void wio_diag_write(const char* text, size_t len) {
   uint32_t n = *diag_len();
   const size_t cap = kDiagSize - 16;
