@@ -52,9 +52,9 @@ module Wolf
 
   # INT32_MASK / INT32_SIGN_BIT / INT32_WRAP: the same three 32-bit
   # two's-complement fold constants (0xffff_ffff / 0x8000_0000 /
-  # 0x1_0000_0000) mruby-lcf's own LCF module defines for the identical
-  # reason -- see that module's own comment (mruby-lcf/mrblib/lcf.rb) for the
-  # full explanation, including why these are bare hex literals rather than
+  # 0x1_0000_0000) mruby-lcf's LCF module once defined, for the reason
+  # AGENTS.md's 32-bit mrb_int section explains, including why these are
+  # bare hex literals rather than
   # `1 << 32`/`1 << 31`-style shift expressions: mrbc constant-folds a shift
   # whose operands are both literals at COMPILE time, and the IREP bignum-
   # pool entry that folding produces does not survive being cross-compiled
