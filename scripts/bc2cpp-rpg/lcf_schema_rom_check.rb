@@ -592,7 +592,7 @@ suite.finish!
 
 # READER PINS
 # LCF.read_section 370a45e73090ffd6
-# LCF.to_rb 38f00d9aa119fc21
+# LCF.to_rb 27364f22532e8b28
 # LCF.int16_format 99da2f9273aac7ef
 # LCF.sget f352029d7ab23e37
 # LCF.skeys 1d6cf657876a6c81

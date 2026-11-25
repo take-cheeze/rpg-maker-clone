@@ -20,7 +20,7 @@ end
 
 # bc2cpp-native: base_lcf
 class LCF::ShortArray
-  def each: (*untyped) -> self
+  def each: () -> self
   def get: (Numeric) -> Integer?
   def initialize: (Numeric) -> self
   def initialize_copy: (untyped) -> self

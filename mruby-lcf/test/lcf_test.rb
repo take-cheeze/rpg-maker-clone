@@ -886,6 +886,7 @@ assert "LCF::ShortArray refuses writes outside the table or int16" do
   assert_raise(TypeError) { a[0] = nil }
   assert_raise(TypeError) { a[0] = "1" }
   assert_raise(ArgumentError) { LCF::ShortArray.new(-1) }
+  assert_raise(ArgumentError) { a.each }
   assert_equal [0, 0], a.to_a
 end
 

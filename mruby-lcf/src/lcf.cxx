@@ -418,7 +418,10 @@ mrb_value short_array_size(mrb_state* M, mrb_value self) {
 // every element is read when it is yielded.
 mrb_value short_array_each(mrb_state* M, mrb_value self) {
   mrb_value blk;
-  mrb_get_args(M, "&!", &blk);
+  mrb_get_args(M, "&", &blk);
+  if (mrb_nil_p(blk))
+    mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(ArgumentError)),
+              "no block given");
   for (mrb_int i = 0; i < short_array_get(M, self)->len; ++i)
     mrb_yield(M, blk, mrb_fixnum_value(short_array_get(M, self)->elems()[i]));
   return self;
