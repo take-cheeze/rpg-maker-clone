@@ -146,7 +146,7 @@ class RPG2k
 
       def initialize parent, state, mode
         super parent
-        @state = state
+        @game_state = state
         @mode = mode # :save or :load
         @skin = make_windowskin
         # One Game::State (or nil for an empty slot) per slot, read once so
@@ -170,6 +170,13 @@ class RPG2k
         build_header_window
         build_slot_windows
         build_arrow_sprites
+      end
+
+      # The override of the state being saved (nil on a load screen opened
+      # without one), held in @game_state so @state stays a Game::State
+      # (Base#state_system_se).
+      def state_system_se(slot)
+        @game_state && @game_state.respond_to?(:system_sfx) ? @game_state.system_sfx[slot] : nil
       end
 
       def dispose
@@ -308,7 +315,7 @@ class RPG2k
         case @mode
         when :save
           play_system_se(SFX_DECISION)
-          @parent.save_game(@state, slot)
+          @parent.save_game(@game_state, slot)
           @parent.pop
         when :load
           # An empty slot has nothing to resume -- refused (Buzzer), like the
