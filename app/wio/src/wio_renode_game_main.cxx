@@ -52,6 +52,7 @@
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display);
+extern "C" unsigned rgss_wio_mrb_state_size(void);
 extern "C" bool rgss_set_rom_bitmaps(const void* section,
                                      size_t size,
                                      const char* root);
@@ -207,8 +208,6 @@ void probe(const char* phase) {
       static_cast<unsigned>(sp - top),
       static_cast<unsigned>(&__StackTop - g_stack_low),
       static_cast<unsigned>(g_big_new), g_big_new_n);
-  // Only mrb_state fields before gc: the wio build's defines resize what
-  // follows (see build_config.rb), and this file is not built with them.
   if (g_mrb && g_census) {
     Census c{};
     mrb_objspace_each_objects(g_mrb, census_each, &c);
@@ -347,6 +346,13 @@ void setup(void) {
   lv_display_set_flush_cb(disp, flush_cb);
   wio_input_init();
 
+  if (rgss_wio_mrb_state_size() != sizeof(mrb_state)) {
+    wio_diag_printf("[Wio] mrb_state is %u bytes in libmruby, %u here\n",
+                    rgss_wio_mrb_state_size(),
+                    static_cast<unsigned>(sizeof(mrb_state)));
+    g_result = kFailBoot;
+    return;
+  }
   g_mrb = mrb_open_core();
   if (!g_mrb) {
     g_result = kFailBoot;

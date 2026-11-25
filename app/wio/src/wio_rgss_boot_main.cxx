@@ -34,6 +34,7 @@
 
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
+extern "C" unsigned rgss_wio_mrb_state_size(void);
 
 namespace {
 
@@ -42,6 +43,8 @@ constexpr uint32_t kResultPass = 0xC0FFEE43;  // one past mruby_sd_smoke's 42
 constexpr uint32_t kResultFailMrbOpenCore = 0xBAD20001;
 constexpr uint32_t kResultFailSharedGems = 0xBAD20002;
 constexpr uint32_t kResultFailRpg2kGem = 0xBAD20003;
+// MRB_STATE_LAYOUT: libmruby and this file disagree on sizeof(mrb_state).
+constexpr uint32_t kResultFailLayout = 0xBAD20004;
 
 // Debug aid, same convention as mruby_sd_smoke_main.cxx's g_exc_class:
 // readable via Renode `sysbus ReadByte` in a loop when g_result comes back
@@ -165,6 +168,11 @@ void setup(void) {
   wio_display_create(320, 240);
   wio_input_init();
 
+  if (rgss_wio_mrb_state_size() != sizeof(mrb_state)) {
+    g_result = kResultFailLayout;
+    build_ui("mrb_state layout differs from libmruby");
+    return;
+  }
   mrb_state* M = mrb_open_core();
   if (!M || M->exc) {
     if (M)
