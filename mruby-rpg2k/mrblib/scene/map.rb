@@ -9829,9 +9829,11 @@ class RPG2k
       # Blit the already-cropped (and possibly mirrored, see #build_face_cell)
       # face cell into the message contents at its configured side.
       def draw_message_face
-        face = @message.face
+        # @message read once, as in #drive_message.
+        msg = @message
+        face = msg.face
         return unless face
-        @message.contents.blt @message.face_x, @message.face_y || 0, face,
+        msg.contents.blt msg.face_x, msg.face_y || 0, face,
                                 Rect.new(0, 0, FACE_SIZE, FACE_SIZE)
       end
 
@@ -9888,6 +9890,8 @@ class RPG2k
       end
 
       def drive_message
+        # One read of @message: nothing this method calls replaces it before
+        # its last use, and a local keeps a single nil test.
         # Advances the open/close and blink/pause animation each frame so the
         # window unrolls open, and so the pause arrow (set below) actually
         # flashes instead of sitting on one frame. Text reveal and input are
@@ -9897,10 +9901,11 @@ class RPG2k
         # is a fresh object every message here rather than a persistent one
         # game scripts can poll, and holding logic off it would only delay
         # dismissal by MSG_ANIM_FRAMES with nothing else to show for it.
-        @message.window.update
-        @message.gold_window.update if @message.gold_window
-        if @message.choice
-          reveal = @message.reveal
+        msg = @message
+        msg.window.update
+        msg.gold_window.update if msg.gold_window
+        if msg.choice
+          reveal = msg.reveal
           # A merged text+choices window that runs past one screen pages its
           # text first: while a `:page` pause is still pending, a confirm
           # advances the page (releasing it) instead of choosing, so the options
@@ -9909,7 +9914,7 @@ class RPG2k
             p = reveal.pending_pause
             if p && p.kind == :page
               if Input.trigger?(Input::C)
-                @message.page = [@message.page + 1, @message.pages - 1].min
+                msg.page = [msg.page + 1, msg.pages - 1].min
                 reveal.release_pause
                 draw_message_contents
               end
@@ -9928,28 +9933,28 @@ class RPG2k
           # default and never overridden here).
           if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
             @choice_index += 1
-            @choice_index %= @message.count
+            @choice_index %= msg.count
             page_to_choice
             set_choice_cursor
             play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
             @choice_index -= 1
-            @choice_index %= @message.count
+            @choice_index %= msg.count
             page_to_choice
             set_choice_cursor
             play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::C)
             play_system_se(SFX_DECISION)
             index = @choice_index
-            interp = @message.interp
+            interp = msg.interp
             close_message
             interp.choose(index)
-          elsif Input.trigger?(Input::B) && @message.interp.choice_cancellable?
+          elsif Input.trigger?(Input::B) && msg.interp.choice_cancellable?
             # The Show Choices block says what cancelling means (pick a given
             # choice, or run its [Cancel] branch); a block that forbids it
             # swallows the key, as RPG_RT does.
             play_system_se(SFX_CANCEL)
-            interp = @message.interp
+            interp = msg.interp
             close_message
             interp.cancel_choice
           end
@@ -9986,8 +9991,10 @@ class RPG2k
       MSG_PAUSE_FULL = 61
 
       def drive_text_message
-        interp = @message.interp
-        reveal = @message.reveal
+        # @message read once, as in #drive_message.
+        msg = @message
+        interp = msg.interp
+        reveal = msg.reveal
         # Cancel (B) dismisses a plain message exactly like Decision (C) --
         # re-verified against genuine RPG_RT.exe under wine (cycle #143):
         # a synthetic autostart Show Message immediately followed by a long,
@@ -10017,9 +10024,9 @@ class RPG2k
           # and releases it so that page's text starts typing, instead of
           # dismissing the window. No keypress arrow -- the "▼" marks it.
           if pause && pause.kind == :page
-            @message.window.pause = false
+            msg.window.pause = false
             if fast_forward
-              @message.page = [@message.page + 1, @message.pages - 1].min
+              msg.page = [msg.page + 1, msg.pages - 1].min
               reveal.release_pause
               draw_message_contents
             end
@@ -10028,7 +10035,7 @@ class RPG2k
           # The blinking pause arrow only stands for a player-input wait
           # (`\!`, or the fully-revealed message below) -- not the timed
           # `\.` / `\|` holds, which clear on their own.
-          @message.window.pause = pause ? pause.kind == :key : false
+          msg.window.pause = pause ? pause.kind == :key : false
           if pause
             drive_message_pause(reveal, pause, fast_forward, shift_forward)
           elsif fast_forward
@@ -10043,8 +10050,8 @@ class RPG2k
         # #append_choice_lines): the text page takes one confirm of its own,
         # then they replace it. The interpreter is already suspended on its
         # Show Choices, so nothing is resumed here.
-        if @message.pending_choice
-          @message.window.pause = true
+        if msg.pending_choice
+          msg.window.pause = true
           apply_pending_choice_lines if confirm
           return
         end
@@ -10057,9 +10064,9 @@ class RPG2k
         # interpreter so its Show Choices runs now; #append_choice_lines then
         # either merges the options under the text or parks them above.
         # Input Number is left waiting for its confirm -- not measured.
-        if interp.message_followup == :choice && !@message.followup_resumed
-          @message.followup_resumed = true
-          @message.awaiting_followup = :choice
+        if interp.message_followup == :choice && !msg.followup_resumed
+          msg.followup_resumed = true
+          msg.awaiting_followup = :choice
           interp.resume
           return
         end
@@ -10067,7 +10074,7 @@ class RPG2k
         # what answers next (this frame or the one after), so a confirm landing
         # in the gap must not resume it a second time and step straight past
         # the choices.
-        return if @message.followup_resumed
+        return if msg.followup_resumed
         # `\^` closes the finished window on its own; otherwise wait for a button.
         if reveal.auto_close? || confirm
           followup = interp.message_followup
@@ -10075,13 +10082,13 @@ class RPG2k
             # A Show Choices / Input Number immediately follows this Show Text:
             # RPG_RT keeps the same window up, with the choices / digit entry
             # appended below the text already shown, instead of closing it.
-            @message.awaiting_followup = followup
+            msg.awaiting_followup = followup
           else
             close_message
           end
           interp.resume
         else
-          @message.window.pause = true
+          msg.window.pause = true
         end
       end
 
