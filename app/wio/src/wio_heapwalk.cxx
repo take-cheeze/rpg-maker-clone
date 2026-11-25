@@ -20,6 +20,8 @@
 #include <mruby.h>
 #include <mruby/class.h>
 #include <mruby/gc.h>
+#include <mruby/string.h>
+#include <mruby/variable.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -137,20 +139,33 @@ extern "C" __attribute__((noinline, used)) void heapwalk_flush(
 
 namespace {
 
+// The name a class keeps, read in place: mrb_class_name dups a String per call,
+// and those copies would sit in the heap this snapshot measures.
 int class_names(mrb_state* mrb, RBasic* o, void* ud) {
   if (o->tt != MRB_TT_CLASS && o->tt != MRB_TT_MODULE)
     return MRB_EACH_OBJ_OK;
   char*& out = *static_cast<char**>(ud);
-  const char* name = mrb_class_name(mrb, reinterpret_cast<RClass*>(o));
+  const mrb_sym key = mrb_intern_check_cstr(mrb, "__classname__");
+  if (!key)
+    return MRB_EACH_OBJ_BREAK;
+  const mrb_value v = mrb_obj_iv_get(mrb, reinterpret_cast<RObject*>(o), key);
+  char buf[MRB_SYM_TMP_LEN];
+  const char* name = nullptr;
+  mrb_int n = 0;
+  if (mrb_string_p(v)) {
+    name = RSTRING_PTR(v);
+    n = RSTRING_LEN(v);
+  } else if (mrb_symbol_p(v)) {
+    name = mrb_sym_name_tmp(mrb, mrb_symbol(v), buf, &n);
+  }
   if (!name)
     return MRB_EACH_OBJ_OK;
   const size_t room = kOutBase + kOutSize - reinterpret_cast<uintptr_t>(out);
-  const size_t n = std::strlen(name);
-  if (n + 16 > room)
+  if (static_cast<size_t>(n) + 16 > room)
     return MRB_EACH_OBJ_BREAK;
-  out += std::snprintf(out, room, "%08x %s\n",
+  out += std::snprintf(out, room, "%08x %.*s\n",
                        static_cast<unsigned>(reinterpret_cast<uintptr_t>(o)),
-                       name);
+                       static_cast<int>(n), name);
   return MRB_EACH_OBJ_OK;
 }
 

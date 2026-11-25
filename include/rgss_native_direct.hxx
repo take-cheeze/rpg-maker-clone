@@ -23,6 +23,7 @@ mrb_value bmp_init_size_direct(mrb_state* M,
                                mrb_int w,
                                mrb_int h);
 mrb_value bmp_load_error_direct(mrb_state* M, mrb_value self);
+mrb_value bmp_s_pixel_bytes_direct(mrb_state* M, mrb_value self);
 mrb_value bmp_stbi_error_direct(mrb_state* M, mrb_value self);
 mrb_value bmp_text_size_direct(mrb_state* M,
                                mrb_value self,

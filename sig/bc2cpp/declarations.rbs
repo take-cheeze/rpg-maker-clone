@@ -600,6 +600,7 @@ class RGSS::Bitmap
   def self._begin_load: () -> nil
   def self._decoder_ran?: () -> bool
   def self._load_error: () -> String
+  def self._pixel_bytes: () -> Integer
   def self._rom_bitmaps: (untyped, String) -> bool
   def self._stbi_error: () -> String
 end
