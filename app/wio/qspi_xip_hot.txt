@@ -1,0 +1,1 @@
+# QSPI_XIP: `internal` lines (app/wio/qspi_xip_placement.txt) chosen from a profile of the game; none yet.

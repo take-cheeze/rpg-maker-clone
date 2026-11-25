@@ -56,9 +56,12 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 adds=()
 [[ -n "$font" ]] && adds=(--add "$font:/gothic.bin")
-ruby "$repo_root/scripts/wio/game_rom.rb" "$work/game.rom" "$game" --config "$config" "${adds[@]}" >&2
-
 addr() { printf '0x%x' $((0x$("$nm" -C "$elf" | awk -v s="$1" '{n=$3; for (i = 4; i <= NF; i++) n = n " " $i} n == s {print $1; exit}') & ~1)); }
+# A QSPI_XIP firmware (app/wio/qspi_xip.ld) runs code from the window's start, and the game image follows it.
+rom_base=0x04000000
+"$nm" "$elf" | awk '$3 == "__wio_game_rom_base" {f = 1} END {exit !f}' && rom_base=$(addr __wio_game_rom_base)
+ruby "$repo_root/scripts/wio/game_rom.rb" "$work/game.rom" "$game" --config "$config" "${adds[@]}" \
+  --limit $((0x05000000 - rom_base)) >&2
 result=$(addr '(anonymous namespace)::g_result')
 step=5
 {
@@ -66,7 +69,7 @@ step=5
   echo "machine LoadPlatformDescription @$repl"
   echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/game_rom.repl"
   echo "sysbus LoadELF @$elf"
-  echo "sysbus LoadBinary @$work/game.rom 0x04000000"
+  echo "sysbus LoadBinary @$work/game.rom $rom_base"
   # The buttons and the 5-way switch are active low: release them all.
   for p in 26 27 28; do echo "portc OnGPIO $p true"; done
   for p in 20 12 9 8 10; do echo "portd OnGPIO $p true"; done

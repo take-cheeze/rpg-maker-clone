@@ -87,21 +87,28 @@ end
 rows = by_env.values.sort_by(&:env)
 
 puts 'Wio Terminal firmware size:'
+# `wio` links past the board's flash with --noinhibit-exec (scripts/wio/build.bash), so the overflow is reported
+# rather than failing the link.
+def overflow(r)
+  over = [['RAM', r.ram_used - r.ram_total], ['Flash', r.flash_used - r.flash_total]].select { |_, n| n.positive? }
+  over.empty? ? 'fits' : over.map { |name, n| "#{name} over by #{n} B" }.join(', ')
+end
+
 rows.each do |r|
-  puts format('  %-14s RAM: %6d / %6d bytes (%5.1f%%)   Flash: %7d / %7d bytes (%5.1f%%)',
-              r.env, r.ram_used, r.ram_total, r.ram_pct, r.flash_used, r.flash_total, r.flash_pct)
+  puts format('  %-14s RAM: %6d / %6d bytes (%5.1f%%)   Flash: %7d / %7d bytes (%5.1f%%)   %s',
+              r.env, r.ram_used, r.ram_total, r.ram_pct, r.flash_used, r.flash_total, r.flash_pct, overflow(r))
 end
 
 if (summary_path = ENV['GITHUB_STEP_SUMMARY']) && !summary_path.empty?
   File.open(summary_path, 'a') do |io|
     io.puts '## Wio Terminal firmware size'
     io.puts
-    io.puts '| Environment | RAM used | RAM % | Flash used | Flash % |'
-    io.puts '| --- | ---: | ---: | ---: | ---: |'
+    io.puts '| Environment | RAM used | RAM % | Flash used | Flash % | Fits? |'
+    io.puts '| --- | ---: | ---: | ---: | ---: | --- |'
     rows.each do |r|
-      io.puts format('| `%s` | %d / %d B | %.1f%% | %d / %d B | %.1f%% |',
+      io.puts format('| `%s` | %d / %d B | %.1f%% | %d / %d B | %.1f%% | %s |',
                       r.env, r.ram_used, r.ram_total, r.ram_pct,
-                      r.flash_used, r.flash_total, r.flash_pct)
+                      r.flash_used, r.flash_total, r.flash_pct, overflow(r))
     end
   end
 end

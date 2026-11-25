@@ -22,6 +22,29 @@ WIO_UNIALGO_LIB_DIR=<uni-algo lib dir> \
   pio run -e wio
 ```
 
+`scripts/wio/build.bash` runs all of it from a bare checkout (in `nix develop .#bc2cpp`), as CI's
+`wio` job does.
+
+## The QSPI flash image
+
+The engine is too big for the board's 496 KB of internal flash, so the cold part of it runs in place from the
+board's 4 MB QSPI flash. A `wio` link writes two images, and the board needs both, from the same build:
+
+| Image | Goes to | Written by |
+|---|---|---|
+| `.pio/build/wio/firmware.bin` | internal flash | `pio run -e wio -t upload` (the UF2 bootloader) |
+| `.pio/build/wio/firmware_qspi.bin` | QSPI flash, first 1.5 MB | the `wio_qspi_flash` loader |
+
+The bootloader cannot write the QSPI flash. To program it:
+
+1. Copy `firmware_qspi.bin` to the microSD card as `/qspi.bin` (a card reader, or `scripts/wio/sd_upload.py`).
+2. `pio run -e wio_qspi_flash -t upload`, then wait for `DONE verified` on the serial monitor.
+3. `pio run -e wio -t upload`.
+
+If the QSPI image is missing, damaged or from another build, the firmware shows why on the LCD and the serial port
+and blinks the user LED instead of starting. `WIO_QSPI_XIP=0 pio run -e wio` links everything into internal flash
+(it does not fit). `app/wio/qspi_xip_placement.txt` chooses what goes to QSPI.
+
 `MRUBY_TARGET=wio` without `RPGMAKER_BC2CPP=1` fails in `build_config.rb`.
 `env:wio` is `app/wio/src/wio_rgss_boot_main.cxx`, which boots the compiled
 engine.
