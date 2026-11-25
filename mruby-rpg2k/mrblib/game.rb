@@ -7454,10 +7454,11 @@ module Game
     # truthy).
     def self.random_direction(character, world)
       draw = world.random(10)
-      return character.direction if draw < 3
-      return Character::TURN_LEFT[character.direction]  || character.direction if draw < 5
-      return Character::TURN_RIGHT[character.direction] || character.direction if draw < 7
-      return Character::TURN_180[character.direction]   || character.direction if draw == 7
+      dir = character.direction
+      return dir if draw < 3
+      return Character::TURN_LEFT[dir]  || dir if draw < 5
+      return Character::TURN_RIGHT[dir] || dir if draw < 7
+      return Character::TURN_180[dir]   || dir if draw == 7
       nil
     end
 
@@ -7498,7 +7499,8 @@ module Game
     # confirmed against genuine RPG_RT under wine -- first-principles/
     # by-hand reasoning, left for a future cycle to verify.
     def self.bounce(character, world, pair)
-      cur = pair.include?(character.direction) ? character.direction : pair[0]
+      dir = character.direction
+      cur = pair.include?(dir) ? dir : pair[0]
       return cur if world.passable?(character, cur)
       cur == pair[0] ? pair[1] : pair[0]
     end
