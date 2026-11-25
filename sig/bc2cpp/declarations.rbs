@@ -13884,8 +13884,9 @@ class Game::Battle::Combatant
   @actor: Game::Actor?
 end
 class Game::MoveRoute
-  # Scene::Map#run_route_step's character (an event's char, @player_char or a vehicle's char), passed down unchanged.
-  def execute: (untyped, Game::Character? character, untyped) -> untyped
-  def do_move: (Game::Character? character, untyped, untyped) -> untyped
-  def land_jump: (Game::Character? character, untyped, untyped, untyped, untyped) -> untyped
+  # Scene::Map#run_route_step's character, passed down unchanged: an event's `e.char` (MapEventState's @char), or
+  # @player_char / a @vehicle_chars entry, each read through (`.move_frequency`) just before; never nil.
+  def execute: (untyped, Game::Character character, untyped) -> untyped
+  def do_move: (Game::Character character, untyped, untyped) -> untyped
+  def land_jump: (Game::Character character, untyped, untyped, untyped, untyped) -> untyped
 end
