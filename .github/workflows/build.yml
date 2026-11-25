@@ -1549,9 +1549,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: wio-firmware
+          # firmware.bin goes to internal flash, firmware_qspi.bin to the QSPI flash (app/wio/README.md).
           path: |
             .pio/build/wio/firmware.elf
             .pio/build/wio/firmware.map
+            .pio/build/wio/firmware.bin
+            .pio/build/wio/firmware_qspi.bin
           if-no-files-found: error
 
       - name: Build the SD uploader
@@ -1910,10 +1913,10 @@ jobs:
           "$RENODE_BIN" --version
           for env in wio wio_sd_upload; do
             echo "::group::$env"
-            # The game image is bigger than the board's 512 KB flash; this board has 2 MB of it.
+            # The real board: `wio` runs its cold code from the QSPI window renode_boot.bash maps, after checking
+            # the image's CRC (about 0.25 s).
             platform=app/wio/renode/wio_terminal.repl
-            [ "$env" = wio ] && platform=app/wio/renode/wio_terminal_oversized_flash.repl
-            out="$(RENODE_PLATFORM="$PWD/$platform" scripts/wio/renode_boot.bash "firmware/$env/firmware.elf" "00:00:00.300")"
+            out="$(RENODE_PLATFORM="$PWD/$platform" scripts/wio/renode_boot.bash "firmware/$env/firmware.elf" "00:00:01")"
             echo "$out"
             # Markers go through the matcher, since a Renode [WARNING] can land inside one.
             echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED setup()" || { echo "::error::$env did not reach setup()"; exit 1; }

@@ -58,6 +58,7 @@ fi
 
 exec "$renode" --disable-gui --console --plain \
   -e "set platform_path @$platform" \
+  -e "set qspi_path @$repo_root/app/wio/renode/qspi_flash.repl" \
   -e "set elf_path @$elf" \
   -e "set setup_addr $setup_addr" \
   -e "set loop_addr $loop_addr" \

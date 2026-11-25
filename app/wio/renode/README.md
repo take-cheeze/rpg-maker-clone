@@ -269,7 +269,8 @@ obvious and cost real iteration time to find:
 ## Playing a game: `wio_renode_game`
 
 `scripts/wio/renode_game.bash ELF GAME_DIR` packs the game into an image that
-`game_rom.repl` maps at the QSPI flash window (0x04000000, up to 16 MB), boots
+`game_rom.repl` maps in the QSPI flash window (16 MB from 0x04000000, the
+image after the firmware's own code image there), boots
 the `wio_renode_game` firmware on the 192 KB board (`--board big` with the
 `wio_renode_game_big` ELF: 16 MB) and plays the frames `--config` asks for
 (`app/wio/src/wio_renode_game_main.cxx` lists the keys). It prints the game's
