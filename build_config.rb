@@ -31,99 +31,38 @@ UNI_ALGO_TRIM_DEFINES = %w[
   UNI_ALGO_DISABLE_SEGMENT_WORD
 ].freeze
 
-# wio-only, per-gem build step. Rewrites a copy of each of
-# spec's own .rb files (never the checked-in source itself) to drop
-# $stderr.puts diagnostic statements before mrbc ever sees them --
-# strip_wio_debug_output.rb's own file comment covers the mechanism and why
-# it is a real Ripper-based rewrite rather than a regex/sed pass. A no-op
-# for every other target (build.name != 'wio'): desktop/wasm/psp keep every
-# line, including the ones mruby-rgss/mrblib/error_report.rb's Tee
-# specifically exists to capture into a crash report and a terminal log
-# console -- see that file's own comment. Call this *last* in a gem's own
-# spec block (only wio_strip_unreachable follows it), after every other spec.rbfiles filter (debug-tools/battle
-# trims, schema.rb's own blob swap, ...): it replaces each surviving
-# entry's path outright, so anything that still needs to subtract or
-# substitute an entry by its original path has to run before this does.
-def wio_strip_debug_rbfiles(spec)
-  return unless spec.build.name == 'wio'
-
-  strip_script = File.expand_path('scripts/wio/strip_debug_output.rb', __dir__)
-  out_dir = "#{spec.build_dir}/wio_debug_stripped"
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    file out => [src, strip_script] do |t|
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      ruby strip_script, src, out
-    end
-    out
+# WIO_WORLD_STRIP (scripts/wio/world_strip.rb): wio is VM-free, so its firmware runs only what bc2cpp compiles from the
+# closed world, and the wio-only rewrites go into that world's sources rather than into rbfiles. Wraps
+# compiled_gems.rb's bc2cpp_closed_world_srcs for the wio build, points bc2cpp at the matching signatures, and makes the
+# scripts and the pass set codegen prerequisites so a change to either regenerates.
+def wio_strip_world(conf)
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/compiled_gems')
+  require_relative 'scripts/wio/world_strip'
+  names = WioWorldStrip.passes
+  out_dir = "#{conf.build_dir}/wio_world_strip"
+  stamp = "#{out_dir}/passes"
+  FileUtils.mkdir_p(out_dir)
+  File.write(stamp, "#{names.join("\n")}\n") unless File.exist?(stamp) && File.read(stamp) == "#{names.join("\n")}\n"
+  inputs = [stamp, *WioWorldStrip.scripts, File.expand_path('scripts/wio/world_strip.rb', __dir__)]
+  unless names.empty?
+    # rbs_signatures.rb's default: the world's sig/ and bc2cpp's own.
+    bc2cpp_sig = File.expand_path('../../sig', File.realpath(File.join(BC2CPP_TREE, 'tools/bc2cpp')))
+    ENV['BC2CPP_SIG_DIRS'] = WioWorldStrip.sig_dirs(out_dir, ENV['BC2CPP_SIG_DIRS'], ["#{__dir__}/sig", bc2cpp_sig])
   end
-end
+  mapped = {}
+  lock = Mutex.new
+  Object.class_eval do
+    alias_method :wio_unstripped_closed_world_srcs, :bc2cpp_closed_world_srcs
+    alias_method :wio_unstripped_closed_world_prerequisites, :bc2cpp_closed_world_prerequisites
+    define_method(:bc2cpp_closed_world_srcs) do |spec, gems_root|
+      srcs = wio_unstripped_closed_world_srcs(spec, gems_root)
+      next srcs unless spec.build.name == conf.name
 
-# wio-only, per-gem build step, the same shape as
-# wio_strip_debug_rbfiles above (and calling convention: last among filters
-# that subtract/substitute an rbfiles entry by its original path, before
-# wio_strip_debug_rbfiles itself). Rewrites a copy of a small, hand-picked
-# set of files to fold a handful of methods with exactly one real *engine*
-# caller into that call site -- strip_wio_inline_helpers.rb's own file
-# comment covers why this is a curated, hand-verified rewrite table rather
-# than a general single-caller inliner: scripts/**/*.rb's own CRuby-based
-# regression checks call several of these same methods directly by name,
-# so deleting them from the checked-in source would silently break real
-# test coverage that has nothing to do with wio. This rewrites only a
-# wio-only build-time copy; the checked-in definitions, and every other
-# target's build, are untouched.
-def wio_strip_inline_helpers(spec)
-  return unless spec.build.name == 'wio'
-
-  strip_script = File.expand_path('scripts/wio/strip_inline_helpers.rb', __dir__)
-  out_dir = "#{spec.build_dir}/wio_inline_helpers"
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    file out => [src, strip_script] do |t|
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      ruby strip_script, src, out
+      lock.synchronize { mapped[srcs] ||= WioWorldStrip.world(srcs, out_dir, names) }
     end
-    out
-  end
-end
-
-# wio-only. Drops the RGSS.*_probe diagnostics from a build-time copy
-# of mruby-rgss/mrblib/lib.rb (see strip_wio_rgss_probes.rb). Call it before
-# wio_strip_bc2cpp_stubs, so it reads the checked-in source.
-def wio_strip_rgss_probes(spec)
-  return unless spec.build.name == 'wio'
-
-  strip_script = File.expand_path('scripts/wio/strip_rgss_probes.rb', __dir__)
-  lib_rb = "#{spec.dir}/mrblib/lib.rb"
-  out = "#{spec.build_dir}/wio_rgss_probes_stripped/mrblib/lib.rb"
-  raise "wio_strip_rgss_probes: #{lib_rb} is not in #{spec.name}'s rbfiles" unless spec.rbfiles.include?(lib_rb)
-
-  file out => [lib_rb, strip_script] do
-    FileUtils.mkdir_p File.dirname(out), verbose: true
-    ruby strip_script, lib_rb, out
-  end
-  spec.rbfiles = spec.rbfiles.map { |src| src == lib_rb ? out : src }
-end
-
-# wio-only. The wio build links no mruby-time. This rewrites the
-# engine's Time uses in a build-time copy of each rbfile, and fails the build
-# if any Time reference survives (see strip_wio_clock.rb). Call it just
-# before wio_strip_debug_rbfiles, after wio_strip_inline_helpers.
-def wio_strip_clock(spec)
-  return unless spec.build.name == 'wio'
-
-  strip_script = File.expand_path('scripts/wio/strip_clock.rb', __dir__)
-  out_dir = "#{spec.build_dir}/wio_clock_stripped"
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    file out => [src, strip_script] do
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      ruby strip_script, src, out
+    define_method(:bc2cpp_closed_world_prerequisites) do |gems_root|
+      wio_unstripped_closed_world_prerequisites(gems_root) + inputs
     end
-    out
   end
 end
 
@@ -362,8 +301,9 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # mruby-io's File#mtime answers a Time, so the save and load screens of every
   # game need this gem even though nothing in the engine's own code does. Only a
   # test dependency of mruby-io, so it does not come along for the ride.
-  # Not on wio: it has no set real-time clock and no game Ruby, and
-  # wio_strip_clock keeps the engine's own gems Time-free.
+  # Not on wio: it has no set real-time clock and no game Ruby. A save there
+  # logs the missing clock and stamps NO_CLOCK_TIMESTAMP (game/lsd_io.rb);
+  # WIO_WORLD_STRIP's opt-in clock pass rewrites the Time uses away.
   conf.gem core: 'mruby-time' unless conf.name == 'wio'
   # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
   # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
@@ -737,7 +677,9 @@ end
 #     emits may name a core method the closed generation never did;
 #   - not wio: it takes lists of its own world (`BC2CPP_LISTS_WORLD=wio scripts/bc2cpp/static_dispatch_lists.bash`),
 #     proven over its gem set, app/wio's HAL and Math gems and env:wio's wio_rgss_boot_main.cxx. Being VM-free it
-#     loads no mrblib (bc2cpp_drop_mrblib), so the wio_strip_* copies and the schema blob never run;
+#     loads no mrblib (bc2cpp_drop_mrblib), so the schema blob never runs. Its compiled world is the WIO_WORLD_STRIP
+#     rewrite of the one the lists are proven over, which only deletes methods and moves their bodies to their callers,
+#     so it calls nothing the lists leave out;
 #   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
 def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false, world: 'closed')
   require File.join(BC2CPP_TREE, 'tools/bc2cpp/core_native_candidates')
@@ -1245,6 +1187,7 @@ if wio
     conf.gem core: 'mruby-compar-ext'
     bc2cpp_blank_core_units(conf)
     bc2cpp_drop_mrblib(conf)
+    wio_strip_world(conf)
 
     # Tried and reverted: -fno-exceptions, matching PlatformIO's own Arduino
     # framework build (platformio.ini's own comment on this). This project's
