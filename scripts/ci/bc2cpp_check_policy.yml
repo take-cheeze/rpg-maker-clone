@@ -1005,14 +1005,6 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/hash_inplace_iter_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    fixture_capabilities:
-    - full_library
-    - cxx
   scripts/bc2cpp/hot_inline_check.rb:
     tier: runtime
     capabilities:
@@ -1272,6 +1264,14 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/kernel_loop_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/hash_inplace_iter_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -1790,6 +1790,14 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/frozen_literal_persist_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/stack_rect_check.rb:
     tier: runtime
     capabilities:
     - mrbc
