@@ -1,0 +1,12 @@
+// Layered on game_rom.repl for the HEAPWALK firmware (app/wio/src/wio_heapwalk.cxx): the shadow slots of the live
+// heap blocks and the snapshot output window, where the real board has nothing.
+heapwalk_shadow: Memory.MappedMemory @ sysbus 0x08000000
+    size: 0x2000000
+
+heapwalk_out: Memory.MappedMemory @ sysbus 0x0A000000
+    size: 0x1000000
+
+// A second 16 MB after game_rom.repl's window, so the game image can hold every palette image decoded (the real
+// board's chip holds 4 MB; a snapshot then shows the heap without the pixels the design reads in place).
+qspi_rom_ext: Memory.MappedMemory @ sysbus 0x05000000
+    size: 0x1000000

@@ -286,6 +286,10 @@ the heap. They take about seven times their PNG's room, so only some fit: by
 default System, ChipSet, FaceSet, then as many CharSet and other images as the
 16 MB still holds; the rest load from their files as before.
 
+With an SD card image layered on the board (`--board` with a description that adds the `sdcard:` lines
+`scripts/wio/renode_sdcard.bash` writes), a game in the card's `/rpg2k` is played instead of the image's; the
+image still carries the run's `--config`.
+
 ```sh
 pio run -e wio_renode_game
 scripts/wio/renode_game.bash .pio/build/wio_renode_game/firmware.elf \
@@ -293,3 +297,12 @@ scripts/wio/renode_game.bash .pio/build/wio_renode_game/firmware.elf \
   --font build-wio/wio/mrbgems/mruby-rgss/gothic.bin \
   --config 'frames=300;every=50' --expect 'RPG2k-MAP'
 ```
+
+### Heap snapshots: `--heapwalk DIR`
+
+The `wio_renode_game_heapwalk` (192 KB) and `wio_renode_game_heapwalk_big` (16 MB) ELFs record the allocating stack
+of every live heap block. With `--heapwalk DIR` the run saves a heap snapshot at each `P` line (after its full GC)
+and at each scene's peak (pre-GC, within 2 KB), and the image window grows to 32 MB so every palette image fits
+decoded. `scripts/wio/heapwalk_report.rb ELF DIR` breaks each snapshot down: GC pages by type, blocks by owning object
+class, unowned blocks by allocating function, and a per-snapshot summary (`--largest N` prints the biggest blocks'
+stacks). Stacks are found by scanning for return addresses, so a frame can be stale.

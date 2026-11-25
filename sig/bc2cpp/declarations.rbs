@@ -2178,6 +2178,7 @@ class Game::Picture
   def y: () -> untyped
   def zoom: () -> untyped
   def self.arg: (untyped, untyped, untyped) -> untyped
+  def self.clamp_fixed: (untyped) -> untyped
   def self.div_round: (untyped, untyped) -> untyped
   def self.fix: (untyped) -> untyped
   def self.fixed_of: (untyped) -> untyped

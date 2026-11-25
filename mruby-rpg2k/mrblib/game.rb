@@ -8970,8 +8970,16 @@ module Game
     # #to_lsd and #to_h read #unfloat values, #from_lsd passes Floats, which
     # #fix rounds to the nearest 1/1024.
     FIX_SHIFT = 10
+    # Every value is clamped to +-COORD_MAX px (FIXED_MAX fixed) so it, and the difference of two of them in
+    # #step, fits a signed 32-bit mrb_int: 2 * 1_048_575 << 10 < 2**31. Literals, see AGENTS.md (mrb_int).
+    COORD_MAX = 1_048_575
+    FIXED_MAX = 1_073_740_800
     def self.fix(v)
+      v = Game.clamp(v, -COORD_MAX, COORD_MAX)
       v.is_a?(Integer) ? (v << FIX_SHIFT) : (v * (1 << FIX_SHIFT)).round
+    end
+    def self.clamp_fixed(n)
+      Game.clamp(n, -FIXED_MAX, FIXED_MAX)
     end
     # Truncated toward zero, as the drawn position always was.
     def self.unfix(n)
@@ -8983,22 +8991,31 @@ module Game
       return nil if n.nil?
       LCF.double_from_fixed(n)
     end
-    # A save :double read as a fixed value, or nil for an absent field.
+    # A save :double read as a clamped fixed value, or nil for an absent field. A Float (pixels) is clamped
+    # before it is scaled; an Integer is already fixed on the no-Float build.
     def self.fixed_of(v)
-      v.nil? ? nil : LCF.double_to_fixed(v)
+      return nil if v.nil?
+      v = Game.clamp(v, -COORD_MAX, COORD_MAX) unless v.is_a?(Integer)
+      clamp_fixed(LCF.double_to_fixed(v))
     end
-    # A fixed value from opts: already fixed when `raw`, else pixels; nil takes the pixel default.
+    # A fixed value from opts: already fixed when `raw`, else pixels; nil takes the pixel default. Either is
+    # clamped, so every value #move_to_fixed and #initialize store is within FIXED_MAX.
     def self.arg(v, raw, default)
       return fix(default) if v.nil?
-      raw ? v : fix(v)
+      raw ? clamp_fixed(v) : fix(v)
     end
     # Opacity (fixed) of a native :double transparency percentage.
     def self.fixed_opacity(trans)
       return nil if trans.nil?
       (102_400 - Game.clamp(fixed_of(trans), 0, 102_400)) * 255 / 100
     end
+    # a / b rounded half away from zero, b > 0. Compares the remainder instead of adding b / 2 to a, which
+    # could leave 32 bits for a near 2 * FIXED_MAX.
     def self.div_round(a, b)
-      a < 0 ? -(((-a) + (b >> 1)) / b) : (a + (b >> 1)) / b
+      m = a < 0 ? -a : a
+      q = m / b
+      q += 1 if m - q * b >= b - (b >> 1)
+      a < 0 ? -q : q
     end
 
     # Every interpolated field is truncated to a whole number here (ported

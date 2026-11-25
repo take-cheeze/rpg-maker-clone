@@ -1222,8 +1222,8 @@ if wio
 
     # Own HAL for mruby-io (see its own file comment): this board's bare
     # newlib is close enough to POSIX for plain file I/O (open/read/write/
-    # lseek/fstat/unlink all compile and, once app/wio/src/sd_syscalls.cxx's
-    # WIO_WITH_SD syscalls are linked in by the firmware, work), but has none
+    # lseek/fstat/unlink all compile and, with app/wio/src/wio_game_rom.cxx's
+    # syscalls linked in by the firmware, work), but has none
     # of hal-posix-io's wider POSIX surface (lstat, symlinks, fork/exec,
     # select) -- and none of that surface is reachable from a real
     # RPG2000/2003 game running through this exporter's own file access
