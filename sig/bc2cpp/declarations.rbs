@@ -3192,10 +3192,9 @@ class RPG2k::Scene::Map::LRUBitmapCache
 end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::Map::MapEventState
+  def char: () -> untyped
   def id: () -> untyped
   def id=: (untyped) -> untyped
-  def char: () -> untyped
-  def char=: (untyped) -> untyped
   def page: () -> untyped
   def page=: (untyped) -> untyped
   def page_number: () -> untyped
@@ -3248,7 +3247,7 @@ class RPG2k::Scene::Map::MapEventState
   def forced_freq=: (untyped) -> untyped
   def crossed_hero_this_frame: () -> untyped
   def crossed_hero_this_frame=: (untyped) -> untyped
-  def initialize: () -> untyped
+  def initialize: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::Map::MessageState
@@ -10000,6 +9999,8 @@ class RPG2k::Scene::Map::MapEventState
   @anim_phase: Integer
   @anim_type: Integer
   @base_pattern: Integer
+  # One writer: #initialize(char), whose one caller is Scene::Map#build_event with its `Game::Character.new`.
+  @char: Game::Character
   @disp_x: Integer
   @disp_y: Integer
   @guarded: bool
@@ -12041,7 +12042,7 @@ end
 # bc2cpp-native: typed_returns
 class RPG2k::Scene::Map::MapEventState
   def id: () -> Integer?
-  def char: () -> nil
+  def char: () -> Game::Character
   def page: () -> nil
   def page_number: () -> nil
   def trigger: () -> nil
@@ -12068,7 +12069,7 @@ class RPG2k::Scene::Map::MapEventState
   def forced_route: () -> nil
   def forced_freq: () -> nil
   def crossed_hero_this_frame: () -> nil
-  def initialize: () -> nil
+  def initialize: (Game::Character) -> nil
 end
 
 # bc2cpp-native: typed_returns
