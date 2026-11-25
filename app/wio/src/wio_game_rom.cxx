@@ -1,16 +1,16 @@
-// newlib file syscalls over the game image at game_rom_base(), for the
-// wio_renode_game firmware (Renode only: a real board has nothing mapped
-// there). Reads copy out of the image the way the SD layer (sd_syscalls.cxx)
-// copies off the card, so the heap behaves as it would with a card, minus
-// the SD library's own buffers. Writes to a file are refused (EROFS); fd 1
-// and 2 go to the diagnostic log.
+// newlib file syscalls: a game path (under WIO_GAME_ROOT) is read from the
+// microSD card when wio_sd_begin() found a game there (wio_sd.cxx), else from
+// the game image at game_rom_base(); every other path from the image. Reads
+// copy out of the image the way they copy off the card, so the heap behaves
+// the same with either. Writes to a file are refused (EROFS).
 
 #include "wio_game_rom.h"
 
 #include <cerrno>
-#include <cstdarg>
 #include <cstdio>
 #include <cstring>
+
+#include "wio_sd.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -46,26 +46,39 @@ const RomEntry* find(const char* path) {
 
 constexpr int kFdBase = 3;
 constexpr int kMaxFiles = 8;
+// A file from the image (entry) or the card (sd >= 0).
 struct OpenFile {
   const RomEntry* entry;
   uint32_t pos;
+  int sd;
+  bool used;
 };
 OpenFile g_open[kMaxFiles];
 
 OpenFile* slot_of(int fd) {
   const int i = fd - kFdBase;
-  if (i < 0 || i >= kMaxFiles || !g_open[i].entry)
+  if (i < 0 || i >= kMaxFiles || !g_open[i].used)
     return nullptr;
   return &g_open[i];
 }
 
-// kDiagBase: u32 bytes written, then the text.
-uint32_t* diag_len() {
-  return reinterpret_cast<uint32_t*>(kDiagBase);
+uint32_t size_of(const OpenFile* f) {
+#if WIO_SD
+  if (f->sd >= 0)
+    return wio_sd_size(f->sd);
+#endif
+  return f->entry->len;
 }
-char* diag_text() {
-  return reinterpret_cast<char*>(kDiagBase + 16);
+
+#if WIO_SD
+// The path below WIO_GAME_ROOT, or nullptr when +path+ is not a game path.
+const char* game_relative(const char* path) {
+  const size_t n = sizeof(WIO_GAME_ROOT) - 1;
+  return std::strncmp(path, WIO_GAME_ROOT, n) == 0 && path[n] == '/'
+             ? path + n + 1
+             : nullptr;
 }
+#endif
 
 }  // namespace
 
@@ -94,38 +107,33 @@ const char* wio_game_rom_config(const char* key, char* buf, size_t cap) {
   return nullptr;
 }
 
+bool wio_game_rom_present() {
+  return header() != nullptr;
+}
+
+const char* wio_game_files_begin() {
+  static char line[64];
+  if (line[0])
+    return line;
+  const WioSdState sd = wio_sd_begin();
+  if (sd == WIO_SD_GAME)
+    std::snprintf(line, sizeof(line), "Game: SD card %s", WIO_SD_GAME_DIR);
+  else if (find(WIO_GAME_ROOT "/RPG_RT.ldb"))
+    std::snprintf(line, sizeof(line), "Game: QSPI image (%s)",
+                  wio_sd_state_text(sd));
+  else
+    std::snprintf(line, sizeof(line), "No game (%s, none in QSPI)",
+                  wio_sd_state_text(sd));
+  std::fprintf(stderr, "[Wio] %s\n", line);
+  return line;
+}
+
 const void* wio_game_rom_file(const char* path, size_t* len) {
   const RomEntry* e = find(path);
   if (!e)
     return nullptr;
   *len = e->len;
   return rom() + e->data_off;
-}
-
-void wio_diag_write(const char* text, size_t len) {
-  uint32_t n = *diag_len();
-  const size_t cap = kDiagSize - 16;
-  if (n >= cap)
-    return;
-  if (len > cap - n)
-    len = cap - n;
-  std::memcpy(diag_text() + n, text, len);
-  *diag_len() = n + len;
-}
-
-void wio_diag_printf(const char* fmt, ...) {
-  char buf[256];
-  va_list ap;
-  va_start(ap, fmt);
-  int n = std::vsnprintf(buf, sizeof(buf), fmt, ap);
-  va_end(ap);
-  if (n > 0)
-    wio_diag_write(buf,
-                   static_cast<size_t>(n) < sizeof(buf) ? n : sizeof(buf) - 1);
-}
-
-size_t wio_diag_length() {
-  return *diag_len();
 }
 
 extern "C" {
@@ -135,19 +143,32 @@ int _open(const char* path, int flags, ...) {
     errno = EROFS;
     return -1;
   }
+  int i = 0;
+  while (i < kMaxFiles && g_open[i].used)
+    ++i;
+  if (i == kMaxFiles) {
+    errno = EMFILE;
+    return -1;
+  }
+#if WIO_SD
+  const char* rel = game_relative(path);
+  if (rel && wio_sd_state() == WIO_SD_GAME) {
+    const int h = wio_sd_open(rel);
+    if (h < 0) {
+      errno = -h;
+      return -1;
+    }
+    g_open[i] = {nullptr, 0, h, true};
+    return kFdBase + i;
+  }
+#endif
   const RomEntry* e = find(path);
   if (!e) {
     errno = ENOENT;
     return -1;
   }
-  for (int i = 0; i < kMaxFiles; ++i) {
-    if (!g_open[i].entry) {
-      g_open[i] = {e, 0};
-      return kFdBase + i;
-    }
-  }
-  errno = EMFILE;
-  return -1;
+  g_open[i] = {e, 0, -1, true};
+  return kFdBase + i;
 }
 
 int _close(int fd) {
@@ -156,7 +177,11 @@ int _close(int fd) {
     errno = EBADF;
     return -1;
   }
-  f->entry = nullptr;
+#if WIO_SD
+  if (f->sd >= 0)
+    wio_sd_close(f->sd);
+#endif
+  f->used = false;
   return 0;
 }
 
@@ -166,22 +191,21 @@ int _read(int fd, char* buf, int len) {
     errno = EBADF;
     return -1;
   }
+#if WIO_SD
+  if (f->sd >= 0) {
+    const int n = wio_sd_read(f->sd, buf, static_cast<unsigned>(len));
+    if (n < 0) {
+      errno = -n;
+      return -1;
+    }
+    return n;
+  }
+#endif
   uint32_t left = f->entry->len - f->pos;
   uint32_t n = static_cast<uint32_t>(len) < left ? len : left;
   std::memcpy(buf, rom() + f->entry->data_off + f->pos, n);
   f->pos += n;
   return static_cast<int>(n);
-}
-
-// The seeed core links with --wrap=_write and its own __wrap__write drops the
-// bytes; this one is linked first and keeps them.
-int __wrap__write(int fd, const char* buf, int len) {
-  if (fd == 1 || fd == 2) {
-    wio_diag_write(buf, len);
-    return len;
-  }
-  errno = slot_of(fd) ? EROFS : EBADF;
-  return -1;
 }
 
 int _lseek(int fd, int offset, int whence) {
@@ -190,15 +214,31 @@ int _lseek(int fd, int offset, int whence) {
     errno = EBADF;
     return -1;
   }
+  const uint32_t size = size_of(f);
   int64_t pos = offset;
-  if (whence == SEEK_CUR)
+  if (whence == SEEK_CUR) {
+#if WIO_SD
+    pos += f->sd >= 0 ? wio_sd_tell(f->sd) : f->pos;
+#else
     pos += f->pos;
-  else if (whence == SEEK_END)
-    pos += f->entry->len;
-  if (pos < 0 || pos > f->entry->len) {
+#endif
+  } else if (whence == SEEK_END) {
+    pos += size;
+  }
+  if (pos < 0 || pos > size) {
     errno = EINVAL;
     return -1;
   }
+#if WIO_SD
+  if (f->sd >= 0) {
+    const int32_t r = wio_sd_seek(f->sd, static_cast<uint32_t>(pos));
+    if (r < 0) {
+      errno = -r;
+      return -1;
+    }
+    return r;
+  }
+#endif
   f->pos = static_cast<uint32_t>(pos);
   return static_cast<int>(pos);
 }
@@ -215,25 +255,8 @@ int _fstat(int fd, struct stat* st) {
     return -1;
   }
   st->st_mode = S_IFREG;
-  st->st_size = f->entry->len;
+  st->st_size = size_of(f);
   return 0;
-}
-
-// The core's _sbrk lets the heap grow right up to the stack pointer, so the
-// next deeper call writes over the last block. Linked with --wrap=_sbrk, this
-// keeps kStackReserve bytes free below the stack and fails the growth instead,
-// which reaches mruby as NoMemoryError.
-constexpr ptrdiff_t kStackReserve = 8192;
-void* __real__sbrk(ptrdiff_t incr);
-void* __wrap__sbrk(ptrdiff_t incr) {
-  char* top = static_cast<char*>(__real__sbrk(0));
-  char* sp;
-  __asm__ volatile("mov %0, sp" : "=r"(sp));
-  if (incr > 0 && top + incr + kStackReserve > sp) {
-    errno = ENOMEM;
-    return reinterpret_cast<void*>(-1);
-  }
-  return __real__sbrk(incr);
 }
 
 int _isatty(int fd) {

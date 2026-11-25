@@ -286,6 +286,10 @@ the heap. They take about seven times their PNG's room, so only some fit: by
 default System, ChipSet, FaceSet, then as many CharSet and other images as the
 16 MB still holds; the rest load from their files as before.
 
+With an SD card image layered on the board (`--board` with a description that adds the `sdcard:` lines
+`scripts/wio/renode_sdcard.bash` writes), a game in the card's `/rpg2k` is played instead of the image's; the
+image still carries the run's `--config`.
+
 ```sh
 pio run -e wio_renode_game
 scripts/wio/renode_game.bash .pio/build/wio_renode_game/firmware.elf \
