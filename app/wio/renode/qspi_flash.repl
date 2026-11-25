@@ -1,0 +1,7 @@
+// The Wio Terminal's 4 MB external QSPI flash as its memory-mapped window, for a
+// QSPI_XIP firmware (app/wio/qspi_xip.ld): LoadELF fills it with the code image.
+// The controller is not modelled (its register writes only log warnings), and
+// neither is the flash's command set, so this proves placement and boot order,
+// not the board's QSPI setup.
+qspi_flash: Memory.MappedMemory @ sysbus 0x04000000
+    size: 0x400000

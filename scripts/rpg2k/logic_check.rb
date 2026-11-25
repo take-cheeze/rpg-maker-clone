@@ -62,6 +62,7 @@ load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.expand_path('../../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
+require_relative 'native_stand_ins'
 load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file
 load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(lib, 'game', 'legacy_lsd.rb')
@@ -2370,6 +2371,35 @@ class CountingResolver
   end
 
   def map_event_commands(_id, _page); nil; end
+end
+
+check 'Control Variables products and sums past 32 bits clamp to the variable range' do
+  # [single var 1, op, operand constant]: params are [range kind, first, last, op, operand kind, value].
+  st = new_state(rpg2003: true)
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 9_999_999]),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 3, 1, 1]),          # var1 *= var1 (about 1e14)
+    FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 0, -9_999_999]),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 3, 0, 9_999_999]),  # var2 *= 9999999
+    FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 1, 0, 2_147_483_647]),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 1, 0, 2_147_483_647]), # var3 += INT32_MAX twice
+    FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 2, 0, 2_147_483_647]),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 5, 5, 0, 0, -7]),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 5, 5, 4, 0, 2]),          # -7 / 2 truncates
+  ])
+  it.update
+  eq 9_999_999, st.variables[1], '9999999 squared clamps to the RPG2003 maximum'
+  eq(-9_999_999, st.variables[2], '-9999999 * 9999999 clamps to the minimum')
+  eq 9_999_999, st.variables[3], 'a sum past 32 bits clamps to the maximum'
+  eq(-9_999_999, st.variables[4], '0 - INT32_MAX clamps to the minimum')
+  eq(-3, st.variables[5], 'division truncates toward zero')
+  st2 = new_state
+  it2 = Game::Interpreter.new(st2)
+  it2.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 999_999]),
+             FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 3, 1, 1])])
+  it2.update
+  eq 999_999, st2.variables[1], 'RPG2000 clamps the same product to 999999'
 end
 
 check 'a single update spends its 10000-step budget at the documented per-command cost' do

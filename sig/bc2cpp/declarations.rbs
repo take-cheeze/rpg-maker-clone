@@ -1659,10 +1659,6 @@ class RPG2k::Scene::EventResolver
   def map_event_commands: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::GameOver < RPG2k::Scene::Base
-  def dispose: () -> untyped
-end
-# bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Map::MapEventState
   def id: () -> untyped
   def id=: (untyped) -> untyped
@@ -1886,11 +1882,6 @@ class RPG2k::Scene::StatusMenu < RPG2k::Scene::Base
   def draw_actor_face: (untyped, untyped) -> untyped
   def draw_battle_row: (untyped, untyped) -> untyped
   def warn_missing_item: (untyped) -> untyped
-end
-# bc2cpp-native: base_rpg2k
-class RPG2k::Scene::Title < RPG2k::Scene::Base
-  def move_selection: (untyped) -> untyped
-  def play_cursor_se: () -> untyped
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -5253,24 +5244,6 @@ module Game::States
   def self.recovery_message: (untyped, untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
-class RPG2k::Scene::Base
-  def parent: () -> untyped
-  def db: () -> untyped
-  def map_tree: () -> untyped
-  def dispose: () -> untyped
-  def draw_list_arrow_fallback: (untyped, untyped) -> untyped
-  def draw_stat_segment: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
-  def draw_wrapped_hint: (untyped, untyped, untyped) -> untyped
-  def play_animation_se: (untyped) -> untyped
-  def screen_height: () -> untyped
-  def screen_width: () -> untyped
-  def state_table: () -> untyped
-  def sticky_list_top: (untyped, untyped, untyped, untyped) -> untyped
-  def update: () -> untyped
-  def value_font_color: (untyped, untyped, untyped) -> untyped
-  def wrap_text_to_width: (untyped, untyped, untyped) -> untyped
-end
-# bc2cpp-native: base_rpg
 class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def ui: () -> untyped
   def owner: () -> untyped
@@ -5462,11 +5435,6 @@ class RPG2k::Scene::ItemMenu < RPG2k::Scene::Base
   def teleport_targets: () -> untyped
   def update_target: () -> untyped
   def update_teleport_target: () -> untyped
-end
-# bc2cpp-native: base_rpg
-class RPG2k::Scene::SaveLoad < RPG2k::Scene::Base
-  def build_face_cell: (untyped, untyped) -> untyped
-  def draw_arrow_fallback: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::SkillMenu < RPG2k::Scene::Base
@@ -6388,6 +6356,44 @@ module LCF
   def self.var_min: () -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rpg
+class RPG2k::Scene::Base
+  def parent: () -> untyped
+  def db: () -> untyped
+  def map_tree: () -> untyped
+  def dispose: () -> untyped
+  def draw_list_arrow_fallback: (untyped, untyped) -> untyped
+  def draw_stat_segment: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  def draw_wrapped_hint: (untyped, untyped, untyped) -> untyped
+  def play_animation_se: (untyped) -> untyped
+  def screen_height: () -> untyped
+  def screen_width: () -> untyped
+  def state_system_se: (untyped) -> untyped
+  def state_table: () -> untyped
+  def sticky_list_top: (untyped, untyped, untyped, untyped) -> untyped
+  def update: () -> untyped
+  def value_font_color: (untyped, untyped, untyped) -> untyped
+  def wrap_text_to_width: (untyped, untyped, untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class RPG2k::Scene::GameOver < RPG2k::Scene::Base
+  def dispose: () -> untyped
+  def state_system_se: (untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class RPG2k::Scene::SaveLoad < RPG2k::Scene::Base
+  def build_face_cell: (untyped, untyped) -> untyped
+  def draw_arrow_fallback: (untyped, untyped) -> untyped
+  def state_system_se: (untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class RPG2k::Scene::Title < RPG2k::Scene::Base
+  def move_selection: (untyped) -> untyped
+  def play_cursor_se: () -> untyped
+  def state_system_se: (untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -6971,10 +6977,6 @@ class Game::Interpreter
   def play_audio: (untyped, LCF::EventCommand) -> nil
   # An op outside 0..2 falls out of the `case` with nil.
   def set_switch: (Integer, Integer) -> (bool | nil)
-  %a{bc2cpp:hint}
-  def trunc_div: (Integer, Integer) -> Integer
-  %a{bc2cpp:hint}
-  def trunc_mod: (Integer, Integer) -> Integer
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def choice_cancellable?: () -> bool
 end
@@ -7903,9 +7905,10 @@ class RPG2k
       @db: LCF::Database
       @map_tree: LCF::MapTree?
       # Declared once for the family (DECLARED_IVAR_PROOF needs one declaring class): every writer is a subclass's
-      # #initialize, `@state = state` (each construction site passes RPG2k's or another scene's Game::State, or nil),
-      # or Scene::Battle's `map.state`, Scene::Map's attr_reader of that same slot.
-      @state: Game::State?
+      # #initialize, `@state = state` with RPG2k's or another scene's Game::State, or Scene::Battle's `map.state`,
+      # Scene::Map's attr_reader of that same slot. The scenes without a state (Title, GameOver, SaveLoad's
+      # @game_state) never store it and override #state_system_se, Base's one reader, so no read sees nil.
+      @state: Game::State
       # Scene::Map's and MapViewer's map: Scene::Map stores `state.map` (Game::State#@map) or RPG2k#load_map's
       # `Game::Map.new`; MapViewer its `map:` keyword (#load_map's result or `@state.map`) or `state.map`.
       @map: Game::Map?

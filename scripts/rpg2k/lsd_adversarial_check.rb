@@ -58,6 +58,7 @@ require_relative '../lcf/native_stand_ins'
 lib = File.join(ROOT, 'mruby-rpg2k', 'mrblib')
 %w[game.rb game/battle.rb game/battle_support.rb game/legacy_lsd.rb game/lsd_io.rb
    interpreter.rb main.rb].each { |f| load File.join(lib, f) }
+   require_relative 'native_stand_ins'
 
 # -- a fake database (the shape scripts/rpg2k/lsd_authoritative_check.rb uses) ---------
 

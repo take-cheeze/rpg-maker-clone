@@ -1,0 +1,30 @@
+# QSPI_XIP placement: which input sections app/wio/qspi_xip.ld puts in the external QSPI flash.
+#   text GLOB     libmruby's functions whose section is .text.GLOB go to QSPI
+#   rodata GLOB   libmruby's data whose section is .rodata.GLOB go to QSPI
+#   internal GLOB functions whose section is .text.GLOB stay in internal flash, whatever else matches them
+# -ffunction-sections/-fdata-sections name a section after its symbol, LTO's renamed clones (.constprop.N, ...)
+# included; GLOB is an ld wildcard. Everything else stays internal. app/wio/qspi_xip_hot.txt adds the `internal`
+# lines a profile chose.
+
+# The bc2cpp-compiled Ruby: method bodies are free functions named after their class (_Z<len><Class>...),
+# their helpers are file-local (_ZL...) or in the shard's namespace.
+text _Z[0-9][A-Z]*
+text _Z[0-9][0-9][A-Z]*
+text _Z[0-9][0-9][0-9][A-Z]*
+text _ZL[0-9]*
+text _ZN[0-9]*bc2cpp_shard_*
+text rpg_maker_init_*
+# What GCC itself thinks is cold: never-executed paths split off a function (fn.cold) and functions it reaches only
+# from such paths.
+text unlikely.*
+
+# Tables read at load time, by symbol lookups from strings, and by text conversion.
+rodata presym_*
+rodata cp932_*
+rodata lcf_rom_*
+rodata pow10_*
+rodata _ZN[0-9]*bc2cpp_cs_*
+rodata _ZZN[0-9]*bc2cpp_shard_*
+rodata _ZN9shinonome*
+# The link-time-optimised code's string literals (one merged section).
+rodata str1.*

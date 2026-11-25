@@ -28,6 +28,7 @@ load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.expand_path('../../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
+require_relative 'native_stand_ins'
 load File.join(lib, 'game', 'battle.rb')
 load File.join(lib, 'game', 'battle_support.rb') # Game::Map#sync_layers_to_unit lives here
 

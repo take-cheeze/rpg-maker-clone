@@ -52,6 +52,7 @@ load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.expand_path('../../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
+require_relative '../rpg2k/native_stand_ins'
 load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file
 load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(lib, 'game', 'legacy_lsd.rb')

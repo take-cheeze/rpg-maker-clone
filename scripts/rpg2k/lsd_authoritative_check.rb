@@ -54,6 +54,7 @@ load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.join(ROOT, 'mruby-rpg2k', 'mrblib')
 load File.join(lib, 'game.rb')
+require_relative 'native_stand_ins'
 load File.join(lib, 'game', 'battle.rb')
 load File.join(lib, 'game', 'battle_support.rb')
 load File.join(lib, 'game', 'legacy_lsd.rb')

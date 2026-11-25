@@ -406,9 +406,16 @@ class RPG2k
       # the state override (set by Change System SFX) first, then the
       # database default for that slot, or nil when neither names a file.
       def system_se(slot)
-        ov = @state && @state.respond_to?(:system_sfx) ? @state.system_sfx[slot] : nil
+        ov = state_system_se(slot)
         return ov if ov && ov[:name] && !ov[:name].empty?
         db_system_se(slot)
+      end
+
+      # The Change System SFX override for a slot. Title, GameOver and SaveLoad
+      # keep no @state and override this, so @state is read only on scenes whose
+      # #initialize always stores a Game::State (its declaration has no `?`).
+      def state_system_se(slot)
+        @state && @state.respond_to?(:system_sfx) ? @state.system_sfx[slot] : nil
       end
 
       def db_system_se(slot)

@@ -74,9 +74,10 @@ check = lambda do |ok, msg|
   failures << msg unless ok
 end
 globals = elf.symbols.select { |s| s.bind != 0 && s.shndx != 0 }.to_h { |s| [s.name, s] }
-text = elf.sections.find { |s| s.name == '.text' }
-abort 'no .text section' unless text
-in_text = ->(addr) { addr >= text.addr && addr < text.addr + text.size }
+# app/wio/qspi_xip.ld splits the internal-flash code in two, around the sections it places in QSPI.
+texts = elf.sections.select { |s| %w[.text .text_rest].include?(s.name) }
+abort 'no .text section' if texts.empty?
+in_text = ->(addr) { texts.any? { |t| addr >= t.addr && addr < t.addr + t.size } }
 
 table = globals['exception_table']
 check.call(table && table.value == APP_START,

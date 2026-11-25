@@ -89,6 +89,12 @@ class RPG2k
       # the *next* `#main_loop` iteration, by which point that iteration's
       # own `Input.update` has already reset stale triggers from the
       # previous scene.
+      # The state is kept in @game_state, and its Change System SFX overrides
+      # never applied to this scene's system SE (Base#state_system_se).
+      def state_system_se(_slot)
+        nil
+      end
+
       def update
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
         parent.return_to_title

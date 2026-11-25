@@ -682,9 +682,6 @@ REWRITES = {
   },
   'mruby-rpg2k/mrblib/interpreter.rb' => {
     deletions: [
-      { first: '    def trunc_mod(n, d)',
-        last: '    end', # def trunc_mod's own `end`
-        expect_lines: 3 },
       { first: '    # lets an event open the menu it has otherwise locked out.',
         last: '    end', # def do_open_main_menu's own `end`
         expect_lines: 5 },
@@ -759,8 +756,6 @@ REWRITES = {
         expect_lines: 4 },
     ],
     substitutions: [
-      { old: '      when 5 then val == 0 ? 0 : trunc_mod(cur, val)',
-        new: '      when 5 then val == 0 ? 0 : (cur - val * trunc_div(cur, val))' },
       { old: '      when Cmd::OPEN_MAIN_MENU   then do_open_main_menu cmd',
         new: '      when Cmd::OPEN_MAIN_MENU   then (@wait_kind = :menu; @waiting = true)' },
       { old: '      when Cmd::WAIT             then do_wait cmd',
