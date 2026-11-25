@@ -1,4 +1,4 @@
-// newlib file syscalls over the game image at kGameRomBase, for the
+// newlib file syscalls over the game image at game_rom_base(), for the
 // wio_renode_game firmware (Renode only: a real board has nothing mapped
 // there). Reads copy out of the image the way the SD layer (sd_syscalls.cxx)
 // copies off the card, so the heap behaves as it would with a card, minus
@@ -26,7 +26,7 @@ struct RomEntry {
 };
 
 const uint8_t* rom() {
-  return reinterpret_cast<const uint8_t*>(kGameRomBase);
+  return reinterpret_cast<const uint8_t*>(game_rom_base());
 }
 const RomHeader* header() {
   const RomHeader* h = reinterpret_cast<const RomHeader*>(rom());

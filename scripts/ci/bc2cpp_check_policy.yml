@@ -1797,7 +1797,7 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/stack_rect_check.rb:
+  scripts/bc2cpp/stack_tuples_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -1805,7 +1805,7 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/stack_tuples_check.rb:
+  scripts/bc2cpp/stack_rect_check.rb:
     tier: runtime
     capabilities:
     - mrbc

@@ -72,6 +72,36 @@ mrb_value bitmap_stretch_blt_direct(mrb_state* M,
                                     mrb_value source_rect,
                                     mrb_value opacity,
                                     mrb_bool opacity_given);
+// STACK_RECT (bc2cpp codegen_stack_rect.rb): a `Rect.new(x, y, w, h)` whose
+// only use is a rect argument below arrives as its four fields, never as an
+// object. Each entry copies the fields before drawing and keeps no pointer to
+// them; a null RectFields pointer reads the Rect object argument instead.
+struct RectFields {
+  mrb_int x, y, width, height;
+};
+mrb_value bitmap_blt_rects_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_value x,
+                                  mrb_value y,
+                                  mrb_value source,
+                                  const RectFields& source_rect,
+                                  mrb_value opacity,
+                                  mrb_bool opacity_given);
+mrb_value bitmap_stretch_blt_rects_direct(mrb_state* M,
+                                          mrb_value self,
+                                          mrb_value destination_rect,
+                                          const RectFields* destination_fields,
+                                          mrb_value source,
+                                          mrb_value source_rect,
+                                          const RectFields* source_fields,
+                                          mrb_value opacity,
+                                          mrb_bool opacity_given);
+mrb_value bitmap_copy_blt_rects_direct(mrb_state* M,
+                                       mrb_value self,
+                                       mrb_value x,
+                                       mrb_value y,
+                                       mrb_value source,
+                                       const RectFields& source_rect);
 mrb_value bitmap_draw_text_direct(mrb_state* M,
                                   mrb_value self,
                                   mrb_int argc,

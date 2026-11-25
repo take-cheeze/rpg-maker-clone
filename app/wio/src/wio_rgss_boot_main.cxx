@@ -27,6 +27,7 @@
 #include <cstring>
 
 #include "wio.hxx"
+#include "wio_qspi_xip.h"
 
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
@@ -156,6 +157,7 @@ void show_keys(uint32_t mask) {
 }  // namespace
 
 void setup(void) {
+  wio_qspi_xip_require();
   lv_init();
   wio_display_create(320, 240);
   wio_input_init();
