@@ -6313,8 +6313,9 @@ module Game
       @width = unit[:width]
       @height = unit[:height]
       @chipset_id = unit[:chipset_id]
-      @lower = unit[:lower_layer] || []
-      @upper = unit[:upper_layer] || []
+      # LCF::ShortArray (:int16_packed): two bytes a tile, where an Array takes a word.
+      @lower = unit[:lower_layer] || LCF::ShortArray.new(0)
+      @upper = unit[:upper_layer] || LCF::ShortArray.new(0)
       # Tile Substitution (11750) rewrites, per layer: a sparse { original_id =>
       # current_id } deviation from identity. Kept as a lookup applied on read
       # rather than as an edit of the layer arrays -- the map data stays

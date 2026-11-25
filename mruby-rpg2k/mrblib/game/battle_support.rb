@@ -798,7 +798,7 @@ module Game
 
   class Map
     # Push #set_lower/#set_upper edits back into the LCF chunk data (chunks
-    # 71/72, both a plain :int16_array -- see mruby-lcf/mrblib/schema.rb)
+    # 71/72, both :int16_packed -- see mruby-lcf/mrblib/schema.rb)
     # through #unit's own schema-driven `[]=`, so #unit.to_lcf/#unit.save_to
     # actually carry them. Reading (#lower/#upper, and so Scene::Map's own
     # rendering) never needs this: both already read straight off the same

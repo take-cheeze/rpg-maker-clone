@@ -505,7 +505,8 @@ assert "LCF::MapUnit parses layers, nested events and event commands" do
   assert_equal 3, lmu[:chipset_id]
   assert_equal 4, lmu[:width]
   assert_equal 2, lmu[:height]
-  assert_equal [1, 2, 3, 4, 5, 6, 7, 8], lmu[:lower_layer]
+  assert_kind_of LCF::ShortArray, lmu[:lower_layer]
+  assert_equal [1, 2, 3, 4, 5, 6, 7, 8], lmu[:lower_layer].to_a
   assert_equal "NPC", lmu[:events][1][:name]
   page1 = lmu[:events][1][:pages][1]
   assert_equal "hero", page1[:charset_name]
@@ -845,6 +846,48 @@ assert 'SaveData edit survives a write/reload round-trip' do
   assert_equal 42, reread[:hero][:x]
   assert_equal 7, reread[:hero][:y]          # untouched field preserved
   assert_equal 2, reread[101][:save_count]
+end
+
+assert "LCF::ShortArray reads, writes and encodes signed int16" do
+  bytes = "\xff\xff\x01\x00\x00\x80\xff\x7f"
+  a = LCF.to_rb(bytes, { type: :int16_packed })
+  assert_kind_of LCF::ShortArray, a
+  assert_equal 4, a.size
+  assert_equal [-1, 1, -32768, 32767], a.to_a
+  assert_equal(-1, a[0])
+  assert_equal 32767, a[-1]
+  assert_nil a[4]
+  assert_nil a[-5]
+  seen = []
+  a.each { |v| seen << v }
+  assert_equal [-1, 1, -32768, 32767], seen
+  assert_equal bytes, a.to_lcf
+  assert_equal bytes, LCF.encode(a, :int16_packed)
+  assert_equal bytes, LCF.encode([-1, 1, -32768, 32767], :int16_packed)
+  # A trailing odd byte is ignored, as unpack('s<*') does.
+  assert_equal [1], LCF::ShortArray.unpack("\x01\x00\x05").to_a
+  assert_equal 7, (a[1] = 7)
+  a[-4] = -2
+  assert_equal [-2, 7, -32768, 32767], a.to_a
+  copy = a.dup
+  copy[0] = 0
+  assert_equal(-2, a[0])
+  assert_equal [0, 0, 0], LCF::ShortArray.new(3).to_a
+  assert_equal 0, LCF::ShortArray.new(0).size
+end
+
+assert "LCF::ShortArray refuses writes outside the table or int16" do
+  a = LCF::ShortArray.new(2)
+  assert_raise(IndexError) { a[2] = 0 }
+  assert_raise(IndexError) { a[-3] = 0 }
+  assert_raise(RangeError) { a[0] = 32768 }
+  assert_raise(RangeError) { a[0] = -32769 }
+  assert_raise(RangeError) { a[1] = 0x1_0000_0000 }
+  assert_raise(TypeError) { a[0] = nil }
+  assert_raise(TypeError) { a[0] = "1" }
+  assert_raise(ArgumentError) { LCF::ShortArray.new(-1) }
+  assert_raise(ArgumentError) { a.each }
+  assert_equal [0, 0], a.to_a
 end
 
 # ---- Build a save FROM SCRATCH --------------

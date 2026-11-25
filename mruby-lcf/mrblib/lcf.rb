@@ -233,6 +233,13 @@ module LCF
     def field? sym ; @by_name.key? sym end
   end
 
+  # LCF::ShortArray (src/lcf.cxx): `[]` and `[]=` are Ruby over the native #get and #set, so the compiled world
+  # has a definer of each to dispatch to (it reads no operator from a native method table).
+  class ShortArray
+    def [] i ; get i end
+    def []= i, v ; set i, v end
+  end
+
   # Read one section of a file sequentially from the stream +io+. With +lazy+
   # (LCF::File#lazy_io), a table section keeps only each row's offset in it.
   def self.read_section io, s, lazy = nil
@@ -274,6 +281,7 @@ module LCF
       h = {}
       order.each_with_index { |name, i| h[name] = vals[i] }
       return h
+    when :int16_packed ; return ShortArray.unpack(d)
     when :int8_array ; return d.bytes
     when :uint8 ; return d.getbyte(0)
     when :bool_array ; return d.bytes.map { |b| b != 0 }
@@ -445,6 +453,7 @@ module LCF
     when :int8_array ; value.pack('C*')
     when :bool_array ; value.map { |b| b ? 1 : 0 }.pack('C*')
     when :int16_array ; pack_int16 value
+    when :int16_packed ; value.is_a?(ShortArray) ? value.to_lcf : pack_int16(value)
     when :int32_array ; pack_int32 value
     when :string ; utf8_to_cp932 value
     when :event ; encode_event_commands value

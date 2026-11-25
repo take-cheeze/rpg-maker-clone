@@ -114,6 +114,8 @@ def value_to_text(value, field)
         'parameter_a' => c.parameter_a, 'parameter_b' => c.parameter_b,
         'parameter_c' => c.parameter_c }
     end
+  when :int16_packed
+    value.to_a
   when :int16_array
     value.is_a?(Hash) ? value.each_with_object({}) { |(k, v), h| h[k.to_s] = v } : value
   when :Tree
@@ -200,7 +202,7 @@ def validate_value(value, field, path, errors)
     errors << "#{path}: expected a number, got #{value.class}" unless value.is_a?(Numeric)
   when :string
     errors << "#{path}: expected a string, got #{value.class}" unless value.is_a?(String)
-  when :int8_array, :int16_array, :int32_array
+  when :int8_array, :int16_array, :int16_packed, :int32_array
     validate_int_array(value, path, errors)
   when :bool_array
     unless value.is_a?(Array) && value.all? { |v| [true, false].include?(v) }
