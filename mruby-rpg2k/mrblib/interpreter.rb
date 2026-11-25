@@ -2412,46 +2412,10 @@ module Game
       end
     end
 
+    # op 0 =, 1 +, 2 -, 3 *, 4 /, 5 %, computed natively (Game.var_op, src/rgss_ext.cxx) in 64 bits: two variables
+    # multiply past 32 bits, and the Variables clamp then needs the exact sign and magnitude.
     def apply(op, cur, val)
-      case op
-      when 0 then val
-      when 1 then cur + val
-      when 2 then cur - val
-      when 3 then cur * val
-      when 4 then val == 0 ? cur : trunc_div(cur, val)
-      when 5 then val == 0 ? 0 : trunc_mod(cur, val)
-      else cur
-      end
-    end
-
-    # Control Variables' divide/modulo operands (op 4/5 above) need C++'s
-    # truncate-toward-zero division, not mruby's native `/`/`%`, which floor
-    # toward negative infinity -- the two only agree when both operands share
-    # a sign (RPG_RT itself is a C++ binary, so this follows from the
-    # language's own integer-division semantics: e.g. -7 / 2 truncates to -3
-    # in C++ but mruby's `-7 / 2` floors to -4; -7 % 2 is -1 in C++, taking
-    # the dividend's sign, but 1 in mruby, taking the divisor's). The specific
-    # divide-by-zero-leaves-unchanged / modulo-by-zero-zeroes asymmetry is
-    # ported from a reference implementation, not independently confirmed
-    # against genuine RPG_RT under wine: that implementation's divide
-    # leaves the value unchanged on a zero divisor; its modulo differs from
-    # that -- zeroing the result instead -- so a modulo by zero zeroes the
-    # variable instead.
-
-    def trunc_div(n, d)
-      q = n.abs / d.abs
-      (n < 0) == (d < 0) ? q : -q
-    end
-    # `d` filled in to match #trunc_div right above, which already carries
-    # the complete `(fixnum, fixnum)` pair: both are called from exactly one
-    # place, #apply's own `trunc_div(cur, val)` / `trunc_mod(cur, val)` arms,
-    # and #apply's own annotation already certifies `cur` and `val` as
-    # Fixnum. The missing second token here was an oversight, not a real
-    # difference between the two siblings.
-
-
-    def trunc_mod(n, d)
-      n - d * trunc_div(n, d)
+      Game.var_op(op, cur, val)
     end
 
     # Timer: op 0 set (seconds), 1 start, 2 stop. Start carries the RPG2000

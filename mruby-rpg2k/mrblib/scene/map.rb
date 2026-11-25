@@ -10690,8 +10690,9 @@ class RPG2k
         return unless terrain
         rate = LCF.field?(terrain, :encounter_rate) ? terrain[:encounter_rate] : 100
         @state.encounter_total += rate
-        # total / steps >= threshold, kept as total >= threshold * steps (steps > 0 here).
-        @encounter_idx += 1 while @state.encounter_total >= ENCOUNTER_TABLE[@encounter_idx + 1][0] * steps
+        # total / steps >= threshold (steps > 0 here): the floored quotient answers the same, and threshold * steps
+        # would pass 32 bits at the last row's sentinel.
+        @encounter_idx += 1 while @state.encounter_total / steps >= ENCOUNTER_TABLE[@encounter_idx + 1][0]
         pmod = ENCOUNTER_TABLE[@encounter_idx][1]
         # pmod / 16 * rate / (100 * steps) as a count out of ENCOUNTER_CHANCE_SCALE, rounded half up.
         # 1e6 / (16 * 100) == 625 keeps the product inside 32 bits.
