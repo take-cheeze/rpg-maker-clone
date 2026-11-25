@@ -128,32 +128,33 @@ class RPG2k
         end
       end
 
-      # A live shop's full UI state (#open_shop, which sets the first 15
-      # fields right after `.new`). `confirm_timer` is set only later by
-      # #drive_shop_quantity once a transaction commits, and `quantity`
-      # holds a ShopQuantity only while the quantity counter is open, so
-      # both start nil.
+      # A live shop's full UI state (#open_shop). `confirm_timer` is set only
+      # later by #drive_shop_quantity once a transaction commits, and
+      # `quantity` holds a ShopQuantity only while the quantity counter is
+      # open, so both start nil.
       class ShopState
-        attr_accessor :model, :has_menu, :screen, :index, :scroll, :cmd_index, :window, :gold,
-                      :status, :party, :desc, :prompt, :terms, :browsed, :interp,
+        attr_reader :model, :has_menu, :gold, :terms, :interp
+        attr_accessor :screen, :index, :scroll, :cmd_index, :window,
+                      :status, :party, :desc, :prompt, :browsed,
                       :confirm_timer, :quantity
 
-        def initialize
-          @model = nil
-          @has_menu = nil
-          @screen = nil
+        # Scene::Map#open_shop is the one construction, so the model is never nil.
+        def initialize(model, has_menu, screen, gold, terms, interp)
+          @model = model
+          @has_menu = has_menu
+          @screen = screen
           @index = 0
           @scroll = 0
           @cmd_index = 0
           @window = nil
-          @gold = nil
+          @gold = gold
           @status = nil
           @party = nil
           @desc = nil
           @prompt = nil
-          @terms = nil
-          @browsed = nil
-          @interp = nil
+          @terms = terms
+          @browsed = false
+          @interp = interp
           @confirm_timer = nil
           @quantity = nil
         end
@@ -5085,6 +5086,7 @@ class RPG2k
       # route's mirror character (if one is running) in sync so it steps on from
       # the new tile.
       def move_player_to(x, y)
+        ch = @player_char
         @state.x = x
         @state.y = y
         @dest_x = x
@@ -5092,9 +5094,9 @@ class RPG2k
         @moving = false
         @move_count = 0
         @slide_frac = 0
-        if @player_char
-          @player_char.x = x
-          @player_char.y = y
+        if ch
+          ch.x = x
+          ch.y = y
         end
       end
 
@@ -5220,10 +5222,12 @@ class RPG2k
       # own #index always reflects the *next* command about to run (the one
       # a save resumes at), never one already executed.
       def sync_player_route_to_state
-        @state.player_route = if @player_route
-                                { commands: @player_route.commands, repeat: @player_route.repeat?,
-                                  skippable: @player_route.skippable?, index: @player_route.cursor,
-                                  frequency: @player_char && @player_char.move_frequency }
+        route = @player_route
+        ch = @player_char
+        @state.player_route = if route
+                                { commands: route.commands, repeat: route.repeat?,
+                                  skippable: route.skippable?, index: route.cursor,
+                                  frequency: ch && ch.move_frequency }
                               end
       end
 
@@ -5240,10 +5244,11 @@ class RPG2k
         @player_through = @state.player_through ? true : false
         pr = @state.player_route
         return unless pr
-        @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
-        @player_char.event_id = MOVE_TARGET_PLAYER
-        @player_char.through = @player_through
-        @player_char.move_frequency = pr[:frequency] || @player_char.move_frequency
+        ch = Game::Character.new(@state.x, @state.y, @state.direction)
+        @player_char = ch
+        ch.event_id = MOVE_TARGET_PLAYER
+        ch.through = @player_through
+        ch.move_frequency = pr[:frequency] || ch.move_frequency
         @player_route = Game::MoveRoute.new(pr[:commands], repeat: pr[:repeat],
                                             skippable: pr[:skippable])
         @player_route.resume_at(pr[:index]) if pr[:index]
@@ -5258,14 +5263,14 @@ class RPG2k
       # so mirror one, step it against the map world and slide the party after
       # it. Input movement is suppressed while the route is active.
       def start_player_route(route, freq)
-        @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
-        @player_char.event_id = MOVE_TARGET_PLAYER # #char_passable?/#char_can_land?'s hero test
+        ch = Game::Character.new(@state.x, @state.y, @state.direction)
+        @player_char = ch
+        ch.event_id = MOVE_TARGET_PLAYER # #char_passable?/#char_can_land?'s hero test
         # Through Mode carries over from whatever an earlier route (or one
         # halted mid-Through-Mode) left it at -- a fresh mirror's own default
         # (false) would otherwise silently turn it back off.
-        @player_char.through = @player_through
-        @player_char.move_frequency = valid_move_freq(freq) ||
-                                      @player_char.move_frequency
+        ch.through = @player_through
+        ch.move_frequency = valid_move_freq(freq) || ch.move_frequency
         @player_route = route
         @player_route_timer = 0
         sync_player_route_to_state
@@ -5284,9 +5289,10 @@ class RPG2k
         return if @moving
         @player_route_timer -= 1
         return if @player_route_timer > 0
-        @player_route_timer = EVENT_MOVE_DELAY[@player_char.move_frequency] || 40
-        ox = @player_char.x
-        oy = @player_char.y
+        ch = @player_char
+        @player_route_timer = EVENT_MOVE_DELAY[ch.move_frequency] || 40
+        ox = ch.x
+        oy = ch.y
         # A boarded party's own Set Move Route commands (Dash, Jump, plain
         # movement, all alike) must clear the *ridden vehicle's* passability,
         # not on-foot chipset passability -- ported from a reference
@@ -5300,14 +5306,16 @@ class RPG2k
         # already does for #try_move (the input-driven path, see
         # @state.boarded? above).
         world = @state.boarded? ? @vehicle_worlds[@state.boarded] : @world
-        run_route_step(@player_route, @player_char, world) unless @player_route.done?
+        run_route_step(@player_route, ch, world) unless @player_route.done?
+        # Read again: a route step runs movement commands, and the mirror is this scene's to replace.
+        ch = @player_char
         # Mirror Through Mode out to the standing flag every step (not just when
         # the route ends), so a Halt All Movement mid-route sees whatever the
         # route had set so far rather than the mirror's now-discarded state.
-        @player_through = @player_char.through
+        @player_through = ch.through
         @state.player_through = @player_through
-        @state.direction = @player_char.direction
-        if @player_char.x != ox || @player_char.y != oy || @player_char.jumped
+        @state.direction = ch.direction
+        if ch.x != ox || ch.y != oy || ch.jumped
           start_player_slide
         end
         @player_route = nil if @player_route.done?
@@ -5319,12 +5327,13 @@ class RPG2k
       # ordinary walking), so everything reading @state.x/y sees a character on a
       # tile rather than between two.
       def start_player_slide
-        @dest_x = @player_char.x
-        @dest_y = @player_char.y
+        ch = @player_char
+        @dest_x = ch.x
+        @dest_y = ch.y
         @moving = true
         @move_count = 0
         @slide_frac = 0
-        @player_jumping = @player_char.jumped
+        @player_jumping = ch.jumped
         @player_forced_step = true
       end
 
@@ -6361,23 +6370,7 @@ class RPG2k
                                req.allow_buy, req.allow_sell)
         has_menu = req.allow_buy && req.allow_sell
         screen = has_menu ? :command : (req.allow_buy ? :buy : :sell)
-        shop = ShopState.new
-        shop.model = model
-        shop.has_menu = has_menu
-        shop.screen = screen
-        shop.index = 0
-        shop.scroll = 0
-        shop.cmd_index = 0
-        shop.window = nil
-        shop.gold = build_shop_gold_window
-        shop.status = nil
-        shop.party = nil
-        shop.desc = nil
-        shop.prompt = nil
-        shop.terms = shop_terms(req.type)
-        shop.browsed = false
-        shop.interp = it
-        @shop = shop
+        @shop = ShopState.new(model, has_menu, screen, build_shop_gold_window, shop_terms(req.type), it)
         draw_shop
       end
 
@@ -6419,13 +6412,14 @@ class RPG2k
       # it is its own separate, full-width window at the screen's bottom
       # message slot instead; see #draw_shop_prompt.
       def shop_header
-        t = @shop.terms
-        case @shop.screen
-        when :command then @shop.browsed ? t[:regreeting] : t[:greeting]
+        shop = @shop
+        t = shop.terms
+        case shop.screen
+        when :command then shop.browsed ? t[:regreeting] : t[:greeting]
         when :buy then t[:buy_select]
         when :sell then t[:sell_select]
         when :quantity
-          @shop.quantity.mode == :buy ? t[:buy_number] : t[:sell_number]
+          shop.quantity.mode == :buy ? t[:buy_number] : t[:sell_number]
         when :purchased then t[:purchased]
         when :sold then t[:sold]
         end
@@ -6469,9 +6463,10 @@ class RPG2k
       # The [label, target] rows for the current shop screen: the command menu's
       # actions, the goods on the buy list, or the party's sellable items.
       def shop_lines
-        m = @shop.model
-        t = @shop.terms
-        case @shop.screen
+        shop = @shop
+        m = shop.model
+        t = shop.terms
+        case shop.screen
         when :command
           rows = []
           rows << [t[:buy], :buy] if m.allow_buy?
@@ -6480,7 +6475,7 @@ class RPG2k
           rows
         when :quantity
           # The counter is one row: how many, and what the stack comes to.
-          q = @shop.quantity
+          q = shop.quantity
           unit = q.mode == :buy ? m.price(q.id) : m.sell_price(q.id)
           verb = q.mode == :buy ? t[:buy] : t[:sell]
           [["#{verb} #{m.name(q.id)} x#{q.count}  " \
@@ -6542,8 +6537,9 @@ class RPG2k
       SHOP_LIST_ROWS = 7
 
       def draw_shop
+        shop = @shop
         lines = shop_lines
-        @shop.index = Game.clamp(@shop.index, 0, [lines.length - 1, 0].max)
+        shop.index = Game.clamp(shop.index, 0, [lines.length - 1, 0].max)
         # Scroll the fixed SHOP_LIST_ROWS-tall window instead of growing it
         # past that -- confirmed against genuine RPG_RT.exe under wine
         # (cycle #147, see SHOP_LIST_ROWS' own comment for the full
@@ -6552,12 +6548,12 @@ class RPG2k
         # (`@shop[:index]`) inside the visible page, matching every other
         # RPG2000 list window's own "scroll just far enough to reveal the
         # cursor" behaviour rather than snapping to a page boundary.
-        @shop.scroll ||= 0
-        @shop.scroll = @shop.index if @shop.index < @shop.scroll
-        if @shop.index > @shop.scroll + SHOP_LIST_ROWS - 1
-          @shop.scroll = @shop.index - SHOP_LIST_ROWS + 1
+        shop.scroll ||= 0
+        shop.scroll = shop.index if shop.index < shop.scroll
+        if shop.index > shop.scroll + SHOP_LIST_ROWS - 1
+          shop.scroll = shop.index - SHOP_LIST_ROWS + 1
         end
-        @shop.scroll = Game.clamp(@shop.scroll, 0, [lines.length - SHOP_LIST_ROWS, 0].max)
+        shop.scroll = Game.clamp(shop.scroll, 0, [lines.length - SHOP_LIST_ROWS, 0].max)
         # The command menu's own Buy/Sell/Leave rows are never drawn into
         # this list window -- confirmed against genuine RPG_RT.exe under
         # wine (cycle #148, a synthetic mode=0 Open Shop command spliced
@@ -6573,7 +6569,7 @@ class RPG2k
         # method tables, so only the 1-argument shape still dispatches; scroll
         # is a non-negative list offset here, and a Range goes through the
         # same mrb_ary_aget1_impl path as (start, length).
-        visible = @shop.screen == :command ? [] : (lines[@shop.scroll...(@shop.scroll + SHOP_LIST_ROWS)] || [])
+        visible = shop.screen == :command ? [] : (lines[shop.scroll...(shop.scroll + SHOP_LIST_ROWS)] || [])
         # Docks flush to the screen's left edge, not inset 10px -- the same
         # stale anti-pattern already diagnosed and fixed for the
         # message window ("300px wide, inset 10px" -> "fixed 320x80 at
@@ -6584,7 +6580,7 @@ class RPG2k
         # edge lands exactly where the panel column starts on Buy/the
         # quantity counter, flush with the panel's own SHOP_STATUS_W+6
         # offset from the screen's right edge.
-        win_w = SHOP_PANELS_VISIBLE_ON.include?(@shop.screen) ? SCREEN_W - SHOP_STATUS_W - 6 : SCREEN_W
+        win_w = SHOP_PANELS_VISIBLE_ON.include?(shop.screen) ? SCREEN_W - SHOP_STATUS_W - 6 : SCREEN_W
         inner_w = win_w - Window::BORDER * 2
         # Always the same fixed height -- never content-sized, whether the
         # list is short (cycle #144's single-good Sell list) or long enough
@@ -6595,7 +6591,7 @@ class RPG2k
         # because the two branches still differ.
         inner_h = [visible.length, 1].max * SHOP_LINE_H
         inner_h = [inner_h, shop_list_min_inner_h].max
-        @shop.window.dispose if @shop.window
+        shop.window.dispose if shop.window
         # Top-anchored right below the description bar (#draw_shop_desc), not
         # bottom-anchored above a 6px screen margin -- confirmed against
         # genuine RPG_RT.exe under wine (cycle #144): the shopkeeper's own
@@ -6612,10 +6608,10 @@ class RPG2k
         end
         win.contents = c
         unless visible.empty?
-          cursor_row = @shop.index - @shop.scroll
+          cursor_row = shop.index - shop.scroll
           win.cursor_rect = Rect.new(0, cursor_row * SHOP_LINE_H, inner_w, SHOP_LINE_H)
         end
-        @shop.window = win
+        shop.window = win
         draw_shop_gold
         draw_shop_status(lines)
         draw_shop_party(lines)
@@ -6654,29 +6650,31 @@ class RPG2k
       SHOP_DESC_VISIBLE_ON = %i[command buy sell quantity purchased sold].freeze
 
       def shop_desc_item_id(lines)
-        return nil unless SHOP_DESC_VISIBLE_ON.include?(@shop.screen)
-        case @shop.screen
+        shop = @shop
+        return nil unless SHOP_DESC_VISIBLE_ON.include?(shop.screen)
+        case shop.screen
         when :buy, :sell
           return nil if lines.nil? || lines.empty?
-          lines[@shop.index][1]
+          lines[shop.index][1]
         when :quantity, :purchased, :sold
-          @shop.quantity && @shop.quantity.id
+          shop.quantity && shop.quantity.id
         end
       end
 
       def draw_shop_desc(lines)
+        shop = @shop
         id = shop_desc_item_id(lines)
-        win = @shop.desc
+        win = shop.desc
         unless win
           win = Window.new(0, 0, SCREEN_W, SHOP_DESC_H)
           win.z = 300
           win.windowskin = @windowskin
-          @shop.desc = win
+          shop.desc = win
         end
         inner_w = SCREEN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, SHOP_LINE_H, id ? @shop.model.description(id) : ''
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, id ? shop.model.description(id) : ''
         win.contents = c
       end
 
@@ -6691,19 +6689,20 @@ class RPG2k
       # The command menu draws differently in this same window -- see
       # #draw_shop_command_prompt.
       def draw_shop_prompt
-        return draw_shop_command_prompt if @shop.screen == :command
+        shop = @shop
+        return draw_shop_command_prompt if shop.screen == :command
         text = shop_header
         if text.nil?
-          @shop.prompt.dispose if @shop.prompt
-          @shop.prompt = nil
+          shop.prompt.dispose if shop.prompt
+          shop.prompt = nil
           return
         end
-        win = @shop.prompt
+        win = shop.prompt
         unless win
           win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
           win.z = 300
           win.windowskin = @windowskin
-          @shop.prompt = win
+          shop.prompt = win
         end
         inner_w = MSG_WIN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H)
@@ -6734,14 +6733,15 @@ class RPG2k
       # compressed one), which makes sense once this is understood to be the
       # message window's own text renderer rather than the shop list's.
       def draw_shop_command_prompt
+        shop = @shop
         rows = shop_lines
         text_lines = [shop_header] + rows.map { |label, _| label }
-        win = @shop.prompt
+        win = shop.prompt
         unless win
           win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
           win.z = 300
           win.windowskin = @windowskin
-          @shop.prompt = win
+          shop.prompt = win
         end
         inner_w = MSG_WIN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, text_lines.length * MSG_LINE_H)
@@ -6750,7 +6750,7 @@ class RPG2k
           c.draw_text 0, i * MSG_LINE_H, inner_w, MSG_LINE_H, line
         end
         win.contents = c
-        win.cursor_rect = Rect.new(0, (1 + @shop.index) * MSG_LINE_H, inner_w, MSG_LINE_H)
+        win.cursor_rect = Rect.new(0, (1 + shop.index) * MSG_LINE_H, inner_w, MSG_LINE_H)
       end
 
       # The gold and status panels share one visible/hidden set: ported from
@@ -6764,15 +6764,16 @@ class RPG2k
       SHOP_PANELS_VISIBLE_ON = %i[buy quantity purchased sold].freeze
 
       def draw_shop_gold
-        visible = SHOP_PANELS_VISIBLE_ON.include?(@shop.screen)
-        @shop.gold.visible = visible
+        shop = @shop
+        visible = SHOP_PANELS_VISIBLE_ON.include?(shop.screen)
+        shop.gold.visible = visible
         return unless visible
         gw = SHOP_STATUS_W
         c = Bitmap.new(gw - Window::BORDER * 2, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, SHOP_LINE_H,
                     "#{@state.party.gold}#{shop_gold_term}"
-        @shop.gold.contents = c
+        shop.gold.contents = c
       end
 
       # 136px wide -- confirmed against genuine RPG_RT.exe under wine (see
@@ -6788,12 +6789,13 @@ class RPG2k
       # see #drive_shop_quantity / #drive_shop_confirm). The command menu and
       # the sell list get no status panel at all, matching SHOP_PANELS_VISIBLE_ON.
       def shop_status_item_id(lines)
-        case @shop.screen
+        shop = @shop
+        case shop.screen
         when :buy
           return nil if lines.nil? || lines.empty?
-          lines[@shop.index][1]
+          lines[shop.index][1]
         when :quantity, :purchased, :sold
-          @shop.quantity && @shop.quantity.id
+          shop.quantity && shop.quantity.id
         end
       end
 
@@ -6808,13 +6810,14 @@ class RPG2k
       # (Party#equipped_item_count) -- a copy currently equipped no longer
       # counts toward the bag, so the two rows can both be nonzero at once.
       def draw_shop_status(lines)
+        shop = @shop
         id = shop_status_item_id(lines)
         if id.nil?
-          @shop.status.dispose if @shop.status
-          @shop.status = nil
+          shop.status.dispose if shop.status
+          shop.status = nil
           return
         end
-        win = @shop.status
+        win = shop.status
         unless win
           # Right-aligned, not the screen's left edge -- confirmed against
           # genuine RPG_RT.exe under wine (see #build_shop_gold_window's own
@@ -6825,7 +6828,7 @@ class RPG2k
                            SHOP_STATUS_W, SHOP_LINE_H * 2 + Window::BORDER * 2)
           win.z = 300
           win.windowskin = @windowskin
-          @shop.status = win
+          shop.status = win
         end
         inner_w = SHOP_STATUS_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H * 2)
@@ -6944,14 +6947,15 @@ class RPG2k
       SHOP_PARTY_ICON_OFFSET = [22, 22].freeze
 
       def draw_shop_party(lines)
+        shop = @shop
         id = shop_status_item_id(lines)
-        visible = id && @shop.model.equip?(id)
+        visible = id && shop.model.equip?(id)
         unless visible
-          @shop.party.dispose if @shop.party
-          @shop.party = nil
+          shop.party.dispose if shop.party
+          shop.party = nil
           return
         end
-        @shop.party ||= begin
+        shop.party ||= begin
           win = Window.new(SCREEN_W - SHOP_STATUS_W - 6, SHOP_DESC_H,
                            SHOP_STATUS_W, SHOP_PARTY_H)
           win.z = 300
@@ -7022,10 +7026,11 @@ class RPG2k
       # so a button press neither dismisses the confirmation early nor
       # does anything else while it is up.
       def drive_shop_confirm
-        @shop.confirm_timer -= 1
-        return if @shop.confirm_timer > 0
-        @shop.screen = @shop.screen == :purchased ? :buy : :sell
-        @shop.quantity = nil
+        shop = @shop
+        shop.confirm_timer -= 1
+        return if shop.confirm_timer > 0
+        shop.screen = shop.screen == :purchased ? :buy : :sell
+        shop.quantity = nil
         draw_shop
       end
 
@@ -7041,16 +7046,17 @@ class RPG2k
       # 99-item cap, or (selling) what it holds. An item with no room at all —
       # unaffordable, already capped — never opens the counter.
       def open_shop_quantity(id)
-        model = @shop.model
-        max = @shop.screen == :buy ? model.max_buy(id) : model.max_sell(id)
+        shop = @shop
+        model = shop.model
+        max = shop.screen == :buy ? model.max_buy(id) : model.max_sell(id)
         return false if max < 1
         q = ShopQuantity.new
         q.id = id
         q.count = 1
         q.max = max
-        q.mode = @shop.screen
-        @shop.quantity = q
-        @shop.screen = :quantity
+        q.mode = shop.screen
+        shop.quantity = q
+        shop.screen = :quantity
         draw_shop
         true
       end
@@ -7059,19 +7065,20 @@ class RPG2k
       # clamped to 1..max), C commits the whole stack in one transaction and B
       # goes back to the list having bought nothing.
       def drive_shop_quantity
-        q = @shop.quantity
+        shop = @shop
+        q = shop.quantity
         if shop_quantity_move(q)
           draw_shop
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
-          model = @shop.model
+          model = shop.model
           mode = q.mode
           mode == :buy ? model.buy(q.id, q.count) : model.sell(q.id, q.count)
           # @shop[:quantity] survives into :purchased/:sold -- the status
           # panel there still needs its item id (see #shop_status_item_id) --
           # and is only cleared once #drive_shop_confirm leaves the screen.
-          @shop.screen = mode == :buy ? :purchased : :sold
-          @shop.confirm_timer = 60
+          shop.screen = mode == :buy ? :purchased : :sold
+          shop.confirm_timer = 60
           draw_shop
           play_system_se(SFX_DECISION)
         elsif Input.trigger?(Input::B)
@@ -7108,8 +7115,9 @@ class RPG2k
       # Leave the counter for the list it was opened from, refreshing the gold
       # and (after a sale) the shrunk list.
       def close_shop_quantity
-        @shop.screen = @shop.quantity.mode
-        @shop.quantity = nil
+        shop = @shop
+        shop.screen = shop.quantity.mode
+        shop.quantity = nil
         draw_shop
       end
 
@@ -7125,15 +7133,16 @@ class RPG2k
       # their Up/Down entirely on repeat-while-held --
       # every RPG2000 list cursor in this ported model auto-repeats.
       def shop_move_cursor(lines)
+        shop = @shop
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !lines.empty?
-          @shop.index += 1
-          @shop.index %= lines.length
+          shop.index += 1
+          shop.index %= lines.length
           draw_shop
           play_system_se(SFX_CURSOR)
           true
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !lines.empty?
-          @shop.index -= 1
-          @shop.index %= lines.length
+          shop.index -= 1
+          shop.index %= lines.length
           draw_shop
           play_system_se(SFX_CURSOR)
           true
@@ -7143,10 +7152,11 @@ class RPG2k
       end
 
       def shop_switch(screen)
+        shop = @shop
         # Once the player has gone into Buy or Sell at all this visit, the
         # shopkeeper's line on returning to the command menu switches from a
         # first-time greeting to "anything else?" for the rest of it.
-        @shop.browsed = true if screen == :buy || screen == :sell
+        shop.browsed = true if screen == :buy || screen == :sell
         # The command menu's own cursor position persists across a trip into
         # Buy/Sell and back, rather than always snapping to the first row --
         # ported from a reference implementation, not independently
@@ -7159,34 +7169,36 @@ class RPG2k
         # only the command menu has a cursor position worth remembering
         # across a screen change -- Buy/Sell/the quantity counter always
         # start a fresh browse at their own first row.
-        @shop.cmd_index = @shop.index if @shop.screen == :command
-        @shop.screen = screen
-        @shop.index = screen == :command ? (@shop.cmd_index || 0) : 0
+        shop.cmd_index = shop.index if shop.screen == :command
+        shop.screen = screen
+        shop.index = screen == :command ? (shop.cmd_index || 0) : 0
         # A fresh browse also starts scrolled to the top -- #draw_shop only
         # ever nudges @shop[:scroll] forward to follow the cursor, so without
         # this a screen re-entered after scrolling deep into a long list
         # (e.g. cancelling out of Buy back to the command menu, then back
         # into Buy) would still open scrolled down instead of showing goods
         # 1..SHOP_LIST_ROWS the way a fresh Buy/Sell always does.
-        @shop.scroll = 0
+        shop.scroll = 0
         draw_shop
       end
 
       def leave_shop
-        transacted = @shop.model.did_transaction
-        interp = @shop.interp
+        shop = @shop
+        transacted = shop.model.did_transaction
+        interp = shop.interp
         close_shop
         interp.resume_shop(transacted)
       end
 
       def close_shop
-        return unless @shop
-        @shop.window.dispose if @shop.window
-        @shop.gold.dispose if @shop.gold
-        @shop.status.dispose if @shop.status
-        @shop.party.dispose if @shop.party
-        @shop.desc.dispose if @shop.desc
-        @shop.prompt.dispose if @shop.prompt
+        shop = @shop
+        return unless shop
+        shop.window.dispose if shop.window
+        shop.gold.dispose if shop.gold
+        shop.status.dispose if shop.status
+        shop.party.dispose if shop.party
+        shop.desc.dispose if shop.desc
+        shop.prompt.dispose if shop.prompt
         @shop = nil
       end
 
@@ -9540,20 +9552,21 @@ class RPG2k
       # for the pair: text on top, choices below). Reuses the existing window,
       # contents bitmap and text layout; only the reveal and line list grow.
       def append_choice_lines(labels)
-        @message.awaiting_followup = nil
+        msg = @message
+        msg.awaiting_followup = nil
         names = ->(id) { actor_name(id) }
         raw = (labels || [])
         raw = [''] if raw.empty?
         # Each choice label inherits the colour the preceding text (or an
         # earlier label) left off at, unless it sets its own -- the whole
         # merged window reads as one continuous colour stream (yado.tk).
-        color = @message.trailing_color || 0
+        color = msg.trailing_color || 0
         scans = raw.map do |l|
           s = Game::Message.scan(l.to_s, @state.variables, names, color)
           color = s.end_color
           s
         end
-        @message.trailing_color = color
+        msg.trailing_color = color
         new_seg_lines = scans.map { |s| s.segments }
         # RPG_RT only merges the options *under* the text when they still fit
         # in the window's four rows; when they do not, the text page finishes
@@ -9564,16 +9577,16 @@ class RPG2k
         # options at rows 1-2 with the text cleared -- not the text plus the
         # first option paginated, which is what appending unconditionally and
         # letting #message_page_layout split it produced here before.
-        if @message.seg_lines.length + new_seg_lines.length > MSG_LINES_PER_PAGE
+        if msg.seg_lines.length + new_seg_lines.length > MSG_LINES_PER_PAGE
           # No room: hold the options back until the text page has been
           # confirmed on its own (#drive_text_message answers :pending_choice),
           # then they replace it.
-          @message.pending_choice = new_seg_lines
-          @message.window.pause = true
+          msg.pending_choice = new_seg_lines
+          msg.window.pause = true
           return
         end
-        @message.choice_start = @message.seg_lines.length
-        @message.seg_lines = @message.seg_lines + new_seg_lines
+        msg.choice_start = msg.seg_lines.length
+        msg.seg_lines = msg.seg_lines + new_seg_lines
         install_choice_lines(new_seg_lines)
       end
 
@@ -9581,11 +9594,12 @@ class RPG2k
       # they follow: the text page has now had its confirm, so the options take
       # the window over from row 0 with the text gone.
       def apply_pending_choice_lines
-        new_seg_lines = @message.pending_choice
-        @message.pending_choice = nil
-        @message.window.pause = false
-        @message.choice_start = 0
-        @message.seg_lines = new_seg_lines
+        msg = @message
+        new_seg_lines = msg.pending_choice
+        msg.pending_choice = nil
+        msg.window.pause = false
+        msg.choice_start = 0
+        msg.seg_lines = new_seg_lines
         install_choice_lines(new_seg_lines)
       end
 
@@ -9593,21 +9607,22 @@ class RPG2k
       # (already spliced into @message[:seg_lines] by the caller, either merged
       # under the text or on their own page).
       def install_choice_lines(new_seg_lines)
-        @message.choice = true
-        @message.count = new_seg_lines.length
+        msg = @message
+        msg.choice = true
+        msg.count = new_seg_lines.length
         # Choice lists appear at once, same as a standalone choice window; the
         # text lines above are already fully revealed. A merged window that runs
         # past one screen still paginates, so recompute the page layout and
         # pause the reveal at each boundary (a confirm pages rather than
         # dismissing, see #drive_message).
-        plain = @message.seg_lines.map { |segs| segs.map { |s| s.text }.join }
+        plain = msg.seg_lines.map { |segs| segs.map { |s| s.text }.join }
         page_pauses, pages = message_page_layout(plain)
         reveal = Game::TextReveal.new(plain, 0, page_pauses,
-                                      @message.auto_close, [], [])
+                                      msg.auto_close, [], [])
         reveal.reveal_all
-        @message.reveal = reveal
-        @message.pages = pages
-        @message.page = 0
+        msg.reveal = reveal
+        msg.pages = pages
+        msg.page = 0
         # Only the newly appended options -- the preceding Show Text already
         # spoke itself from #open_message.
         speak_message(new_seg_lines.map { |segs| segs.map { |s| s.text }.join })
@@ -9747,29 +9762,30 @@ class RPG2k
       # Only the current page's MSG_LINES_PER_PAGE rows are drawn; a "▼" marks
       # that more pages follow.
       def draw_message_contents
-        return unless @message
-        c = @message.contents
+        msg = @message
+        return unless msg
+        c = msg.contents
         c.clear
         draw_message_face
-        lines = @message.seg_lines
-        page = @message.page || 0
+        lines = msg.seg_lines
+        page = msg.page || 0
         start = page * MSG_LINES_PER_PAGE
         # INDEX_CLOSED: see the shop list above -- start is a non-negative
         # page offset here.
         slice = lines[start...(start + MSG_LINES_PER_PAGE)] || []
-        rel = @message.reveal.revealed - message_line_offset(start)
+        rel = msg.reveal.revealed - message_line_offset(start)
         rel = 0 if rel < 0
         vis = Game::Message.visible_segments(slice, rel)
-        right = @message.text_x + @message.text_w
+        right = msg.text_x + msg.text_w
         vis.each_with_index do |segs, i|
-          x = @message.text_x + choice_row_indent(start + i)
+          x = msg.text_x + choice_row_indent(start + i)
           y = i * MSG_LINE_H
           segs.each do |seg|
             draw_message_run(c, x, y, right - x, seg)
             x += c.text_size(seg.text).width
           end
         end
-        draw_message_more if page + 1 < (@message.pages || 1)
+        draw_message_more if page + 1 < (msg.pages || 1)
       end
 
       # Show Choices labels sit MSG_CHOICE_INDENT past the message text's own
@@ -9778,8 +9794,9 @@ class RPG2k
       # list drew its labels at native x 20 in the same window whose plain text
       # sat at native x 8.
       def choice_row_indent(line_index)
-        return 0 unless @message && @message.choice
-        line_index >= (@message.choice_start || 0) ? MSG_CHOICE_INDENT : 0
+        msg = @message
+        return 0 unless msg && msg.choice
+        line_index >= (msg.choice_start || 0) ? MSG_CHOICE_INDENT : 0
       end
 
       # RPG2000's "▼" continuation marker, drawn bottom-right of the message
@@ -9860,10 +9877,11 @@ class RPG2k
       end
 
       def set_choice_cursor
-        return unless @message
-        offset = @message.choice_start || 0
+        msg = @message
+        return unless msg
+        offset = msg.choice_start || 0
         sel = offset + @choice_index
-        page = @message.page || 0
+        page = msg.page || 0
         # The cursor only shows when the selected option is on the current page;
         # RPG2000 scrolls the choice list to keep the selection visible.
         if sel >= page * MSG_LINES_PER_PAGE &&
@@ -9876,21 +9894,22 @@ class RPG2k
           # side (native x 10..309 for the 320-wide window, cycle #257) -- so
           # the rect handed over is pulled in by the overhang plus that inset.
           inset = MSG_CURSOR_INSET + Game::WindowCursor::OVERHANG
-          @message.window.cursor_rect =
+          msg.window.cursor_rect =
             Rect.new(inset, row * MSG_LINE_H,
-                     @message.window.contents.width - inset * 2, MSG_LINE_H)
+                     msg.window.contents.width - inset * 2, MSG_LINE_H)
         else
-          @message.window.cursor_rect = Rect.new(0, 0, 0, 0)
+          msg.window.cursor_rect = Rect.new(0, 0, 0, 0)
         end
       end
 
       # Page the window so the selected choice option is on screen (RPG2000
       # scrolls the list to keep the cursor visible).
       def page_to_choice
-        return unless @message
-        offset = @message.choice_start || 0
+        msg = @message
+        return unless msg
+        offset = msg.choice_start || 0
         sel = offset + @choice_index
-        @message.page = sel / MSG_LINES_PER_PAGE
+        msg.page = sel / MSG_LINES_PER_PAGE
       end
 
       def drive_message
@@ -10113,19 +10132,20 @@ class RPG2k
       # the reference implementation's own fast-forward guard around
       # that same wait -- an ordinary player confirm press must not.
       def drive_message_pause(reveal, pause, pressed, shift_forward)
+        msg = @message
         if pause.kind == :key
           reveal.release_pause if pressed
           return
         end
-        @message.pause_frames ||= if pause.kind == :full
+        msg.pause_frames ||= if pause.kind == :full
                                        MSG_PAUSE_FULL
                                      else
                                        speed = reveal.speed_at(pause.at)
                                        MSG_PAUSE_QUARTER + Game.clamp(speed - 16, 0, 4)
                                      end
-        @message.pause_frames -= 1
-        if shift_forward || @message.pause_frames <= 0
-          @message.pause_frames = nil
+        msg.pause_frames -= 1
+        if shift_forward || msg.pause_frames <= 0
+          msg.pause_frames = nil
           reveal.release_pause
         end
       end
@@ -11927,8 +11947,9 @@ class RPG2k
       # Reuses the event-charset cache: it is the exact same "CharSet/<name>"
       # load a map event's own graphic already goes through.
       def player_draw_charset
-        if @player_char && @player_char.graphic_name
-          [event_charset(@player_char.graphic_name), @player_char.graphic_index]
+        ch = @player_char
+        if ch && ch.graphic_name
+          [event_charset(ch.graphic_name), ch.graphic_index]
         else
           [@charset, @charset_index]
         end
