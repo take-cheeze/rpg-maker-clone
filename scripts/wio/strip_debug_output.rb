@@ -1,11 +1,10 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# wio-only build step: strips $stderr.puts diagnostic statements out of a
-# copy of a .rb file before it reaches mrbc, the same way other build steps
-# already strip mrbc/cc debug metadata -- these are unobservable on
-# env:wio_rgss_boot today (no serial console wired up) but still cost real
-# flash (a string-literal pool entry plus call/dispatch opcodes per site).
+# wio-only build step (WIO_WORLD_STRIP's opt-in debug pass): strips
+# $stderr.puts statements out of a copy of a .rb file. That includes the
+# [RPG2k]/[RGSS] logs of recovered errors the firmware writes to stderr, so
+# no build runs it by default.
 #
 # Deliberately not a regex/sed pass: this codebase has real multi-line
 # $stderr.puts calls joined by a trailing `\` (e.g.

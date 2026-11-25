@@ -11341,12 +11341,17 @@ class RPG2k
       # How many toned picture variants to keep before evicting the oldest.
       PICTURE_TONE_CACHE_MAX = 16
 
+      # The drawn zoom (%), so src.width * zoom stays in a 32-bit mrb_int for an image up to 21_474 px wide;
+      # Game::Picture::COORD_MAX alone would not.
+      PICTURE_ZOOM_MAX = 100_000
+
       def draw_picture(pic, cam_x, cam_y)
         src = picture_src(pic.name, pic.use_transparent_color)
         return unless src
         src = (toned_picture_src(pic, src) || src) if toned?(pic)
-        zw = src.width * pic.zoom / 100
-        zh = src.height * pic.zoom / 100
+        zoom = Game.clamp(pic.zoom, 0, PICTURE_ZOOM_MAX)
+        zw = src.width * zoom / 100
+        zh = src.height * zoom / 100
         return if zw <= 0 || zh <= 0
         # RPG2000 positions a picture by its centre.
         dx = pic.x - zw / 2

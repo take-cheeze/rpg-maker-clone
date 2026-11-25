@@ -3,7 +3,7 @@
 **
 ** Unlike hal-posix-io's target platforms, this board's newlib has no dirent,
 ** lstat, symlink, fork/exec, or select -- there is no process model and FAT
-** (via app/wio/src/sd_syscalls.cxx's newlib syscall hooks, WIO_WITH_SD) has
+** (via app/wio/src/wio_game_rom.cxx's newlib syscall hooks) has
 ** no symlinks or Unix permissions to begin with. Real RPG2000/2003 play
 ** (mruby-rpg2k/mrblib, mruby-lcf/mrblib, mruby-rgss/mrblib -- see their own
 ** File.* call sites) only ever opens, reads, writes, checks existence of and
@@ -59,7 +59,7 @@ static void convert_stat(const struct stat* src, mrb_io_stat* dst) {
 }
 
 /*
- * Core I/O operations -- real, backed by sd_syscalls.cxx's newlib hooks.
+ * Core I/O operations -- real, backed by wio_game_rom.cxx's newlib hooks.
  */
 
 int mrb_hal_io_open(mrb_state* mrb, const char* path, int flags, uint32_t mode) {

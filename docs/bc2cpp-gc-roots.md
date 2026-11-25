@@ -70,7 +70,9 @@ before the call and uses the local after it holds the only reference, and a coll
   and the plain Array/String/Hash allocators. An allocation may run the GC, but an element no code has unlinked is
   still reachable from its container. `BC2CPP_ELEMENT_READ_PURE=0` counts them as calls again.
 - A method that RegisterFlow refuses, and a method compiled without the flow pass (`REGISTER_FLOW=0`, a resumable
-  body, a method with a prefix), roots every element read: there is no liveness to narrow it.
+  body, a method with a prefix), roots every element read: there is no liveness to narrow it. So does every body
+  compiled outside the method's own pass: a rescue's try body, a block that stays a function, an inlined loop or
+  call body.
 - The inlined loops over a live Array root their element register each iteration when the body contains a call
   (`ElementReadRoots.loop_keep`): `each`, `map`/`select`/`find`, `inject`/`any?`/..., and the `sort_by` key loop.
   The `&:sym` loop roots its element unconditionally, since it calls the element by name. The inlined `Hash#each`,

@@ -35,9 +35,9 @@ class RPG2k
       SCREEN_H = RPG2k::HEIGHT
 
       # The fight's live state (#ui): phase, the Game::Battle model, combatant snapshots, cursors, windows and
-      # sprites. Fixed fields instead of a Symbol-keyed Hash; a field #start has not set yet reads nil.
+      # sprites. Fixed fields instead of a Symbol-keyed Hash.
       class Ui
-        # Set once, by #start.
+        # Set once, by #initialize.
         attr_reader :allies, :battle, :events, :foes, :troop
         attr_accessor :action_win, :actor_i, :actor_sprites, :ally_i, :ally_win, :anim_timer, :back_sprite,
                       :banner_pending, :banner_reveal, :banner_shown, :banner_timer, :battler_boundary, :cmd,
@@ -47,8 +47,9 @@ class RPG2k
                       :pages_run, :pending, :phase, :result, :result_win, :skill_i, :skill_top, :skill_win, :skills,
                       :sprite_hues, :sprite_names, :status_win, :target_i, :target_win
 
-        # Every field is a store here or in #start, so the fields get fixed slots.
-        def initialize
+        # The fight's opening state (Scene::Battle#initialize). Every field is a store here, so the fields get fixed
+        # slots, and the model fields hold their objects from the first moment.
+        def initialize(troop, battle, allies, foes, events)
           @actor_sprites = nil
           @banner_pending = nil
           @banner_reveal = nil
@@ -66,10 +67,6 @@ class RPG2k
           @skill_top = nil
           @sprite_hues = nil
           @sprite_names = nil
-        end
-
-        # The fight's opening state (Scene::Battle#start).
-        def start(troop, battle, allies, foes, events)
           @phase = :command
           @troop = troop
           # Whether the Battle/Auto Battle/Escape options window
@@ -133,11 +130,13 @@ class RPG2k
       # two interpreters racing for the single battle slot cannot drive each
       # other's fight.
       #
-      # Nothing is built here: #start opens the fight (SE, BGM, troop, sprites,
-      # the encounter banner) once the map has this scene in hand, since
-      # opening one can immediately finish it again -- an empty or all-KO'd
-      # party settles to a defeat on the spot -- and that has to be able to
-      # reach back through the map.
+      # Only the model is built here (troop, Game::Battle, the event
+      # interpreter): #start opens the fight (SE, BGM, sprites, the encounter
+      # banner) once the map has this scene in hand, since opening one can
+      # immediately finish it again -- an empty or all-KO'd party settles to a
+      # defeat on the spot -- and that has to be able to reach back through the
+      # map. The map calls #start right after #new, so building the model first
+      # draws from @rng in the same order.
       def initialize(map, req, owner)
         super map.parent
         @map_scene = map
@@ -153,9 +152,82 @@ class RPG2k
         @backdrop_cache = map.backdrop_cache
         @battlecharset_cache = map.battlecharset_cache
         @system2_cache = map.system2_cache
-        # Filled by #start: a Ui from the first moment, so every method can read it (unset fields are nil).
-        @ui = Ui.new
+        # A Ui from the first moment, so every method can read it, and its model fields are never nil. A class method
+        # builds it: a block or a call on self before the store would let self out, and the reads keep their nil test.
+        @ui = Battle.new_ui(@db, @state, @rng, @req)
         @disposed = false
+      end
+
+      # The fight's model (Game::Troop, the combatants, Game::Battle and the event interpreter) in a new Ui, for
+      # #initialize.
+      def self.new_ui(db, state, rng, req)
+        troop = Game::Troop.new(db, req.troop_id, rng)
+        allies = state.party.actors.map { |a| Game::Battle.from_actor(a) }
+        foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
+        # The database's state table drives per-turn afflictions (poison slip,
+        # sleep skip) in battle.
+        situations = LCF.field?(db, :situation) ? db[:situation] : nil
+        properties = LCF.field?(db, :property) ? db[:property] : nil
+        # `allies.dup`, not `allies` itself: `@ui.allies`
+        # below stays the exact same array Game::Battle is
+        # handed here would otherwise *be* -- Ruby arrays are
+        # mutable objects, so without the dup, deleting a
+        # departed member from the render-facing
+        # `@ui.allies` (#remove_battle_actor_sprite)
+        # would delete it from Game::Battle's own bookkeeping
+        # array too, breaking the rejoin-reuses-the-same-
+        # Combatant guarantee #sync_allies_from_party depends
+        # on. The two arrays start with the same
+        # Combatant *objects* (so a lookup through either one
+        # sees the same battle-only state) but are free to
+        # diverge in which objects they each hold.
+        battle = Game::Battle.new(allies.dup, foes, rng,
+                                  situations, true, true, true,
+                                  req.first_strike ? true : false,
+                                  properties,
+                                  # Lets the troop run its 行動パターン:
+                                  # skills, transformations and the
+                                  # switch / party-level conditions.
+                                  Game::EnemyAi.new(db, state),
+                                  # A negative attribute rank rate
+                                  # (see #apply_attr_multiplier)
+                                  # is handled differently per
+                                  # edition.
+                                  rpg2003: Game.rpg2003_database?(db),
+                                  # RPG2003 battle timing
+                                  # presentation (Battle Setup
+                                  # chunk 0x1D field 7): 0
+                                  # traditional / 1 alternative /
+                                  # 2 gauge. Drives whether the
+                                  # active-time gauge engine
+                                  # (#advance_gauges) ever runs;
+                                  # RPG2000 has no battlecommands
+                                  # table, so this reads 0 and the
+                                  # turn-based machine is used.
+                                  battle_type: LCF.field?(db, :battlecommands) && db[:battlecommands] ? (db[:battlecommands][:battle_type] || 0) : 0,
+                                  # Mid-battle roster sync
+                                  # (Game::Battle#sync_allies_from_party):
+                                  # a Change Party Member command
+                                  # run from a battle event page
+                                  # mutates this same live
+                                  # Game::Party, and the battle
+                                  # re-derives its own @allies
+                                  # from it every round/action
+                                  # rather than staying pinned to
+                                  # the `allies` snapshot taken
+                                  # just above. The screen itself
+                                  # (`@ui.allies`, the
+                                  # status window, actor sprites)
+                                  # follows the same change the
+                                  # instant it happens instead --
+                                  # see #on_battle_party_changed,
+                                  # reached from
+                                  # Interpreter#do_change_party
+                                  # via `@ui.events.
+                                  # battle_screen` (#start).
+                                  party: state.party)
+        events = Game::Interpreter.new(state)
+        Ui.new(troop, battle, allies, foes, events)
       end
 
       # `ui` is the fight's whole live state: phase, the Game::Battle model,
@@ -244,74 +316,6 @@ class RPG2k
         # shared entry point.
         play_system_se(SFX_BATTLE)
         @map_scene.play_battle_bgm
-        troop = Game::Troop.new(db, @req.troop_id, @rng)
-        allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
-        foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
-        # The database's state table drives per-turn afflictions (poison slip,
-        # sleep skip) in battle.
-        situations = LCF.field?(db, :situation) ? db[:situation] : nil
-        properties = LCF.field?(db, :property) ? db[:property] : nil
-        # Built before any field is set, in the literal's order, so a failing constructor leaves @ui untouched.
-        # `allies.dup`, not `allies` itself: `@ui.allies`
-        # below stays the exact same array Game::Battle is
-        # handed here would otherwise *be* -- Ruby arrays are
-        # mutable objects, so without the dup, deleting a
-        # departed member from the render-facing
-        # `@ui.allies` (#remove_battle_actor_sprite)
-        # would delete it from Game::Battle's own bookkeeping
-        # array too, breaking the rejoin-reuses-the-same-
-        # Combatant guarantee #sync_allies_from_party depends
-        # on. The two arrays start with the same
-        # Combatant *objects* (so a lookup through either one
-        # sees the same battle-only state) but are free to
-        # diverge in which objects they each hold.
-        battle = Game::Battle.new(allies.dup, foes, @rng,
-                                  situations, true, true, true,
-                                  @req.first_strike ? true : false,
-                                  properties,
-                                  # Lets the troop run its 行動パターン:
-                                  # skills, transformations and the
-                                  # switch / party-level conditions.
-                                  Game::EnemyAi.new(db, @state),
-                                  # A negative attribute rank rate
-                                  # (see #apply_attr_multiplier)
-                                  # is handled differently per
-                                  # edition.
-                                  rpg2003: Game.rpg2003_database?(db),
-                                  # RPG2003 battle timing
-                                  # presentation (Battle Setup
-                                  # chunk 0x1D field 7): 0
-                                  # traditional / 1 alternative /
-                                  # 2 gauge. Drives whether the
-                                  # active-time gauge engine
-                                  # (#advance_gauges) ever runs;
-                                  # RPG2000 has no battlecommands
-                                  # table, so this reads 0 and the
-                                  # turn-based machine is used.
-                                  battle_type: LCF.field?(db, :battlecommands) && db[:battlecommands] ? (db[:battlecommands][:battle_type] || 0) : 0,
-                                  # Mid-battle roster sync
-                                  # (Game::Battle#sync_allies_from_party):
-                                  # a Change Party Member command
-                                  # run from a battle event page
-                                  # mutates this same live
-                                  # Game::Party, and the battle
-                                  # re-derives its own @allies
-                                  # from it every round/action
-                                  # rather than staying pinned to
-                                  # the `allies` snapshot taken
-                                  # just above. The screen itself
-                                  # (`@ui.allies`, the
-                                  # status window, actor sprites)
-                                  # follows the same change the
-                                  # instant it happens instead --
-                                  # see #on_battle_party_changed,
-                                  # reached from
-                                  # Interpreter#do_change_party
-                                  # via `@ui.events.
-                                  # battle_screen` below.
-                                  party: @state.party)
-        events = Game::Interpreter.new(@state)
-        @ui.start(troop, battle, allies, foes, events)
         @ui.events.battle = @ui.battle
         # Lets a Change Party Member command run from a battle event page
         # (Interpreter#do_change_party) reach back into this screen the
@@ -353,7 +357,7 @@ class RPG2k
         # real RPG_RT orders them. Nothing shows when the troop is entirely
         # hidden and the fight is not a first strike, matching the check
         # that gates the whole substate there.
-        lines = battle_encounter_lines(troop, @req)
+        lines = battle_encounter_lines(@ui.troop, @req)
         if lines.empty?
           # #settle_already_finished_battle must run before #run_battle_events,
           # not after (the order these two calls used to run in): an empty

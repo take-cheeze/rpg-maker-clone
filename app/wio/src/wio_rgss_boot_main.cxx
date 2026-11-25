@@ -2,8 +2,9 @@
 // brings up the RGSS/mruby-lcf/mruby-rpg2k gem set, then exercises the LVGL HAL
 // (compiled into libmruby.a, mruby-rgss/src/wio.cxx) and the button scan.
 //
-// No game data is loaded; loading one needs the SD-backed asset streaming that
-// libmruby.a alone does not provide. The status screen echoes the pressed keys.
+// No game is played yet: the boot only looks for the game's files (the microSD
+// card's game folder, then the QSPI game image; wio_game_rom.cxx) and shows
+// where they would come from. The status screen echoes the pressed keys.
 //
 // Deliberately does NOT define its own mrb_init_mrbgems: libmruby.a already
 // carries the real, generated one build_config.rb's own
@@ -27,7 +28,9 @@
 #include <cstring>
 
 #include "wio.hxx"
+#include "wio_game_rom.h"
 #include "wio_qspi_xip.h"
+#include "wio_sd.h"
 
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
@@ -204,6 +207,17 @@ void setup(void) {
 
   g_result = kResultPass;
   build_ui("mruby+RGSS+LVGL: OK");
+
+#if WIO_QSPI_XIP
+  const char* game = wio_game_files_begin();
+#else
+  // The QSPI window is never opened: there is no game image to look at.
+  const char* game = wio_sd_state_text(wio_sd_begin());
+#endif
+  lv_obj_t* game_label = lv_label_create(lv_screen_active());
+  lv_label_set_text(game_label, game);
+  lv_obj_set_style_text_color(game_label, lv_color_white(), 0);
+  lv_obj_align(game_label, LV_ALIGN_CENTER, 0, 80);
 
   g_keys_label = lv_label_create(lv_screen_active());
   lv_label_set_text(g_keys_label, "Keys: (none)");

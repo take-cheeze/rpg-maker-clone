@@ -4,7 +4,7 @@
 # wio-only build step: deletes the RGSS render/audio probes from a
 # build-time copy of mruby-rgss/mrblib/lib.rb. Only src/main.cxx's desktop
 # --rgss_effect_probe / --rgss_audio_probe flags call them, and on wio they
-# are dead bytecode. build_config.rb's wio_strip_rgss_probes wires this in.
+# are dead bytecode. WIO_WORLD_STRIP's probes pass (world_strip.rb) runs it.
 #
 # Raises, rather than guessing, when a probe is missing or defined more than
 # once, when a def shares a line with other code, when anything left in the

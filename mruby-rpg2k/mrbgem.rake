@@ -1502,9 +1502,6 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # (mixed stripped/kept companion statements shrink to the kept names)
   # plus a `:SYM`-node Symbol-arg case, both exercised for real by
   # `RPG2k::Scene::Map`'s own newly-mixed `public` lists this round.
-  wio_strip_inline_helpers(spec)
-  wio_strip_clock(spec)
-  wio_strip_debug_rbfiles(spec)
   bc2cpp_blank_units(spec)
   # VM-free wio: mruby-rpg2k-compiled provides every method, so this gem's bytecode is not linked
   # (the compiled gems' rbfiles are cleared the same way in build_config.rb).
