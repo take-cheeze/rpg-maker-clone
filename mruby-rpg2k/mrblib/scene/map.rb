@@ -521,6 +521,9 @@ class RPG2k
         @map = state.map
         # Filled by #build_parallels below; empty until then, so no reader sees nil.
         @parallels = []
+        # Replaced by #build_events below; stored before the first call on self so no read sees it unset (the
+        # declaration has no `?`).
+        @events = []
         # Named graphics loaded and memoized on demand -- see #cached_bitmap.
         # One cache per graphic category (rather than a single cache keyed by
         # a [kind, name] tuple) so each material's entries stay a plain
