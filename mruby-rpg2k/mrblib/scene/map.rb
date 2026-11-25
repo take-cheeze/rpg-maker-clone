@@ -51,14 +51,17 @@ class RPG2k
       # boolean field only `true`/`false` -- the typed struct field's
       # attr_writer raises TypeError on anything else.
       class MapEventState
-        attr_accessor :id, :char, :page, :page_number, :trigger, :commands, :guarded, :move_type, :route,
+        attr_reader :char
+        attr_accessor :id, :page, :page_number, :trigger, :commands, :guarded, :move_type, :route,
                       :move_timer, :layer, :overlap_forbidden, :translucent, :anim_type, :base_dir,
                       :base_pattern, :anim_phase, :anim_count, :moving, :disp_x, :disp_y, :move_count,
                       :slide_frac, :jumping, :flash, :forced_route, :forced_freq, :crossed_hero_this_frame
 
-        def initialize
+        # The Game::Character is given here, so @char is set before any read
+        # (its declaration has no `?`).
+        def initialize(char)
           @id = 0
-          @char = nil
+          @char = char
           @page = nil
           @page_number = nil
           @trigger = nil
@@ -1760,11 +1763,10 @@ class RPG2k
         # `_impl`, and a Struct's #initialize is native, so the keyword form
         # dropped this whole per-frame-hot method out of AOT compilation.
         # MapEventState is a plain class now whose
-        # #initialize takes no arguments; the setters below still write
-        # every field #build_event owns before this returns.
-        event = MapEventState.new
+        # #initialize takes only the character; the setters below still write
+        # every other field #build_event owns before this returns.
+        event = MapEventState.new(ch)
         event.id = id
-        event.char = ch
         event.page = page
         event.page_number = page_number
         event.trigger = page_trigger(page)
