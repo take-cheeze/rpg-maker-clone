@@ -1652,6 +1652,14 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/rescue_try_lean_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/ensure_body_block_check.rb:
     tier: runtime
     capabilities:
