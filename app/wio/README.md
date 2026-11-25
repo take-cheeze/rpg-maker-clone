@@ -51,6 +51,9 @@ the code a map or battle frame spends its QSPI cache misses in internal. To redo
 `env:wio` is `app/wio/src/wio_rgss_boot_main.cxx`, which boots the compiled
 engine.
 
+The developer tools (F9 debug menu, map viewer/editor, chipset editor) are not in the Wio firmware: F9 does
+nothing. `WIO_DEBUG_SCENES=1` at build time keeps them.
+
 ## Renode: `wio_sim`
 
 `pio run -e wio_sim -t upload` builds `wio` and boots it under the project's Renode
