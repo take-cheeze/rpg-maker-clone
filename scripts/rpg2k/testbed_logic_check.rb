@@ -65,6 +65,7 @@ load File.join(root, 'mruby-lcf/mrblib/lcf_file.rb')
 load File.join(root, 'mruby-lcf/mrblib/save_typed.rb')
 load File.join(root, 'mruby-lcf/mrblib/save_typed_accessors.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/game.rb')
+require_relative 'native_stand_ins'
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'legacy_lsd.rb')

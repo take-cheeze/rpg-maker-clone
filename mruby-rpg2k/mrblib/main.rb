@@ -902,23 +902,6 @@ class RPG2k
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
   end
 
-  # --rpg2k_map_editor: push Scene::MapViewer straight into Edit mode on top
-  # of the just-built map scene, the same scene F9's Map page would push, just
-  # skipping the menu navigation to get there.
-  def open_map_editor(state)
-    push Scene::MapViewer.new(self, state, start_mode: :edit, quit_on_close: true)
-  rescue StandardError => e
-    $stderr.puts "[RPG2k] --rpg2k_map_editor failed to open: #{e.message}"
-  end
-
-  # --rpg2k_chipset_editor: push Scene::ChipsetEditor for the starting map's
-  # chipset, the same scene F9's Chipset page would push.
-  def open_chipset_editor(state)
-    push Scene::ChipsetEditor.new(self, state, quit_on_close: true)
-  rescue StandardError => e
-    $stderr.puts "[RPG2k] --rpg2k_chipset_editor failed to open: #{e.message}"
-  end
-
   # --rpg2k_preview_animation: play the named battle animation back on `scene`
   # (the just-built map scene) screen-centred, through the same
   # build_animation/anim_target/map_animation= trio Scene::DebugMenu's own

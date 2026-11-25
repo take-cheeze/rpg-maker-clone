@@ -1503,7 +1503,9 @@ module Game
       return 0 if img_px.nil? || img_px <= 0
       if loop
         base = cam_px / 2
-        base += autoscroll_px(speed, frame) if autoscroll
+        # One period of the offset is 32 * img_px frames: the remainder below is the same, and frame * amt stays
+        # inside 32 bits however long the map has run.
+        base += autoscroll_px(speed, frame % (32 * img_px)) if autoscroll
         -(base % img_px)
       else
         anchored_offset(cam_px, screen_px, map_px, img_px)
@@ -3856,7 +3858,11 @@ module Game
       correction = db_exp_param(:exp_correction).to_f
       result = 0
       n.times do
-        result += (correction + base).to_i
+        term = correction + base
+        # With base, correction >= 0 and inflation >= 1 (the update keeps both) no later term is negative, so once the
+        # total reaches the cap the answer is the cap; stopping here keeps to_i off a Float past 32 bits.
+        return exp_max if result >= 0 && base >= 0 && correction >= 0 && inflation >= 1 && result + term >= exp_max
+        result += term.to_i
         base *= inflation
         inflation = ((n + 1) * 0.002 + 0.8) * (inflation - 1) + 1
       end
@@ -6517,7 +6523,8 @@ module Game
     # seeded result in the project to no purpose.
     def scaled(scale)
       return 0 if scale <= 0
-      next_int * scale / PERIOD
+      # In 64 bits (src/rgss_ext.cxx): next_int * 1_000_000 passes 32 bits.
+      Game.mul_div(next_int, scale, PERIOD)
     end
   end
 

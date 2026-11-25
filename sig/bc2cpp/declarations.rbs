@@ -6967,10 +6967,6 @@ class Game::Interpreter
   def play_audio: (untyped, LCF::EventCommand) -> nil
   # An op outside 0..2 falls out of the `case` with nil.
   def set_switch: (Integer, Integer) -> (bool | nil)
-  %a{bc2cpp:hint}
-  def trunc_div: (Integer, Integer) -> Integer
-  %a{bc2cpp:hint}
-  def trunc_mod: (Integer, Integer) -> Integer
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def choice_cancellable?: () -> bool
 end
