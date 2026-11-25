@@ -315,7 +315,73 @@ struct Table {
 static size_t g_bitmap_bytes_decoded = 0;
 static size_t g_bitmap_bytes_blank = 0;
 
+// PIXEL_GC: pixels are plain heap blocks, invisible to a GC that counts
+// objects, so dropped bitmaps hold theirs until enough other objects pile up.
+// pixel_alloc runs a full GC first once the live pixel bytes have grown past
+// what survived the last one by that much again (kPixelGcGrowth at least),
+// and once more when malloc cannot give it the bytes; failing again, it raises
+// NoMemoryError. malloc is asked first because the Wio core's operator new
+// answers nullptr instead of throwing. Never while LVGL draws (PixelGcHold):
+// collecting a sprite deletes its LVGL object.
+static mrb_state* g_pixel_mrb = nullptr;
+static int g_pixel_gc_hold = 0;
+static size_t g_pixel_gc_base = 0;
+constexpr size_t kPixelGcGrowth = 256 * 1024;
+
+struct PixelGcHold {
+  PixelGcHold() { ++g_pixel_gc_hold; }
+  ~PixelGcHold() { --g_pixel_gc_hold; }
+  PixelGcHold(const PixelGcHold&) = delete;
+};
+
+static size_t pixel_bytes_live() {
+  return g_bitmap_bytes_decoded + g_bitmap_bytes_blank;
+}
+
+static void pixel_gc(mrb_state* M) {
+  mrb_full_gc(M);
+  g_pixel_gc_base = pixel_bytes_live();
+}
+
+static bool pixel_fits(size_t n) {
+  // volatile: a compiler may otherwise fold an unused malloc to success.
+  void* volatile p = std::malloc(n);
+  std::free(p);
+  return p != nullptr;
+}
+
+// Runs `alloc`, which allocates `n` bytes of pixels (see PIXEL_GC).
+template <class F>
+void pixel_alloc(size_t n, F&& alloc) {
+  mrb_state* const M = g_pixel_gc_hold ? nullptr : g_pixel_mrb;
+  if (M && n > 0) {
+    const size_t live = pixel_bytes_live();
+    // Something freed pixels since: what is left is the new base.
+    if (live < g_pixel_gc_base)
+      g_pixel_gc_base = live;
+    if (live + n > g_pixel_gc_base + std::max(kPixelGcGrowth, g_pixel_gc_base))
+      pixel_gc(M);
+    if (!pixel_fits(n)) {
+      pixel_gc(M);
+      if (!pixel_fits(n)) {
+        std::fprintf(stderr,
+                     "[RGSS] no memory for %zu bytes of bitmap pixels after a "
+                     "full GC\n",
+                     n);
+        mrb_exc_raise(M, mrb_obj_value(M->nomem_err));
+      }
+    }
+  }
+  alloc();
+}
+
 struct DeferredList;
+
+// LAZY_PIXELS: a `Bitmap.new(w, h)` holds no pixels until something reads or
+// draws them; until then every pixel is transparent black. ensure_pixels
+// allocates them, and DataType::get, promote_to_direct, bmp_require_shared and
+// spr_bind_display call it, so only bmp_raw users see the empty buffer.
+struct LazyPixels {};
 
 struct Bitmap {
   static constexpr const char* kTypeName = "Bitmap";
@@ -339,6 +405,9 @@ struct Bitmap {
   // Set by Bitmap#_defer: a materialized bitmap goes back to recording once a
   // clear or a whole-bitmap fill makes its pixels irrelevant.
   bool wants_defer = false;
+  // See LAZY_PIXELS: `buffer` is empty and stands for width x height
+  // transparent pixels.
+  bool lazy = false;
   // Set whenever `buffer` is mutated so Graphics.update can invalidate the
   // sprites showing this bitmap and have LVGL redraw them. Starts true so the
   // initial contents are painted on the first frame after assignment.
@@ -356,10 +425,19 @@ struct Bitmap {
         height(h),
         format(f),
         direct_format(f),
-        buffer(w * h * lv_color_format_get_size(f)),
         decoded_from_source(decoded) {
+    const size_t n = w * h * lv_color_format_get_size(f);
+    pixel_alloc(n, [&] { buffer.assign(n, 0); });
     counter() += bytes();
   }
+
+  Bitmap(mrb_int w, mrb_int h, lv_color_format_t f, LazyPixels)
+      : width(w),
+        height(h),
+        format(f),
+        direct_format(f),
+        lazy(w > 0 && h > 0),
+        decoded_from_source(false) {}
 
   ~Bitmap() { counter() -= bytes(); }
 
@@ -384,16 +462,19 @@ struct Bitmap {
   Bitmap& operator=(const Bitmap& other) {
     if (this == &other)
       return *this;
+    std::vector<uint8_t> px;
+    pixel_alloc(other.buffer.size(), [&] { px = other.buffer; });
     counter() -= bytes();
     width = other.width;
     height = other.height;
     format = other.format;
     direct_format = other.direct_format;
-    buffer = other.buffer;
+    buffer.swap(px);
     palette = other.palette;
     rom_px = other.rom_px;
     rom_pal = other.rom_pal;
     deferred = other.deferred;
+    lazy = other.lazy;
     dirty = other.dirty;
     counter() += bytes();
     return *this;
@@ -452,15 +533,29 @@ void bmp_read(const Bitmap& b,
 // in-place writer (hue_change) takes its own copy first (own_palette).
 void deferred_materialize(Bitmap& b);
 
+// See LAZY_PIXELS.
+void ensure_pixels(Bitmap& b) {
+  if (!b.lazy)
+    return;
+  const size_t n = static_cast<size_t>(b.width) * b.height *
+                   lv_color_format_get_size(b.format);
+  pixel_alloc(n, [&] { b.buffer.assign(n, 0); });
+  b.lazy = false;
+  b.counter() += b.bytes();
+}
+
 void promote_to_direct(Bitmap& b, bool keep = true) {
   if (b.deferred) {
     deferred_materialize(b);
     return;
   }
+  ensure_pixels(b);
   if (!b.indexed())
     return;
   const unsigned bpp = lv_color_format_get_size(b.direct_format);
-  std::vector<uint8_t> out(static_cast<size_t>(b.width) * b.height * bpp);
+  std::vector<uint8_t> out;
+  const size_t n = static_cast<size_t>(b.width) * b.height * bpp;
+  pixel_alloc(n, [&] { out.assign(n, 0); });
   if (keep) {
     // Palette entries are B, G, R, A: their first `bpp` bytes are the pixel in
     // either direct format.
@@ -533,6 +628,7 @@ inline void settle_for_access(T&) {}
 inline void settle_for_access(Bitmap& b) {
   if (b.deferred)
     deferred_materialize(b);
+  ensure_pixels(b);
 }
 
 template <class T>
@@ -555,7 +651,17 @@ struct DataType {
   template <class... Args>
   static std::shared_ptr<T> make_owned(mrb_state* M, Args... args) {
     void* mem_ptr = mrb_malloc(M, sizeof(T));
-    T* ptr = new (mem_ptr) T{args...};
+    T* ptr;
+#if defined(__cpp_exceptions)
+    try {
+      ptr = new (mem_ptr) T{args...};
+    } catch (...) {
+      mrb_free(M, mem_ptr);
+      throw;
+    }
+#else
+    ptr = new (mem_ptr) T{args...};
+#endif
     return std::shared_ptr<T>(ptr, [M](T* p) {
       std::destroy_at(p);
       mrb_free(M, p);
@@ -1345,7 +1451,8 @@ mrb_value bmp_init_size_native_body(mrb_state* M,
                                     mrb_value self,
                                     mrb_int w,
                                     mrb_int h) {
-  DataType<Bitmap>::alloc_obj(M, self, w, h, LV_COLOR_FORMAT_ARGB8888);
+  DataType<Bitmap>::alloc_obj(M, self, w, h, LV_COLOR_FORMAT_ARGB8888,
+                              LazyPixels{});
   return self;
 }
 
@@ -1774,6 +1881,14 @@ static bool bmp_init_rom(mrb_state* M,
 }
 
 #if !defined(WIO_TERMINAL)
+// Ruby: Bitmap._pixel_bytes -> the heap bytes every live bitmap's pixels and
+// palettes take (the tests' view of LAZY_PIXELS).
+mrb_value bmp_s_pixel_bytes(mrb_state* M, V self) {
+  (void)self;
+  return mrb_int_value(
+      M, static_cast<mrb_int>(g_bitmap_bytes_decoded + g_bitmap_bytes_blank));
+}
+
 // Ruby: Bitmap._rom_bitmaps(section or nil, root) -> whether it was taken.
 // The tests' way in to the ROM path. Each section is copied and kept for good:
 // bitmaps loaded from an earlier one still point into it.
@@ -1884,7 +1999,10 @@ const std::shared_ptr<Bitmap>& bmp_require_shared(mrb_state* M, void* p) {
     mrb_raise(M, mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError)),
               "disposed Bitmap");
   }
-  return *reinterpret_cast<std::shared_ptr<Bitmap>*>(p);
+  const std::shared_ptr<Bitmap>& s =
+      *reinterpret_cast<std::shared_ptr<Bitmap>*>(p);
+  ensure_pixels(*s);
+  return s;
 }
 
 // Write an RGBA color into the bitmap at (x, y). LVGL stores ARGB8888 as
@@ -1993,8 +2111,10 @@ mrb_value bmp_clear(mrb_state* M, V self) {
     b.dirty = true;
     return self;
   }
-  promote_to_direct(b, /* keep = */ false);
-  std::fill(b.buffer.begin(), b.buffer.end(), 0);
+  if (!b.lazy) {
+    promote_to_direct(b, /* keep = */ false);
+    std::fill(b.buffer.begin(), b.buffer.end(), 0);
+  }
   b.dirty = true;
   return self;
 }
@@ -2794,6 +2914,7 @@ bool deferred_begin(Bitmap& b) {
   std::vector<uint8_t>().swap(b.buffer);
   std::vector<uint8_t>().swap(b.palette);
   b.rom_px = b.rom_pal = nullptr;
+  b.lazy = false;
   b.format = b.direct_format = LV_COLOR_FORMAT_ARGB8888;
   b.counter() += b.bytes();
   b.deferred = std::make_shared<DeferredList>();
@@ -2902,10 +3023,14 @@ static void deferred_rows(const DeferredList& L,
 }
 
 void deferred_materialize(Bitmap& b) {
+  // Allocated first: a NoMemoryError leaves `b` deferred.
+  std::vector<uint8_t> px;
+  const size_t n = static_cast<size_t>(b.width) * b.height * 4;
+  pixel_alloc(n, [&] { px.assign(n, 0); });
   std::shared_ptr<DeferredList> L = std::move(b.deferred);
   b.deferred = nullptr;
   b.counter() -= b.bytes();
-  b.buffer.assign(static_cast<size_t>(b.width) * b.height * 4, 0);
+  b.buffer.swap(px);
   b.counter() += b.bytes();
   if (L && !L->ops.empty())
     deferred_rows(*L, b.height, 0, b);
@@ -3214,7 +3339,7 @@ mrb_value bmp_defer(mrb_state* M, V self) {
     settle_for_access(b);
     return self;
   }
-  if (!deferred_begin(b)) {
+  if (!deferred_begin(b) && !b.lazy) {
     promote_to_direct(b, /* keep = */ false);
     std::fill(b.buffer.begin(), b.buffer.end(), 0);
   }
@@ -4656,6 +4781,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
 
     {
       ProfilerScope _lvscope("gfx.lvgl");
+      PixelGcHold hold;
       lv_timer_handler();
       lv_task_handler();
     }
@@ -4772,7 +4898,11 @@ mrb_value gfx_snap_to_bitmap(mrb_state* M, mrb_value self) {
   lv_obj_t* screen = lv_display_get_screen_active(get_display(M));
   if (!screen)
     return mrb_nil_value();
-  lv_draw_buf_t* snap = lv_snapshot_take(screen, LV_COLOR_FORMAT_ARGB8888);
+  lv_draw_buf_t* snap;
+  {
+    PixelGcHold hold;
+    snap = lv_snapshot_take(screen, LV_COLOR_FORMAT_ARGB8888);
+  }
   if (!snap) {
     RGSS_warn_stub(M, "Graphics.snap_to_bitmap (snapshot failed)");
     return mrb_nil_value();
@@ -5072,6 +5202,7 @@ lv_result_t sprite_view_get_area(lv_image_decoder_t*,
                                  lv_image_decoder_dsc_t* dsc,
                                  const lv_area_t* full_area,
                                  lv_area_t* decoded_area) {
+  PixelGcHold hold;
   const SpriteView* v = sprite_view_of(dsc->src);
   const int32_t y1 =
       decoded_area->y1 == LV_COORD_MIN ? full_area->y1 : decoded_area->y2 + 1;
@@ -5204,6 +5335,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   if (mrb_nil_p(bmp_v))
     return;
   Bitmap& src = DataType<Bitmap>::raw(M, bmp_v);
+  // The draw-time path below reads the pixels without settling them.
+  ensure_pixels(src);
 
   SpriteFx f;
   f.mirror = mrb_test(mrb_iv_get(M, self, MRB_IVSYM(mirror)));
@@ -8635,7 +8768,8 @@ mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
 // both paths do equally). `_begin_load`'s own global diagnostics are a
 // String-branch-only affair, never touched here.
 mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int w, mrb_int h) {
-  return DataType<Bitmap>::make(M, klass, w, h, LV_COLOR_FORMAT_ARGB8888);
+  return DataType<Bitmap>::make(M, klass, w, h, LV_COLOR_FORMAT_ARGB8888,
+                                LazyPixels{});
 }
 
 mrb_value sprite_bitmap_set_direct(mrb_state* M,
@@ -9351,6 +9485,16 @@ mrb_value bmp_load_error_direct(mrb_state* M, mrb_value self) {
   return bmp_load_error(M, self);
 }
 
+#if !defined(WIO_TERMINAL)
+mrb_value bmp_s_pixel_bytes_direct(mrb_state* M, mrb_value self) {
+  return bmp_s_pixel_bytes(M, self);
+}
+#else
+mrb_value bmp_s_pixel_bytes_direct(mrb_state* M, mrb_value self) {
+  return native_split_compiled_out(M, self);
+}
+#endif
+
 mrb_value bmp_stbi_error_direct(mrb_state* M, mrb_value self) {
   return bmp_stbi_error(M, self);
 }
@@ -9823,6 +9967,8 @@ static mrb_value native_sort_bang(mrb_state* M, mrb_value self) {
 }
 
 extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
+  g_pixel_mrb = M;
+  g_pixel_gc_base = pixel_bytes_live();
   mrb_method_t sort_bang =
       mrb_method_search(M, M->array_class, MRB_SYM_B(sort));
   if (!MRB_METHOD_FUNC_P(sort_bang)) {
@@ -10183,6 +10329,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(bmp_decoder_ran, MRB_SYM_Q(_decoder_ran),
                    MRB_ARGS_NONE())  //
 #if !defined(WIO_TERMINAL)
+      MRB_MT_ENTRY(bmp_s_pixel_bytes, MRB_SYM(_pixel_bytes),
+                   MRB_ARGS_NONE())  //
       MRB_MT_ENTRY(bmp_s_rom_bitmaps, MRB_SYM(_rom_bitmaps),
                    MRB_ARGS_REQ(2))  //
 #endif
@@ -10403,6 +10551,8 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   // Flush and close a Chrome trace still open at shutdown (native path; the
   // Emscripten loop never returns, but the format tolerates the missing close).
   profiler_trace_stop();
+  if (g_pixel_mrb == mrb)
+    g_pixel_mrb = nullptr;
   // Defensive only (mrb_close frees every RClass this VM owns, so these
   // would-be-dangling pointers are never actually dereferenced by anything
   // reachable after this point) -- see g_native_*_class's own comment.
