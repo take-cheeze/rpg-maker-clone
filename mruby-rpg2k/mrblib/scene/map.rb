@@ -1902,8 +1902,7 @@ class RPG2k
       # Build the Call Event resolver for the current map: common events keyed by
       # id (they are global) plus this map's raw events for map-event page calls.
       def build_resolver
-        common = {}
-        @common.each { |c| common[c.id] = c }
+        common = Game::CommonEvent.index(@db, @common)
         map_events = record_value(@map.unit, :events, nil)
         EventResolver.new(common, map_events)
       rescue StandardError => e

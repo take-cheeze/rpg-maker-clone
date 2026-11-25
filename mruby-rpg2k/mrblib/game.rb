@@ -7664,7 +7664,38 @@ module Game
       false
     end
 
-    # Load the common events from the database into records.
+    # CALLED_COMMON_EVENTS: common events by id for EventResolver. The
+    # records #load lists are only the ones Scene::Map scans; a called-only
+    # common event's record is made by #[] on its first Call Event and kept.
+    class Index
+      def initialize(table, records)
+        @table = table
+        @records = records
+      end
+
+      # The record of common event +id+, or nil when the table has no such row.
+      def [](id)
+        rec = @records[id]
+        return rec if rec || !id.is_a?(Integer) || id < 0
+
+        row = @table.peek(id)
+        return nil unless row
+
+        rec = CommonEventRecord.new
+        rec.id = id
+        rec.trigger = row[:start_term]
+        rec.need_flag = row[:need_flag]
+        rec.switch_id = row[:switch_id]
+        rec.lazy_in(@table)
+        @records[id] = rec
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] common event #{id} commands unreadable, none run: #{e.message}"
+        nil
+      end
+    end
+
+    # Load the auto-start and parallel common events from the database into
+    # records, in id order; CALLED_COMMON_EVENTS makes the rest on demand.
     #
     # LAZY_COMMON_EVENTS: a record holds the four fields every Scene::Map
     # visit scans and decodes its command list on first use (#commands), so
@@ -7683,7 +7714,11 @@ module Game
       # side by side. Made per row, they were spread over every page the row
       # garbage filled and kept those pages alive.
       fields = []
-      ce.each_peek { |id, c| fields.push(id, c[:start_term], c[:need_flag], c[:switch_id]) }
+      ce.each_peek do |id, c|
+        trigger = c[:start_term]
+        fields.push(id, trigger, c[:need_flag], c[:switch_id]) if trigger == AUTO_START || trigger == PARALLEL
+      end
+      by_id = {}
       i = 0
       while i < fields.size
         rec = CommonEventRecord.new
@@ -7693,9 +7728,11 @@ module Game
         rec.switch_id = fields[i + 3]
         rec.lazy_in(ce)
         list.push(rec)
+        by_id[rec.id] = rec
         i += 4
       end
       @loaded_db = db
+      @index = Index.new(ce, by_id)
       @loaded = list
     rescue StandardError => e
       $stderr.puts "[RPG2k] common event load failed, none available: #{e.message}"
@@ -7726,6 +7763,16 @@ module Game
     rescue StandardError => e
       $stderr.puts "[RPG2k] common event load failed, none available: #{e.message}"
       []
+    end
+
+    # Common events by id for EventResolver: #load's Index when +list+ is its
+    # list, else a Hash over +list+.
+    def self.index(db, list)
+      return @index if !eager? && @loaded && @loaded.equal?(list) && @loaded_db.equal?(db)
+
+      common = {}
+      list.each { |c| common[c.id] = c }
+      common
     end
 
     # Common events eligible to run now (auto-start or parallel, and — when
