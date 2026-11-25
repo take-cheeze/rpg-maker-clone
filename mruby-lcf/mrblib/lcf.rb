@@ -6,49 +6,6 @@ class StringIO
 end
 
 module LCF
-  # INT32_MASK / INT32_SIGN_BIT / INT32_WRAP: the same three constants
-  # (0xffff_ffff, 0x8000_0000, 0x1_0000_0000) the codecs below need for
-  # 32-bit two's-complement masking/sign-extension, hoisted into module
-  # constants computed once, at load time, instead of written as bare hex
-  # literals inline in every codec below.
-  #
-  # Why hoist at all: mruby 4.0's own compiler bakes ANY integer literal
-  # wider than 32 bits into an IREP bignum-pool entry regardless of the
-  # eventual runtime's own mrb_int width (see build_config.rb's own comment
-  # on why this project carries mruby-bigint as a core gem at all), and
-  # OP_LOADL re-parses that pool entry's own decimal/hex string into a fresh
-  # bignum via mrb_bint_new_str on EVERY execution of the instruction -- even
-  # though the value is a compile-time constant that never changes.
-  # #read_ber alone (called from Array1D#[] for every :int-typed chunk --
-  # LCF::EventCommand's own #indent/#parameters among them) showed up
-  # costing measurable frame time on this project's own native (64-bit
-  # mrb_int) desktop build, where the bignum was always going to be
-  # immediately re-normalized back down to a plain mrb_int (bint_norm,
-  # 3rd/mruby/mrbgems/mruby-bigint/core/bigint.c) -- pure waste there, since
-  # 64 bits is more than enough for any of these three constants. Loading
-  # this module's own compiled constant once, here, at LCF's own module-body
-  # execution (this file's own load time) pays that cost once instead of
-  # per #read_ber/#unpack_int32/#pack_int32 call the way a bare inline
-  # literal did -- every reference below is a plain GETCONST fetching that
-  # already-materialized Integer object, not another OP_LOADL/
-  # mrb_bint_new_str round trip.
-  #
-  # Bare literals, not `1 << 32`/`1 << 31` shift expressions: mrbc constant-
-  # folds a shift whose operands are both literals at COMPILE time, and the
-  # IREP bignum-pool entry that folding produces does not survive being
-  # cross-compiled by a 64-bit-mrb_int host `mrbc` (this project's own
-  # desktop build, AGENTS.md's "mrb_int is 32-bit on the cross targets") and
-  # then loaded by a 32-bit-mrb_int target VM (Emscripten/Wio/PSP) --
-  # `mrb_load_irep_file` on the 32-bit side fails the whole compiled unit
-  # with "irep load error", before any of this module's own code ever runs.
-  # A bare bignum literal's own pool entry does not have this problem
-  # (confirmed directly: cross-compiling `0x1_0000_0000`-as-a-literal with a
-  # 64-bit `mrbc` and loading it with a 32-bit runtime works; cross-
-  # compiling `1 << 32` the same way does not) -- only the *computed-at-
-  # compile-time* form is broken, so spelling these three constants as plain
-  # hex literals keeps the exact same "computed once, at load time" win
-  # while staying loadable on every target.
-  INT32_MASK = 0xffff_ffff
   # The largest chunk id / table row id a reader accepts. A chunk id indexes a
   # Ruby Array (Array1D#@data), so an id read from a corrupt or hostile file
   # ("chunk 2000000000") would otherwise ask for a multi-gigabyte array and die
@@ -59,11 +16,16 @@ module LCF
   # LAZY_CHUNKS: the smallest chunk (and table) a file-backed record leaves in
   # its file instead of reading into a String (Array1D#initialize's +io+).
   LAZY_MIN = 2048
-  INT32_SIGN_BIT = 0x8000_0000
-  INT32_WRAP = 0x1_0000_0000
 
+  # The BER integers of the format (base-128, big-endian, 0x80 the continuation
+  # bit) as RPG_RT stores them: the low 32 bits read as signed, so -1 is the five
+  # bytes 8f ff ff ff 7f. Four groups stay below 2**28; from the fifth on the
+  # native LCF.ber_shift keeps only 32 bits, so no step needs a bignum on a
+  # 32-bit mrb_int. LCF.ber_value (the same for a String's leading bytes) and
+  # LCF.append_ber (the shortest encoding) are native too (src/lcf.cxx).
   def self.read_ber(s)
     ret = 0
+    n = 0
     loop do
       b = s.getbyte
       # A BER integer whose final byte still has the continuation bit set has
@@ -71,70 +33,18 @@ module LCF
       # mistyped as :int, not a valid BER number). Fail loudly instead of
       # letting `nil & 0x7f` collapse to `false` and raise a cryptic TypeError.
       raise 'truncated BER integer' if b.nil?
-      ret = (ret << 7) | (b & 0x7f)
+      ret = n < 4 ? (ret << 7) | (b & 0x7f) : ber_shift(ret, b)
+      n += 1
       break if (b & 0x80) == 0
     end
-    # RPG_RT writes a negative number as its 32-bit two's-complement form (-1 is
-    # the five bytes 8f ff ff ff 7f), so the low 32 bits are reinterpreted as
-    # signed. Done arithmetically rather than with `[ret].pack('L').unpack1('l')`
-    # because on a target whose `mrb_int` is 32-bit -- the browser/Emscripten
-    # build, Wio, PSP -- `ret` is already a bignum here, and pack has to convert
-    # it back to an `mrb_int` to write it: it raised `RangeError: integer out of
-    # range` on every value with the high bit set, i.e. on every negative
-    # parameter. That is one command list into any real project, so New Game
-    # failed for every RPG2000 game in the browser ("Failed to start new game:
-    # integer out of range"). The subtraction below reduces the bignum back into
-    # `mrb_int` range instead, which is exactly what pack could not do.
-    ret &= INT32_MASK
-    ret >= INT32_SIGN_BIT ? ret - INT32_WRAP : ret
+    ret
   end
 
-  # read_ber of the String +d+'s leading bytes, without a StringIO: an :int
-  # field is decoded on every #[] (render reads terrain bush depth per event per
-  # frame), and the StringIO was its only allocation.
-  def self.ber_value(d)
-    ret = 0
-    i = 0
-    loop do
-      b = d.getbyte(i)
-      raise 'truncated BER integer' if b.nil?
-      i += 1
-      ret = (ret << 7) | (b & 0x7f)
-      break if (b & 0x80) == 0
-    end
-    ret &= INT32_MASK
-    ret >= INT32_SIGN_BIT ? ret - INT32_WRAP : ret
-  end
-
-  # Inverse of read_ber: encode an integer as a base-128 (BER) big-endian byte
-  # string, every byte but the last carrying the 0x80 continuation bit. The
-  # value is first reduced to its 32-bit two's-complement form so that negative
-  # numbers round-trip through read_ber (which reinterprets the low 32 bits as
-  # signed) -- e.g. -1 becomes the five bytes 8f ff ff ff 7f, exactly as RPG_RT
-  # writes it. Non-negative numbers use the shortest encoding (RPG_RT's own),
-  # so a value read from a real file re-encodes to the identical bytes.
+  # Inverse of read_ber: negative numbers are written as their 32-bit two's
+  # complement, non-negative ones in the shortest form, so a value read from a
+  # real file re-encodes to the identical bytes.
   def self.write_ber(n)
     append_ber(String.new, n)
-  end
-
-  # The byte append_ber grows a String by before setbyte writes the real value.
-  BER_GROW_BYTE = "\0".freeze
-
-  # Appends write_ber(n)'s bytes to +out+ in place and returns +out+: no
-  # temporary Array or String per call, which matters on the load path
-  # (Array2D#read_row_bytes re-encodes every chunk header it copies).
-  def self.append_ber(out, n)
-    n &= INT32_MASK
-    shift = 0
-    shift += 7 while (n >> shift) > 0x7f
-    while shift > 0
-      out << BER_GROW_BYTE
-      out.setbyte(-1, ((n >> shift) & 0x7f) | 0x80)
-      shift -= 7
-    end
-    out << BER_GROW_BYTE
-    out.setbyte(-1, n & 0x7f)
-    out
   end
 
   class Tree
@@ -384,23 +294,6 @@ module LCF
     raise "Unsupported type: #{sget(s, :type)}"
   end
 
-  # Decode a packed sequence of little-endian signed 32bit integers.
-  #
-  # Self-called bare at #to_rb's own `:int32_array` arm, `unpack_int32(d)`
-  # (mruby-lcf/mrblib/lcf.rb) -- the loop always returns `out`, a freshly
-  # built Array, never nil.
-  def self.unpack_int32 d
-    bytes = d.bytes
-    out = []
-    (0...(bytes.size / 4)).each do |i|
-      b = i * 4
-      v = bytes[b] | (bytes[b + 1] << 8) | (bytes[b + 2] << 16) | (bytes[b + 3] << 24)
-      v -= INT32_WRAP if v >= INT32_SIGN_BIT
-      out.push v
-    end
-    out
-  end
-
   # Coerce a value to a raw byte string safe to concatenate with other byte
   # strings. Under CRuby (the analysis harnesses) this re-tags it ASCII-8BIT so
   # appending cp932 bytes to a binary buffer does not raise on encoding
@@ -409,17 +302,6 @@ module LCF
   def self.binstr s
     s = s.to_s
     s.respond_to?(:force_encoding) ? s.dup.force_encoding('BINARY') : s
-  end
-
-  # Encode an array of signed 32bit integers as packed little-endian bytes --
-  # the inverse of unpack_int32 (used for the save file's variable table).
-  def self.pack_int32 a
-    out = []
-    a.each do |v|
-      v &= INT32_MASK
-      out.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff)
-    end
-    out.pack('C*')
   end
 
   # The unpack template of an :int16_array field: the schema's `format:` (a full
@@ -535,95 +417,8 @@ module LCF
 
   # FLOAT-CODEC-BEGIN: the Float codec of the :double save fields. mruby-lcf/gen_lcf_nofloat.rb replaces the
   # whole block on a no-Float build (MRB_NO_FLOAT), where the same four names use the fixed-point codec.
-  # Decode a little-endian IEEE-754 64bit double (used by the save file's
-  # timestamp field). Assembled from raw bytes -- like unpack_int32 -- so it does
-  # not depend on the optional 'E' pack directive. Returns nil for a short blob.
-  def self.unpack_double d
-    return nil if d.nil? || d.bytesize < 8
-    b = d.bytes
-    bits = 0
-    7.downto(0) { |i| bits = (bits << 8) | b[i] }
-    sign = (bits >> 63) & 1
-    exp  = (bits >> 52) & 0x7ff
-    frac = bits & 0x000f_ffff_ffff_ffff
-    if exp == 0x7ff
-      return 0.0 / 0.0 unless frac == 0 # NaN
-      return sign == 1 ? (-1.0 / 0.0) : (1.0 / 0.0) # +/- infinity
-    elsif exp == 0
-      val = frac * (2.0 ** -1074)
-    else
-      val = (1.0 + frac * (2.0 ** -52)) * (2.0 ** (exp - 1023))
-    end
-    sign == 1 ? -val : val
-  end
-
-  # Encode a Ruby Float as a little-endian IEEE-754 64bit double -- the inverse
-  # of unpack_double (the save file's timestamp field). Assembled byte-wise from
-  # the sign / biased exponent / 52bit mantissa so it needs neither the 'E' pack
-  # directive nor a full 64bit integer (mruby's Integer is 63bit): the sign and
-  # exponent land in the top two bytes and the mantissa fills the low seven, so
-  # no intermediate value ever exceeds 2**52. Finite values (including 0.0) and
-  # NaN are handled; a timestamp is always finite and non-negative, which is also
-  # the domain unpack_double reproduces exactly (its 63bit assembly cannot hold a
-  # bit pattern with the sign or a very large exponent set).
-  def self.pack_double v
-    v = v.to_f
-    sign = 0
-    if v != v                       # NaN
-      exp = 0x7ff
-      # A bare literal, not `1 << 51`: mrbc constant-folds a shift whose
-      # operands are both literals at compile time, and the resulting IREP
-      # bignum-pool entry does not survive being cross-compiled by this
-      # project's own 64-bit-mrb_int host `mrbc` and loaded by a
-      # 32-bit-mrb_int target VM (see INT32_MASK's own comment near the top
-      # of this file for the full mechanism) -- `mrb_load_irep_file` on the
-      # 32-bit side fails to load this whole gem with "irep load error"
-      # before any of its code, called or not, ever runs.
-      frac = 0x0008_0000_0000_0000 # 2**51
-    elsif v == 0.0
-      exp = 0
-      frac = 0
-    else
-      if v < 0.0
-        sign = 1
-        v = -v
-      end
-      e = 0
-      while v >= 2.0 && e < 1024
-        v = v / 2.0
-        e = e + 1
-      end
-      while v < 1.0 && e > -1074
-        v = v * 2.0
-        e = e - 1
-      end
-      exp = e + 1023
-      # 52bit mantissa of the normalised significand (1.xxxx -> xxxx), rounded.
-      frac = ((v - 1.0) * 4503599627370496.0 + 0.5).to_i
-      if frac >= 4503599627370496   # rounding carried into the next binade
-        frac = 0
-        exp = exp + 1
-      end
-      if exp >= 0x7ff               # overflow -> infinity
-        exp = 0x7ff
-        frac = 0
-      elsif exp <= 0                # underflow -> flush to zero
-        exp = 0
-        frac = 0
-      end
-    end
-    b = []
-    b[0] = frac & 0xff
-    b[1] = (frac >> 8) & 0xff
-    b[2] = (frac >> 16) & 0xff
-    b[3] = (frac >> 24) & 0xff
-    b[4] = (frac >> 32) & 0xff
-    b[5] = (frac >> 40) & 0xff
-    b[6] = ((exp & 0xf) << 4) | ((frac >> 48) & 0xf)
-    b[7] = (sign << 7) | ((exp >> 4) & 0x7f)
-    b.pack('C*')
-  end
-
+  # LCF.unpack_double / LCF.pack_double (src/lcf.cxx) are the IEEE-754 codec of
+  # the save file's timestamp, native so no 64-bit Integer is built.
   def self.double_decode d; unpack_double(d) end
   def self.double_encode v; pack_double(v) end
   def self.double_value? v; v.is_a?(Float) end

@@ -43,6 +43,7 @@ mrblib = File.expand_path('../mruby-lcf/mrblib', __dir__)
    save_typed_put.rb save_typed_setters.rb].each do |f|
   load File.join(mrblib, f)
 end
+require_relative 'lcf/native_stand_ins'
 
 # The generator's table walk matches nested tables to their SAVE_* constants by identity,
 # which LCF.elements_of's in-place caching (any read of a save) breaks: walk it first.

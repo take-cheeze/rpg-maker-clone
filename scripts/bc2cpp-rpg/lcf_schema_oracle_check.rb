@@ -39,6 +39,7 @@ check.call('most names have a single type', names.count { |_, v| v[:types].size 
 puts '-- oracle against the real reader'
 $VERBOSE = nil
 load File.join(MRBLIB, 'lcf.rb')
+require_relative '../lcf/native_stand_ins'
 load File.join(MRBLIB, 'schema.rb')
 module LCF
   def self.cp932_to_utf8(s) = s.dup.force_encoding('Windows-31J').encode('UTF-8')

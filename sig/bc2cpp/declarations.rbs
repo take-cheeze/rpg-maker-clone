@@ -161,9 +161,16 @@ module LCF
   def rom_get: (untyped, untyped) -> untyped
   def rom_keys: (untyped) -> untyped
   def utf8_to_cp932: (String) -> String
+  def self.append_ber: (String, Numeric) -> untyped
+  def self.ber_shift: (Numeric, Numeric) -> Integer
+  def self.ber_value: (String) -> Integer
   def self.cp932_to_utf8: (String) -> String
+  def self.pack_double: (Numeric) -> String
+  def self.pack_int32: (Array) -> String
   def self.rom_get: (untyped, untyped) -> untyped
   def self.rom_keys: (untyped) -> untyped
+  def self.unpack_double: (untyped) -> Float?
+  def self.unpack_int32: (String) -> Array
   def self.utf8_to_cp932: (String) -> String
 end
 
@@ -5852,39 +5859,6 @@ class RPG2k::Window
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_lcf
-module LCF
-  def self.append_ber: (untyped, untyped) -> untyped
-  def self.ber_value: (untyped) -> untyped
-  def self.double_decode: (untyped) -> untyped
-  def self.double_default: (untyped) -> untyped
-  def self.double_encode: (untyped) -> untyped
-  def self.double_from_fixed: (untyped) -> untyped
-  def self.double_to_fixed: (untyped) -> untyped
-  def self.double_value?: (untyped) -> untyped
-  def self.edition_default: (untyped) -> untyped
-  def self.encode: (untyped, untyped) -> untyped
-  def self.encode_move_commands: (untyped) -> untyped
-  def self.exp_default: () -> untyped
-  def self.field?: (untyped, untyped) -> untyped
-  def self.int16_format: (untyped) -> untyped
-  def self.level_max: () -> untyped
-  def self.npc_hp_max: () -> untyped
-  def self.pack_double: (untyped) -> untyped
-  def self.pack_fixed_double: (untyped, untyped) -> untyped
-  def self.parse_event_commands: (untyped) -> untyped
-  def self.parse_move_commands: (untyped) -> untyped
-  def self.pc_hp_max: () -> untyped
-  def self.read_ber: (untyped) -> untyped
-  def self.read_section: (untyped, untyped, ?untyped) -> untyped
-  def self.sget: (untyped, untyped) -> untyped
-  def self.skeys: (untyped) -> untyped
-  def self.to_rb: (untyped, untyped) -> untyped
-  def self.var_max: () -> untyped
-  def self.var_min: () -> untyped
-end
-
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rpg
 class Game::Interpreter
   def wait_kind: () -> untyped
@@ -6350,6 +6324,36 @@ class RPG2k::Scene::Map::LRUBitmapCache
   def initialize: (untyped) -> untyped
   def renumber_stamps: () -> untyped
   def touch: (untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_lcf
+module LCF
+  def self.double_decode: (untyped) -> untyped
+  def self.double_default: (untyped) -> untyped
+  def self.double_encode: (untyped) -> untyped
+  def self.double_from_fixed: (untyped) -> untyped
+  def self.double_to_fixed: (untyped) -> untyped
+  def self.double_value?: (untyped) -> untyped
+  def self.edition_default: (untyped) -> untyped
+  def self.encode: (untyped, untyped) -> untyped
+  def self.encode_move_commands: (untyped) -> untyped
+  def self.exp_default: () -> untyped
+  def self.field?: (untyped, untyped) -> untyped
+  def self.int16_format: (untyped) -> untyped
+  def self.level_max: () -> untyped
+  def self.npc_hp_max: () -> untyped
+  def self.pack_fixed_double: (untyped, untyped) -> untyped
+  def self.parse_event_commands: (untyped) -> untyped
+  def self.parse_move_commands: (untyped) -> untyped
+  def self.pc_hp_max: () -> untyped
+  def self.read_ber: (untyped) -> untyped
+  def self.read_section: (untyped, untyped, ?untyped) -> untyped
+  def self.sget: (untyped, untyped) -> untyped
+  def self.skeys: (untyped) -> untyped
+  def self.to_rb: (untyped, untyped) -> untyped
+  def self.var_max: () -> untyped
+  def self.var_min: () -> untyped
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -7889,9 +7893,6 @@ end
 class LCF::Tree
   def initialize: (Integer, untyped) -> untyped
 end
-module LCF
-  def self.unpack_int32: (untyped) -> Array
-end
 class RPG2k
   module Scene
     class Base
@@ -8404,8 +8405,6 @@ class LCF
   def self.elements_of: (untyped) -> untyped
   def self.encode_event_commands: (untyped) -> untyped
   def self.pack_int16: (untyped) -> untyped
-  def self.pack_int32: (untyped) -> untyped
-  def self.unpack_double: (untyped) -> untyped
   def self.unpack_fixed_double: (untyped, untyped) -> untyped
   def self.write_ber: (untyped) -> untyped
 end
