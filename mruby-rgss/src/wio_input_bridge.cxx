@@ -39,6 +39,12 @@ void send_key(mrb_state* M, int key, bool press) {
 
 }  // namespace
 
+// MRB_STATE_LAYOUT: sizeof(mrb_state) as libmruby was compiled, for the app to
+// compare with its own (platformio.ini's copy of the defines that size it).
+extern "C" unsigned rgss_wio_mrb_state_size(void) {
+  return sizeof(mrb_state);
+}
+
 extern "C" void rgss_wio_poll(mrb_state* M) {
   const uint64_t cur = wio_input_scan();
   const uint64_t changed = cur ^ g_prev;
