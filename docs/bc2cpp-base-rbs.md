@@ -100,16 +100,20 @@ and rewrite it when the check fails, with
 ruby scripts/bc2cpp/base_section_check.rb --write CLOSED_BUILD_DIR
 ```
 
-`--write` regenerates the native blocks and the `# Base RBS` declarations and
-leaves the rest of the file byte for byte. A declaration the generator no longer
-writes is removed; one it writes and the file lacks is appended under its
-`# bc2cpp-native:` marker. The later sections (trace-derived and hand-written
+`--write` writes the section from the generators' output alone and leaves the
+rest of the file byte for byte: for each `# bc2cpp-native:` tag, in byte order,
+its native block and then its Ruby declarations. The committed order counts for
+nothing, so one source tree gives one file, and the check compares it byte for
+byte. A tag whose gem fails to preprocess keeps its committed native block, with
+a warning. The later sections (trace-derived and hand-written
 tables) have no generator and are not touched. Candidates are promoted into the later sections
 with [promote_candidates.rb](bc2cpp-promote-candidates.md), which never writes the base section.
 
 `scripts/bc2cpp/base_section_regen_check.rb` tests the writer on the host, with
 fixture generator output and a round trip of the committed file, which must
 reproduce it byte for byte. It needs neither clang nor the closed build.
+`scripts/bc2cpp/base_rbs_determinism_check.rb` runs the generators twice, under
+different locales, TZ, TMPDIR, paths and worker counts, and requires the same bytes.
 
 A later lazy-AST comparison on CRuby 4.0.5 + YJIT and Clang 21.1.8 took
 21.12/21.45 seconds before this change and 13.33/12.28 seconds after it
