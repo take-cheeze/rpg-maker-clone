@@ -390,9 +390,10 @@ def fake_battle(scene, ui)
   battle
 end
 
-# A Scene::Battle::Ui with the given fields set (a check's fabricated fight state).
+# A Scene::Battle::Ui with only the given fields set (a check's fabricated fight state; #initialize needs a real
+# fight's model).
 def battle_ui_of(fields)
-  ui = RPG2k::Scene::Battle::Ui.new
+  ui = RPG2k::Scene::Battle::Ui.allocate
   fields.each { |k, v| ui.instance_variable_set(:"@#{k}", v) }
   ui
 end
