@@ -19,6 +19,10 @@
 #     --trace FILE       also write Renode's PC trace of half a virtual second
 #                        to FILE (scripts/wio/qspi_xip_hot.rb reads it), from
 #     --trace-at N       virtual second N (default 25: map frames by then)
+#     --heapwalk DIR     HEAPWALK: a wio_renode_game_heapwalk[_big] ELF saves its
+#                        heap snapshots to DIR (scripts/wio/heapwalk_report.rb
+#                        reads them); the image window grows to 32 MB so every
+#                        palette image fits decoded
 # RENODE_BIN is the Renode binary (see app/wio/renode/README.md); RENODE_GAME_RAW
 # names a file to keep Renode's own output in (per-step PC and log length).
 set -euo pipefail
@@ -31,7 +35,7 @@ usage() {
 elf="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 game="$2"
 shift 2
-board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 expects=()
+board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 heapwalk='' expects=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --board) board=$2 ;;
@@ -42,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     --log) log=$2 ;;
     --trace) trace=$2 ;;
     --trace-at) trace_at=$2 ;;
+    --heapwalk) heapwalk=$(mkdir -p "$2" && cd "$2" && pwd) ;;
     *) usage ;;
   esac
   shift 2
@@ -65,14 +70,17 @@ addr() { printf '0x%x' $((0x$("$nm" -C "$elf" | awk -v s="$1" '{n=$3; for (i = 4
 # A QSPI_XIP firmware (app/wio/qspi_xip.ld) runs code from the window's start, and the game image follows it.
 rom_base=0x04000000
 "$nm" "$elf" | awk '$3 == "__wio_game_rom_base" {f = 1} END {exit !f}' && rom_base=$(addr __wio_game_rom_base)
+rom_end=0x05000000
+[[ -n "$heapwalk" ]] && rom_end=0x06000000
 ruby "$repo_root/scripts/wio/game_rom.rb" "$work/game.rom" "$game" --config "$config" "${adds[@]}" \
-  --limit $((0x05000000 - rom_base)) >&2
+  --limit $((rom_end - rom_base)) >&2
 result=$(addr '(anonymous namespace)::g_result')
 step=5
 {
   echo 'mach create "wio"'
   echo "machine LoadPlatformDescription @$repl"
   echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/game_rom.repl"
+  [[ -n "$heapwalk" ]] && echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/heapwalk.repl"
   echo "sysbus LoadELF @$elf"
   echo "sysbus LoadBinary @$work/game.rom $rom_base"
   # The buttons and the 5-way switch are active low: release them all.
@@ -81,6 +89,10 @@ step=5
   for s in HardFault_Handler Dummy_Handler; do
     echo "cpu0 AddHook $(addr $s) \"print('=== FAULT $s LR=0x%x' % cpu.GetRegisterUnsafe(14).RawValue); cpu.RemoveHooksAt(cpu.PC)\""
   done
+  # heapwalk_flush(slot, out_len, heap, heap_len): the output window and the heap, as snapshot `slot`.
+  if [[ -n "$heapwalk" ]]; then
+    echo "cpu0 AddHook $(addr heapwalk_flush) \"import System; r = [int(cpu.GetRegisterUnsafe(i).RawValue) for i in range(4)]; System.IO.File.WriteAllBytes('$heapwalk/snap-%04d.out' % r[0], machine.SystemBus.ReadBytes(0x0A000000, r[1])); System.IO.File.WriteAllBytes('$heapwalk/snap-%04d.heap' % r[0], machine.SystemBus.ReadBytes(r[2], r[3]))\""
+  fi
   echo "cpu0 AddHook $(addr mrb_raise_nomemory) \"print('=== NOMEMORY'); cpu.RemoveHooksAt(cpu.PC)\""
   echo 'logLevel 3'
   for ((t = 0; t < seconds; t += step)); do
