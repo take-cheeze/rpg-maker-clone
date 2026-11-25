@@ -9485,6 +9485,16 @@ mrb_value bmp_load_error_direct(mrb_state* M, mrb_value self) {
   return bmp_load_error(M, self);
 }
 
+#if !defined(WIO_TERMINAL)
+mrb_value bmp_s_pixel_bytes_direct(mrb_state* M, mrb_value self) {
+  return bmp_s_pixel_bytes(M, self);
+}
+#else
+mrb_value bmp_s_pixel_bytes_direct(mrb_state* M, mrb_value self) {
+  return native_split_compiled_out(M, self);
+}
+#endif
+
 mrb_value bmp_stbi_error_direct(mrb_state* M, mrb_value self) {
   return bmp_stbi_error(M, self);
 }
