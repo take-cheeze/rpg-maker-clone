@@ -16,6 +16,9 @@
 #     --seconds N        virtual-time budget (default 120)
 #     --font FILE        gothic.bin for kanji (the wio libmruby build's)
 #     --log FILE         keep the log there
+#     --trace FILE       also write Renode's PC trace of half a virtual second
+#                        to FILE (scripts/wio/qspi_xip_hot.rb reads it), from
+#     --trace-at N       virtual second N (default 25: map frames by then)
 # RENODE_BIN is the Renode binary (see app/wio/renode/README.md); RENODE_GAME_RAW
 # names a file to keep Renode's own output in (per-step PC and log length).
 set -euo pipefail
@@ -28,7 +31,7 @@ usage() {
 elf="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 game="$2"
 shift 2
-board=real config='frames=600' seconds=120 font='' log='' expects=()
+board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 expects=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --board) board=$2 ;;
@@ -37,6 +40,8 @@ while [[ $# -gt 0 ]]; do
     --seconds) seconds=$2 ;;
     --font) font=$2 ;;
     --log) log=$2 ;;
+    --trace) trace=$2 ;;
+    --trace-at) trace_at=$2 ;;
     *) usage ;;
   esac
   shift 2
@@ -56,9 +61,12 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 adds=()
 [[ -n "$font" ]] && adds=(--add "$font:/gothic.bin")
-ruby "$repo_root/scripts/wio/game_rom.rb" "$work/game.rom" "$game" --config "$config" "${adds[@]}" >&2
-
 addr() { printf '0x%x' $((0x$("$nm" -C "$elf" | awk -v s="$1" '{n=$3; for (i = 4; i <= NF; i++) n = n " " $i} n == s {print $1; exit}') & ~1)); }
+# A QSPI_XIP firmware (app/wio/qspi_xip.ld) runs code from the window's start, and the game image follows it.
+rom_base=0x04000000
+"$nm" "$elf" | awk '$3 == "__wio_game_rom_base" {f = 1} END {exit !f}' && rom_base=$(addr __wio_game_rom_base)
+ruby "$repo_root/scripts/wio/game_rom.rb" "$work/game.rom" "$game" --config "$config" "${adds[@]}" \
+  --limit $((0x05000000 - rom_base)) >&2
 result=$(addr '(anonymous namespace)::g_result')
 step=5
 {
@@ -66,7 +74,7 @@ step=5
   echo "machine LoadPlatformDescription @$repl"
   echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/game_rom.repl"
   echo "sysbus LoadELF @$elf"
-  echo "sysbus LoadBinary @$work/game.rom 0x04000000"
+  echo "sysbus LoadBinary @$work/game.rom $rom_base"
   # The buttons and the 5-way switch are active low: release them all.
   for p in 26 27 28; do echo "portc OnGPIO $p true"; done
   for p in 20 12 9 8 10; do echo "portd OnGPIO $p true"; done
@@ -76,6 +84,11 @@ step=5
   echo "cpu0 AddHook $(addr mrb_raise_nomemory) \"print('=== NOMEMORY'); cpu.RemoveHooksAt(cpu.PC)\""
   echo 'logLevel 3'
   for ((t = 0; t < seconds; t += step)); do
+    if [[ -n "$trace" && $t == "$trace_at" ]]; then
+      echo "cpu0 CreateExecutionTracing \"trace\" @$trace PC"
+      echo 'emulation RunFor "00:00:00.5"'
+      echo 'cpu0 DisableExecutionTracing'
+    fi
     echo "emulation RunFor \"00:00:0$step\""
     echo "echo \"RESULT\""
     echo "sysbus ReadDoubleWord $result"

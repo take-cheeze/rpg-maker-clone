@@ -108,6 +108,11 @@ class RPG2k
         play_title_bgm
       end
 
+      # No game state yet, so no Change System SFX override (Base#state_system_se).
+      def state_system_se(_slot)
+        nil
+      end
+
       def update
         @window.update
 

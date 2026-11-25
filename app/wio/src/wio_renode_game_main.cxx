@@ -1,6 +1,6 @@
 // Renode-only Wio firmware that plays real game data: the same compiled engine
 // as env:wio, with the game read from the image game_rom.repl maps at
-// kGameRomBase (wio_game_rom.cxx), and a heap census line per phase in the
+// game_rom_base() (wio_game_rom.cxx), and a heap census line per phase in the
 // diagnostic log. scripts/wio/renode_game.bash builds the image, boots this
 // and checks how far it got.
 //
@@ -45,6 +45,7 @@
 #include "bc2cpp_entry.hxx"
 #include "wio.hxx"
 #include "wio_game_rom.h"
+#include "wio_qspi_xip.h"
 
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
@@ -317,6 +318,7 @@ void operator delete[](void* p, size_t) noexcept {
 }
 
 void setup(void) {
+  wio_qspi_xip_require();
   g_result = kRunning;
   if (!wio_game_rom_config("frames", g_keys, sizeof(g_keys))) {
     g_result = kNoRom;
