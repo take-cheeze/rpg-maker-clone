@@ -58,6 +58,10 @@ extern "C" bool rgss_set_rom_bitmaps(const void* section,
 extern "C" char __end__;
 extern "C" char __StackTop;
 extern "C" void* _sbrk(ptrdiff_t);
+// HEAPWALK (wio_heapwalk.cxx), linked by env:wio_renode_game_heapwalk only.
+extern "C" void wio_heapwalk_begin(mrb_state*) __attribute__((weak));
+extern "C" void wio_heapwalk_probe(const char*, long) __attribute__((weak));
+extern "C" void wio_heapwalk_frame(long) __attribute__((weak));
 
 namespace {
 
@@ -217,6 +221,8 @@ void probe(const char* phase) {
         wio_diag_printf(" %d:%u", t, static_cast<unsigned>(c.tt[t]));
   }
   wio_diag_write("\n", 1);
+  if (wio_heapwalk_probe)
+    wio_heapwalk_probe(phase, g_frame);
   __asm__ volatile("mov %0, sp" : "=r"(sp));
   paint_gap(static_cast<char*>(_sbrk(0)), sp);
 }
@@ -346,6 +352,8 @@ void setup(void) {
     g_result = kFailBoot;
     return;
   }
+  if (wio_heapwalk_begin)
+    wio_heapwalk_begin(g_mrb);
   rpg_maker_init_shared_gems(g_mrb);
   if (!g_mrb->exc)
     rpg_maker_init_rpg2k_gem(g_mrb);
@@ -413,6 +421,8 @@ void loop(void) {
   // Every call below leaves its result in the GC arena (mrb_funcall's
   // contract); without the restore it grows by a slot per frame.
   const int ai = mrb_gc_arena_save(g_mrb);
+  if (wio_heapwalk_frame)
+    wio_heapwalk_frame(g_frame);
   track_scene();
   tap_keys();
   if (!g_mrb->exc)
