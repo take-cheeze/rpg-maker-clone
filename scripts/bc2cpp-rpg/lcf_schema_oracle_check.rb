@@ -48,7 +48,8 @@ end
 
 SAMPLES = {
   'int' => [7, -3, 0x7fff_ffff, -0x8000_0000], 'uint8' => [200], 'bool' => [true, false], 'string' => ['abc'],
-  'double' => [1.5], 'int8_array' => [[1, 2]], 'int16_array' => [[1, -2, 3, -4, 5, -6]], 'int32_array' => [[1, -2]],
+  'double' => [1.5], 'int8_array' => [[1, 2]], 'int16_array' => [[1, -2, 3, -4, 5, -6]], 'int16_packed' => [[1, -2, 32_767]],
+  'int32_array' => [[1, -2]],
   'bool_array' => [[true, false]]
 }.freeze
 

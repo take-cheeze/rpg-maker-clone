@@ -12,6 +12,7 @@
 # An :int16_array field may carry `format:`, the String#unpack template its
 # elements are read with (default 's<*', signed little-endian; 'S<*' for
 # unsigned). The schema is the one source for it: LCF.int16_format reads it.
+# An :int16_packed field is signed int16 read as an LCF::ShortArray (two bytes an element), for the map layers.
 #
 # A `default:` that is a Symbol (`:level_max`, `:exp_default`) names a value that depends on the edition
 # (LCF::MODE); LCF.to_rb resolves it through LCF.edition_default when an absent field is read. It is a Symbol, not
@@ -1159,8 +1160,8 @@ module LCF
         61 => { name: :generator_y, type: :int32_array },
         62 => { name: :generator_tile_ids, type: :int16_array },
         # width * height signed shorts, one tile id per cell.
-        71 => { name: :lower_layer, type: :int16_array },
-        72 => { name: :upper_layer, type: :int16_array },
+        71 => { name: :lower_layer, type: :int16_packed },
+        72 => { name: :upper_layer, type: :int16_packed },
         81 => { name: :events, type: :Array2D, elements: MAP_EVENT },
         # The 2k3e ("RPG2003 English release") save counter, a second counter
         # beside the ordinary one below. BER-encoded like every other int —

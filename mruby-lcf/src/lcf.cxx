@@ -1,6 +1,7 @@
 #include <mruby.h>
 #include <mruby/array.h>
 #include <mruby/class.h>
+#include <mruby/data.h>
 #include <mruby/string.h>
 #include "cp932_lookup.hxx"
 
@@ -294,6 +295,155 @@ mrb_value rom_keys(mrb_state* M, mrb_value) {
   return rom_keys_of(M, h);
 }
 
+// LCF::ShortArray: a fixed-size table of signed 16-bit integers, two bytes an
+// element where an Array of Integers takes a word (the map layers, schema
+// type :int16_packed). One allocation of exactly its size; a write outside
+// the table or the int16 range raises instead of growing or truncating.
+struct ShortArray {
+  mrb_int len;
+  int16_t* elems() { return reinterpret_cast<int16_t*>(this + 1); }
+};
+
+void short_array_free(mrb_state* M, void* p) {
+  mrb_free(M, p);
+}
+
+const mrb_data_type short_array_type = {"LCF::ShortArray", short_array_free};
+
+ShortArray* short_array_new(mrb_state* M, mrb_int len) {
+  if (len < 0 ||
+      len > (MRB_INT_MAX - static_cast<mrb_int>(sizeof(ShortArray))) / 2)
+    mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(ArgumentError)),
+              "invalid LCF::ShortArray size");
+  auto* a = static_cast<ShortArray*>(
+      mrb_malloc(M, sizeof(ShortArray) + sizeof(int16_t) * len));
+  a->len = len;
+  std::memset(a->elems(), 0, sizeof(int16_t) * len);
+  return a;
+}
+
+ShortArray* short_array_get(mrb_state* M, mrb_value self) {
+  auto* a =
+      static_cast<ShortArray*>(mrb_data_get_ptr(M, self, &short_array_type));
+  if (!a)
+    mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(TypeError)),
+              "uninitialized LCF::ShortArray");
+  return a;
+}
+
+// ShortArray.new(n): n zeros.
+mrb_value short_array_init(mrb_state* M, mrb_value self) {
+  mrb_int len;
+  mrb_get_args(M, "i", &len);
+  ShortArray* a = short_array_new(M, len);
+  if (DATA_PTR(self))
+    mrb_free(M, DATA_PTR(self));
+  mrb_data_init(self, a, &short_array_type);
+  return self;
+}
+
+mrb_value short_array_init_copy(mrb_state* M, mrb_value self) {
+  mrb_value src;
+  mrb_get_args(M, "o", &src);
+  ShortArray* from = short_array_get(M, src);
+  ShortArray* a = short_array_new(M, from->len);
+  std::memcpy(a->elems(), from->elems(), sizeof(int16_t) * from->len);
+  if (DATA_PTR(self))
+    mrb_free(M, DATA_PTR(self));
+  mrb_data_init(self, a, &short_array_type);
+  return self;
+}
+
+// ShortArray.unpack(d): the little-endian signed 16-bit integers of d, as
+// d.unpack('s<*') reads them (a trailing odd byte is ignored).
+mrb_value short_array_s_unpack(mrb_state* M, mrb_value self) {
+  const uint8_t* p;
+  mrb_int l;
+  mrb_get_args(M, "s", &p, &l);
+  // The object first, so a failed table allocation leaks nothing.
+  RData* d =
+      mrb_data_object_alloc(M, mrb_class_ptr(self), nullptr, &short_array_type);
+  ShortArray* a = short_array_new(M, l / 2);
+  int16_t* e = a->elems();
+  for (mrb_int i = 0; i < a->len; ++i)
+    e[i] = static_cast<int16_t>(p[2 * i] | (p[2 * i + 1] << 8));
+  d->data = a;
+  return mrb_obj_value(d);
+}
+
+// get(i), self[i] (lcf.rb): the element, nil outside the table; a negative i
+// counts from the end, as Array#[] does.
+mrb_value short_array_aref(mrb_state* M, mrb_value self) {
+  mrb_int i;
+  mrb_get_args(M, "i", &i);
+  ShortArray* a = short_array_get(M, self);
+  if (i < 0)
+    i += a->len;
+  if (i < 0 || i >= a->len)
+    return mrb_nil_value();
+  return mrb_fixnum_value(a->elems()[i]);
+}
+
+// set(i, v), self[i] = v (lcf.rb): IndexError outside the table, RangeError
+// outside int16.
+mrb_value short_array_aset(mrb_state* M, mrb_value self) {
+  mrb_int i;
+  mrb_value v;
+  mrb_get_args(M, "io", &i, &v);
+  ShortArray* a = short_array_get(M, self);
+  const mrb_int at = i < 0 ? i + a->len : i;
+  if (at < 0 || at >= a->len)
+    mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(IndexError)),
+               "index %i outside LCF::ShortArray of size %i", i, a->len);
+  if (!mrb_integer_p(v)) {
+    if (mrb_obj_is_kind_of(M, v, M->integer_class))
+      mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(RangeError)),
+                 "%v is outside int16 (-32768..32767)", v);
+    mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(TypeError)),
+               "%T is not an Integer", v);
+  }
+  const mrb_int n = mrb_integer(v);
+  if (n < -32768 || n > 32767)
+    mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(RangeError)),
+               "%i is outside int16 (-32768..32767)", n);
+  a->elems()[at] = static_cast<int16_t>(n);
+  return v;
+}
+
+mrb_value short_array_size(mrb_state* M, mrb_value self) {
+  return mrb_fixnum_value(short_array_get(M, self)->len);
+}
+
+// each { |v| }: the table is fixed-size, but the block may write to it, so
+// every element is read when it is yielded.
+mrb_value short_array_each(mrb_state* M, mrb_value self) {
+  mrb_value blk;
+  mrb_get_args(M, "&!", &blk);
+  for (mrb_int i = 0; i < short_array_get(M, self)->len; ++i)
+    mrb_yield(M, blk, mrb_fixnum_value(short_array_get(M, self)->elems()[i]));
+  return self;
+}
+
+mrb_value short_array_to_a(mrb_state* M, mrb_value self) {
+  ShortArray* a = short_array_get(M, self);
+  mrb_value out = mrb_ary_new_capa(M, a->len);
+  for (mrb_int i = 0; i < a->len; ++i)
+    mrb_ary_push(M, out, mrb_fixnum_value(a->elems()[i]));
+  return out;
+}
+
+// to_lcf: the chunk bytes, little-endian, the inverse of .unpack.
+mrb_value short_array_to_lcf(mrb_state* M, mrb_value self) {
+  ShortArray* a = short_array_get(M, self);
+  mrb_value out = mrb_str_new_capa(M, a->len * 2);
+  for (mrb_int i = 0; i < a->len; ++i) {
+    const uint16_t v = static_cast<uint16_t>(a->elems()[i]);
+    const char b[2] = {static_cast<char>(v & 0xff), static_cast<char>(v >> 8)};
+    mrb_str_cat(M, out, b, 2);
+  }
+  return out;
+}
+
 }  // namespace
 
 // OWNER_CALL_DIRECT rows (NATIVE_ROWS in tools/bc2cpp/owner_call_direct.rb):
@@ -349,6 +499,32 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
   };
 #undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mod, mod_module_functions_private);
+  // Registered here, where `mod` names LCF for the native base RBS scan.
+  RClass* short_array =
+      mrb_define_class_under(M, mod, "ShortArray", M->object_class);
+  MRB_SET_INSTANCE_TT(short_array, MRB_TT_DATA);
+#define MRB_MT_CLASS LCF__ShortArray
+  static const mrb_mt_entry short_array_methods[] = {
+      MRB_MT_ENTRY(short_array_init, MRB_SYM(initialize),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(short_array_init_copy, MRB_SYM(initialize_copy),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)                      //
+      MRB_MT_ENTRY(short_array_aref, MRB_SYM(get), MRB_ARGS_REQ(1))       //
+      MRB_MT_ENTRY(short_array_aset, MRB_SYM(set), MRB_ARGS_REQ(2))       //
+      MRB_MT_ENTRY(short_array_size, MRB_SYM(size), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(short_array_each, MRB_SYM(each), MRB_ARGS_BLOCK())     //
+      MRB_MT_ENTRY(short_array_to_a, MRB_SYM(to_a), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(short_array_to_lcf, MRB_SYM(to_lcf), MRB_ARGS_NONE())  //
+  };
+#undef MRB_MT_CLASS
+  MRB_MT_INIT_ROM(M, short_array, short_array_methods);
+#define MRB_MT_CLASS LCF__ShortArray_singleton
+  static const mrb_mt_entry short_array_class_methods[] = {
+      MRB_MT_ENTRY(short_array_s_unpack, MRB_SYM(unpack), MRB_ARGS_REQ(1))  //
+  };
+#undef MRB_MT_CLASS
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(short_array)),
+                  short_array_class_methods);
 }
 
 extern "C" void mrb_mruby_lcf_gem_final(mrb_state* M) {}

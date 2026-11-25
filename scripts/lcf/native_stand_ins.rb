@@ -64,4 +64,60 @@ module LCF
 
     [v].pack('E')
   end
+
+  # LCF::ShortArray (src/lcf.cxx): a fixed-size signed int16 table.
+  class ShortArray
+    def self.unpack(d)
+      a = new(0)
+      a.instance_variable_set(:@v, d.b.unpack('s<*'))
+      a
+    end
+
+    def initialize(n)
+      raise TypeError, "#{n.class} is not an Integer" unless n.is_a?(Integer)
+      raise ArgumentError, 'invalid LCF::ShortArray size' if n.negative?
+
+      @v = Array.new(n, 0)
+    end
+
+    def initialize_copy(src)
+      super
+      @v = src.to_a
+    end
+
+    def get(i)
+      raise TypeError, "#{i.class} is not an Integer" unless i.is_a?(Integer)
+
+      @v[i]
+    end
+
+    def set(i, v)
+      raise TypeError, "#{i.class} is not an Integer" unless i.is_a?(Integer)
+
+      at = i.negative? ? i + @v.size : i
+      raise IndexError, "index #{i} outside LCF::ShortArray of size #{@v.size}" unless at >= 0 && at < @v.size
+      raise TypeError, "#{v.class} is not an Integer" unless v.is_a?(Integer)
+      raise RangeError, "#{v} is outside int16 (-32768..32767)" unless v.between?(-32_768, 32_767)
+
+      @v[at] = v
+    end
+
+    def [](i) = get(i)
+
+    def []=(i, v)
+      set(i, v)
+    end
+
+    def size = @v.size
+
+    def each(&block)
+      raise ArgumentError, 'no block given' unless block
+
+      @v.each_index { |i| yield @v[i] }
+      self
+    end
+
+    def to_a = @v.dup
+    def to_lcf = @v.pack('s<*')
+  end
 end

@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# LCF_FILE_FIELDS join (tools/bc2cpp/class_layout.rb, array_join_source?): `@lower = unit[:lower_layer] || []` on an
+# LCF_FILE_FIELDS join (tools/bc2cpp/class_layout.rb, array_join_source?): `@ids = unit[:generator_tile_ids] || []` on an
 # exact LCF::MapUnit stores an Array on every path, so ClassLayout must not poison the ivar. The same shape on an
 # untyped receiver is the negative: it has no schema fact and must stay poisoned.
 #
@@ -25,9 +25,9 @@ SOURCE = <<~RUBY
   class JoinMap
     def initialize(unit, w)
       @w = w
-      @lower = unit[:lower_layer] || []
+      @ids = unit[:generator_tile_ids] || []
     end
-    def lower_size; @lower.size; end
+    def ids_size; @ids.size; end
   end
   class JoinLoader
     def self.load(io); JoinMap.new(LCF::MapUnit.new(io), 3); end
@@ -69,11 +69,11 @@ Dir.mktmpdir('lcf-join') do |dir|
   ENV.delete('BC2CPP_IVAR_POISON_REPORT')
 
   check.call('the generator ran', !code.nil? && !code.empty?)
-  # Single quotes: "#@lower" in a double-quoted string interpolates the ivar.
-  check.call('JoinMap#@lower is not poisoned', !poisoned.include?('element_read' + "\t" + 'JoinMap#@lower'))
-  body = code[/^\/\/ JoinMap#lower_size \(compiled.*?(?=^static mrb_value JoinMap_lower_size)/m].to_s
-  check.call('lower_size reads the Array length exactly', body.include?('ARY_LEN('))
-  check.call('lower_size does not dispatch', !body.match?(/mrb_funcall|bc2cpp_send|bc2cpp_getidx/))
+  # Single quotes: "#@ids" in a double-quoted string interpolates the ivar.
+  check.call('JoinMap#@ids is not poisoned', !poisoned.include?('element_read' + "\t" + 'JoinMap#@ids'))
+  body = code[/^\/\/ JoinMap#ids_size \(compiled.*?(?=^static mrb_value JoinMap_ids_size)/m].to_s
+  check.call('ids_size reads the Array length exactly', body.include?('ARY_LEN('))
+  check.call('ids_size does not dispatch', !body.match?(/mrb_funcall|bc2cpp_send|bc2cpp_getidx/))
 
   puts '-- an untyped receiver keeps the ivar poisoned'
   check.call('OpaqueMap#@cells stays poisoned', poisoned.include?('element_read' + "\t" + 'OpaqueMap#@cells'))

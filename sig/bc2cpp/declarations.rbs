@@ -18,6 +18,19 @@ module LCF
   def self.utf8_to_cp932: (String) -> String
 end
 
+# bc2cpp-native: base_lcf
+class LCF::ShortArray
+  def each: (*untyped) -> self
+  def get: (Numeric) -> Integer?
+  def initialize: (Numeric) -> self
+  def initialize_copy: (untyped) -> self
+  def set: (Numeric, untyped) -> untyped
+  def size: () -> Integer
+  def to_a: () -> Array
+  def to_lcf: () -> String
+  def self.unpack: (String) -> untyped
+end
+
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_lcf
 module LCF
@@ -209,6 +222,11 @@ end
 class LCF::Sections
   def []: (untyped) -> untyped
   def initialize: () -> untyped
+end
+# bc2cpp-native: base_lcf
+class LCF::ShortArray
+  def []: (untyped) -> untyped
+  def []=: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::Tree
@@ -1912,7 +1930,6 @@ class Game::Map
   def height: () -> untyped
   def chipset_id: () -> untyped
   def revision: () -> untyped
-  def add_drawn_ids: (untyped, untyped, untyped, untyped) -> untyped
   def drawn_tile_ids: () -> untyped
   def restore_substitutions: (untyped, untyped) -> untyped
   def set_lower: (untyped, untyped, untyped) -> untyped
@@ -7562,13 +7579,17 @@ class Game::EnemyAi
   def set_switch: (Integer, untyped) -> (bool | nil)
 end
 class Game::Map
+  # The map layers: `unit[:lower_layer]` (:int16_packed) or an empty one, checked at the store.
+  @lower: LCF::ShortArray
+  @upper: LCF::ShortArray
   def initialize: (Integer, LCF::MapUnit) -> untyped
   def substitution_snapshot: () -> Array
   def in_bounds?: (Integer, Integer) -> bool
+  def add_drawn_ids: (untyped, LCF::ShortArray, untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def lower: (untyped, untyped) -> (Integer | nil)
   %a{bc2cpp:hint}
-  def tile: (untyped, untyped, Integer, Integer) -> (Integer | nil)
+  def tile: (LCF::ShortArray, untyped, Integer, Integer) -> (Integer | nil)
   %a{bc2cpp:hint}
   def upper: (untyped, untyped) -> (Integer | nil)
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
