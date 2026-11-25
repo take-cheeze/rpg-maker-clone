@@ -119,6 +119,7 @@ check.call('wide row queries avoid per-kind temporary intersections', predicate_
 puts '-- model against the real reader (host)'
 $VERBOSE = nil
 load File.join(MRBLIB, 'lcf.rb')
+require_relative '../lcf/native_stand_ins'
 load File.join(MRBLIB, 'schema.rb')
 load File.join(MRBLIB, 'lcf_file.rb')
 load File.join(MRBLIB, 'save_typed.rb')

@@ -54,6 +54,7 @@ end
 ROOT = File.expand_path('../..', __dir__)
 lcf_lib = File.join(ROOT, 'mruby-lcf', 'mrblib')
 %w[lcf.rb schema.rb lcf_file.rb save_typed.rb save_typed_accessors.rb].each { |f| load File.join(lcf_lib, f) }
+require_relative '../lcf/native_stand_ins'
 lib = File.join(ROOT, 'mruby-rpg2k', 'mrblib')
 %w[game.rb game/battle.rb game/battle_support.rb game/legacy_lsd.rb game/lsd_io.rb
    interpreter.rb main.rb].each { |f| load File.join(lib, f) }

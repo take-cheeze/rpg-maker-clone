@@ -111,6 +111,7 @@ end
 
 ROOT = File.expand_path('../..', __dir__)
 load File.join(ROOT, 'mruby-lcf', 'mrblib', 'lcf.rb')
+require_relative '../lcf/native_stand_ins'
 load File.join(ROOT, 'mruby-lcf', 'mrblib', 'schema.rb')
 
 # Field ids inside the save's hero chunk (104), per LCF::Schema::SAVE_MOVABLE.

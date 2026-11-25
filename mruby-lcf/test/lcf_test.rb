@@ -1,3 +1,8 @@
+# Spelled as expressions: a 32-bit mrb_int parser negates the literal 2147483648 (a bignum there), and mruby's float
+# reader flushes a subnormal literal to zero.
+INT32_MIN = -2147483647 - 1
+SUBNORMAL_MIN = 2.0 ** -1074
+
 assert 'Read BER number' do
   [
     [0x7f, "\x7f"],
@@ -20,7 +25,7 @@ assert 'Read BER number folds the sign without pack' do
   assert_equal(-1, LCF.read_ber(StringIO.new("\x8f\xff\xff\xff\x7f")))
   assert_equal(-2, LCF.read_ber(StringIO.new("\x8f\xff\xff\xff\x7e")))
   # The extremes of the signed 32-bit range the format stores.
-  assert_equal(-2147483648, LCF.read_ber(StringIO.new("\x88\x80\x80\x80\x00")))
+  assert_equal(INT32_MIN, LCF.read_ber(StringIO.new("\x88\x80\x80\x80\x00")))
   assert_equal(2147483647, LCF.read_ber(StringIO.new("\x87\xff\xff\xff\x7f")))
   # Only the low 32 bits are significant, exactly as the pack fold behaved: a
   # (malformed) encoding wider than five groups keeps its bottom 32 bits rather
@@ -75,7 +80,12 @@ end
 # ---- LCF binary format encoders (mirror the on-disk layout) ----------------
 # These let the parser be exercised against synthetic, self-consistent data.
 def lcf_ber(n)
-  n &= 0xFFFFFFFF
+  # A negative n is its 32-bit two's complement, five groups; arithmetic shifts
+  # keep every value inside a 32-bit mrb_int.
+  if n < 0
+    return [((n >> 28) & 0x0f) | 0x80, ((n >> 21) & 0x7f) | 0x80, ((n >> 14) & 0x7f) | 0x80,
+            ((n >> 7) & 0x7f) | 0x80, n & 0x7f].pack('C*')
+  end
   out = [n & 0x7f]
   n >>= 7
   while n > 0
@@ -671,28 +681,74 @@ assert 'LCF.write_ber matches the reference encoder and round-trips read_ber' do
 end
 
 assert 'LCF.unpack_int32/pack_int32 round-trip the signed 32bit range' do
-  # unpack_int32/pack_int32 fold the same 32-bit two's-complement mask/sign-bit/
-  # wrap constants read_ber/write_ber use (LCF::INT32_MASK/INT32_SIGN_BIT/
-  # INT32_WRAP) -- exercise the same extremes those constants exist for.
-  [0, 1, -1, -2, 2147483647, -2147483648, 1_000_000, -1_000_000].each do |n|
+  # The extremes of the signed 32-bit range the save's variable table holds.
+  [0, 1, -1, -2, 2147483647, INT32_MIN, 1_000_000, -1_000_000].each do |n|
     packed = LCF.pack_int32([n])
     assert_equal 4, packed.bytesize
     assert_equal [n], LCF.unpack_int32(packed)
   end
   # Byte-exact little-endian encoding for a couple of the extremes.
   assert_equal "\xff\xff\xff\x7f", LCF.pack_int32([2147483647])
-  assert_equal "\x00\x00\x00\x80", LCF.pack_int32([-2147483648])
+  assert_equal "\x00\x00\x00\x80", LCF.pack_int32([INT32_MIN])
   assert_equal "\xff\xff\xff\xff", LCF.pack_int32([-1])
-  assert_equal [2147483647, -2147483648, -1], LCF.unpack_int32("\xff\xff\xff\x7f\x00\x00\x00\x80\xff\xff\xff\xff")
+  assert_equal [2147483647, INT32_MIN, -1], LCF.unpack_int32("\xff\xff\xff\x7f\x00\x00\x00\x80\xff\xff\xff\xff")
 end
 
-assert 'LCF::INT32_MASK/INT32_SIGN_BIT/INT32_WRAP hold the exact 32bit constants' do
-  # These replaced bare 0xffff_ffff/0x8000_0000/0x1_0000_0000 hex literals
-  # (see mrblib/lcf.rb's own comment) -- prove the computed values are still
-  # bit-for-bit identical, not merely "close enough".
-  assert_equal 0xffff_ffff, LCF::INT32_MASK
-  assert_equal 0x8000_0000, LCF::INT32_SIGN_BIT
-  assert_equal 0x1_0000_0000, LCF::INT32_WRAP
+assert 'LCF native BER codec: 32-bit wrap, over-long and truncated input' do
+  # Over-long encodings keep their low 32 bits, whichever reader decodes them.
+  {
+    "\x8f\xff\xff\xff\x7f" => -1,
+    "\x88\x80\x80\x80\x00" => INT32_MIN,
+    "\x87\xff\xff\xff\x7f" => 2147483647,
+    "\x81\x80\x80\x80\x80\x01" => 1,
+    "\xff\xff\xff\xff\xff\xff\x7f" => -1,
+    "\x80\x80\x80\x80\x80\x80\x80\x05" => 5,
+    "\x80\x00" => 0,
+    "\x9f\xff\xff\xff\x7f" => -1
+  }.each do |data, num|
+    assert_equal num, LCF.read_ber(StringIO.new(data))
+    assert_equal num, LCF.ber_value(data + "\x01")
+  end
+  assert_raise(RuntimeError) { LCF.read_ber(StringIO.new("\x8f\xff\xff\xff\xff")) }
+  assert_raise(RuntimeError) { LCF.ber_value("\x8f\xff\xff\xff\xff") }
+  assert_equal(-128, LCF.ber_shift(-1, 0))
+  assert_equal 0x7f, LCF.ber_shift(0, 0xff)
+  [2147483647, INT32_MIN, 0x0fff_ffff, 0x1000_0000].each do |n|
+    assert_equal n, LCF.ber_value(LCF.write_ber(n))
+  end
+  assert_equal "\x87\xff\xff\xff\x7f", LCF.write_ber(2147483647)
+  assert_equal "\x88\x80\x80\x80\x00", LCF.write_ber(INT32_MIN)
+  assert_equal "\x81\x80\x80\x80\x00", LCF.write_ber(0x1000_0000)
+  out = "ab"
+  assert_same out, LCF.append_ber(out, 300)
+  assert_equal "ab\x82\x2c", out
+  # A trailing partial group is not a value.
+  assert_equal [1, -1], LCF.unpack_int32("\x01\x00\x00\x00\xff\xff\xff\xff\x05\x06")
+  assert_equal [], LCF.unpack_int32("\x01")
+end
+
+assert 'LCF native double codec: the edge cases pack_double used to compute' do
+  assert_nil LCF.unpack_double(nil)
+  assert_nil LCF.unpack_double("\x00" * 7)
+  assert_equal 1.5, LCF.unpack_double("\x00\x00\x00\x00\x00\x00\xf8\x3f\xff")
+  assert_equal(-2.0, LCF.unpack_double("\x00\x00\x00\x00\x00\x00\x00\xc0"))
+  assert_equal SUBNORMAL_MIN, LCF.unpack_double("\x01\x00\x00\x00\x00\x00\x00\x00")
+  assert_true LCF.unpack_double("\x00\x00\x00\x00\x00\x00\xf0\x7f").infinite? == 1
+  assert_true LCF.unpack_double("\x00\x00\x00\x00\x00\x00\xf0\xff").infinite? == -1
+  nan = LCF.unpack_double("\x01\x00\x00\x00\x00\x00\xf0\xff")
+  assert_true nan.nan?
+  # Every NaN packs to one pattern, both zeros to +0, a subnormal to a signed zero.
+  assert_equal "\x00\x00\x00\x00\x00\x00\xf8\x7f", LCF.pack_double(nan)
+  assert_equal "\x00" * 8, LCF.pack_double(-0.0)
+  assert_equal "\x00" * 8, LCF.pack_double(SUBNORMAL_MIN)
+  assert_equal "\x00" * 7 + "\x80", LCF.pack_double(-SUBNORMAL_MIN)
+  assert_equal "\x00\x00\x00\x00\x00\x00\x10\x00", LCF.pack_double(2.2250738585072014e-308)
+  assert_equal "\x00\x00\x00\x00\x00\x00\x08\x40", LCF.pack_double(3)
+  assert_raise(FloatDomainError) { LCF.pack_double(1.0 / 0.0) }
+  assert_raise(FloatDomainError) { LCF.pack_double(-1.0 / 0.0) }
+  [1.0e300, -123.456, 45000.123456789, 2.0 ** -1000].each do |v|
+    assert_equal v, LCF.unpack_double(LCF.pack_double(v))
+  end
 end
 
 assert 'Array1D#to_lcf reproduces its source bytes (terminated and not)' do
