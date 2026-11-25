@@ -7906,8 +7906,10 @@ class RPG2k
       # or Scene::Battle's `map.state`, Scene::Map's attr_reader of that same slot.
       @state: Game::State?
       # Scene::Map's and MapViewer's map: Scene::Map stores `state.map` (Game::State#@map) or RPG2k#load_map's
-      # `Game::Map.new`; MapViewer its `map:` keyword (#load_map's result or `@state.map`) or `state.map`.
-      @map: Game::Map?
+      # `Game::Map.new`; MapViewer its `map:` keyword (#load_map's result or `@state.map`) or `state.map`. Every
+      # scene is built after RPG2k sets `state.map`, and both #initialize store it before any call on self, so no
+      # read sees nil.
+      @map: Game::Map
       # Touched only by Scene::Map and Scene::Battle. Scene::Map#initialize stores `Game::Rng.new(0x2000)` before any
       # call on self, Scene::Battle#initialize `map.rng` (that same object) right after `super`. Never nil.
       @rng: Game::Rng

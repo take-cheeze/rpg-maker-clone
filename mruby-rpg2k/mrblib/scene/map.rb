@@ -512,6 +512,9 @@ class RPG2k
         # constructor reads anything the steps below set up.
         @rng = Game::Rng.new(0x2000)
         @interpreter = Game::Interpreter.new(@state)
+        # Stored before any call on self, so no read sees @map unset (its
+        # declaration has no `?`); the calls up to the chipset never read it.
+        @map = state.map
         # Filled by #build_parallels below; empty until then, so no reader sees nil.
         @parallels = []
         # Named graphics loaded and memoized on demand -- see #cached_bitmap.
@@ -565,7 +568,6 @@ class RPG2k
             resume_saved_bgm
           end
         end
-        @map = state.map
         RGSS::Profiler.section(:"map.transition.chipset") do
           @chipset = build_chipset
           @chipset_bmp = load_chipset_graphic
