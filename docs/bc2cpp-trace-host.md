@@ -101,12 +101,12 @@ was discovered by a failing build step, in this order: `3rd/mruby-onig-regexp`
 (`mruby-rgss` include path), and `3rd/quickjs` (`mruby-mvjs`'s host half),
 along with `3rd/mgem-list`, `3rd/ng-log`, `3rd/inicpp` and `3rd/gflags`.
 Initialise them with
-`git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio 3rd/mruby-onig-regexp 3rd/uni-algo 3rd/stb 3rd/lvgl 3rd/quickjs 3rd/mgem-list 3rd/ng-log 3rd/inicpp 3rd/gflags`.
+`git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio mrbgems/mruby-marshal 3rd/mruby-onig-regexp 3rd/uni-algo 3rd/stb 3rd/lvgl 3rd/quickjs 3rd/mgem-list 3rd/ng-log 3rd/inicpp 3rd/gflags`.
 `rake` must be on `PATH`. The bootstrap `mrbc` build needs `bison` and `gperf`.
 
 The build also applies the patches in `scripts/mruby/standalone_prep.bash` to
-the submodule working trees, so `git status` in `3rd/mruby`
-and `3rd/mruby-stringio` shows modified files afterwards.
+the submodule working trees, so `git status` in `3rd/mruby`,
+`3rd/mruby-stringio` and `mrbgems/mruby-marshal` shows modified files afterwards.
 Those are build outputs, not commits. The superproject's recorded pointers
 do not change.
 

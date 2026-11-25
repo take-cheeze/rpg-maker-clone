@@ -44,3 +44,6 @@
 	path = 3rd/nfcxx
 	url = https://github.com/take-cheeze/nfcxx.git
 	shallow = true
+[submodule "mrbgems/mruby-marshal"]
+	path = mrbgems/mruby-marshal
+	url = https://github.com/take-cheeze/mruby-marshal.git

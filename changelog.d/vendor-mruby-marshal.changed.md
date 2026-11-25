@@ -1,1 +1,0 @@
-- The `mruby-marshal` gem is now vendored at `mrbgems/mruby-marshal` (from `take-cheeze/mruby-marshal` at `82db80d`) instead of a submodule. `3rd/mruby-marshal` remains as a symlink for the bc2cpp sources in `3rd/nfcxx` until that submodule's paths move.
