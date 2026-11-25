@@ -1,8 +1,9 @@
 // Renode-only Wio firmware that plays real game data: the same compiled engine
-// as env:wio, with the game read from the image game_rom.repl maps at
-// game_rom_base() (wio_game_rom.cxx), and a heap census line per phase in the
-// diagnostic log. scripts/wio/renode_game.bash builds the image, boots this
-// and checks how far it got.
+// as env:wio, with the game read from the microSD card's game folder when the
+// card has one, else from the image game_rom.repl maps at game_rom_base()
+// (wio_game_rom.cxx), and a heap census line per phase in the diagnostic log.
+// scripts/wio/renode_game.bash builds the image, boots this and checks how far
+// it got. The run's config below always comes from the image.
 //
 // The image's config (scripts/wio/game_rom.rb --config) sets the run:
 //   frames=N        main_loop frames before stopping (default 600)
@@ -46,6 +47,7 @@
 #include "wio.hxx"
 #include "wio_game_rom.h"
 #include "wio_qspi_xip.h"
+#include "wio_sd.h"
 
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
@@ -330,6 +332,9 @@ void setup(void) {
   if (!wio_game_rom_config("keys", g_keys, sizeof(g_keys)))
     g_keys[0] = '\0';
   probe("setup");
+  wio_game_files_begin();
+  const bool from_sd = wio_sd_state() == WIO_SD_GAME;
+  probe("sd");
 
   lv_init();
   lv_display_t* disp = wio_display_create(320, 240);
@@ -358,10 +363,13 @@ void setup(void) {
   // registered below; the arena entries would hold the rest forever.
   const int boot_ai = mrb_gc_arena_save(g_mrb);
   // scripts/wio/game_rom.rb's decoded images, read in place (ROM_BITMAP).
+  // They are the image's game's, not the card's.
   size_t bitmaps_len = 0;
-  if (const void* bitmaps = wio_game_rom_file("/rgss/bitmaps", &bitmaps_len))
-    rgss_set_rom_bitmaps(bitmaps, bitmaps_len, "/rom");
-  set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, "/rom"));
+  const void* bitmaps =
+      from_sd ? nullptr : wio_game_rom_file("/rgss/bitmaps", &bitmaps_len);
+  if (bitmaps)
+    rgss_set_rom_bitmaps(bitmaps, bitmaps_len, WIO_GAME_ROOT);
+  set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, WIO_GAME_ROOT));
   set_const("RTP_DIR", mrb_str_new_cstr(g_mrb, ""));
   set_const("TEST_PLAY", mrb_false_value());
   set_const("NO_RENDER_WAIT", mrb_true_value());

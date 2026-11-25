@@ -54,6 +54,14 @@ engine.
 The developer tools (F9 debug menu, map viewer/editor, chipset editor) are not in the Wio firmware: F9 does
 nothing. `WIO_DEBUG_SCENES=1` at build time keeps them.
 
+## Game data on the microSD card
+
+The firmware takes the game's files from the microSD card when it has a `/rpg2k` folder holding the game folder's
+contents (`/rpg2k/RPG_RT.ldb`, `/rpg2k/Title/...`); otherwise from the game image in the QSPI flash. The card must be
+FAT12/16/32: exFAT (how SDXC cards of 64 GB and up come) is not read. Japanese file names work. The boot screen and
+the `[Wio]` log lines say where the files come from, or why the card was not used. `WIO_SD=0` at build time leaves
+the card driver out. `wio` itself does not play the game yet; `wio_renode_game` does, under Renode.
+
 ## Renode: `wio_sim`
 
 `pio run -e wio_sim -t upload` builds `wio` and boots it under the project's Renode
