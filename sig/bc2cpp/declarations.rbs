@@ -3327,9 +3327,10 @@ end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::Map::ShopState
   def model: () -> untyped
-  def model=: (untyped) -> untyped
   def has_menu: () -> untyped
-  def has_menu=: (untyped) -> untyped
+  def gold: () -> untyped
+  def terms: () -> untyped
+  def interp: () -> untyped
   def screen: () -> untyped
   def screen=: (untyped) -> untyped
   def index: () -> untyped
@@ -3340,8 +3341,6 @@ class RPG2k::Scene::Map::ShopState
   def cmd_index=: (untyped) -> untyped
   def window: () -> untyped
   def window=: (untyped) -> untyped
-  def gold: () -> untyped
-  def gold=: (untyped) -> untyped
   def status: () -> untyped
   def status=: (untyped) -> untyped
   def party: () -> untyped
@@ -3350,17 +3349,13 @@ class RPG2k::Scene::Map::ShopState
   def desc=: (untyped) -> untyped
   def prompt: () -> untyped
   def prompt=: (untyped) -> untyped
-  def terms: () -> untyped
-  def terms=: (untyped) -> untyped
   def browsed: () -> untyped
   def browsed=: (untyped) -> untyped
-  def interp: () -> untyped
-  def interp=: (untyped) -> untyped
   def confirm_timer: () -> untyped
   def confirm_timer=: (untyped) -> untyped
   def quantity: () -> untyped
   def quantity=: (untyped) -> untyped
-  def initialize: () -> untyped
+  def initialize: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::MapViewer < RPG2k::Scene::Base
@@ -8034,6 +8029,10 @@ module RPG2k
         @common_event_id: Integer?
         @wait_timer: Integer?
       end
+      # A live shop: #open_shop's ShopState.new is the one construction, and passes its Game::Shop.new.
+      class ShopState
+        @model: Game::Shop
+      end
     end
 
     class DebugMenu
@@ -12112,7 +12111,7 @@ end
 
 # bc2cpp-native: typed_returns
 class RPG2k::Scene::Map::ShopState
-  def model: () -> nil
+  def model: () -> Game::Shop
   def has_menu: () -> nil
   def screen: () -> nil
   def index: () -> Integer?
@@ -12129,7 +12128,7 @@ class RPG2k::Scene::Map::ShopState
   def interp: () -> nil
   def confirm_timer: () -> nil
   def quantity: () -> nil
-  def initialize: () -> nil
+  def initialize: (Game::Shop, untyped, untyped, untyped, untyped, untyped) -> nil
 end
 
 # bc2cpp-native: typed_returns
