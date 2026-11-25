@@ -1502,6 +1502,7 @@ module Game::CommonEvent
   def self.eager?: () -> untyped
   def self.eager_load: (untyped) -> untyped
   def self.eligible: (untyped, untyped) -> untyped
+  def self.index: (untyped, untyped) -> untyped
   def self.load: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
@@ -1522,6 +1523,11 @@ class Game::CommonEvent::CommonEventRecord
   def commands=: (untyped) -> untyped
   def initialize: () -> untyped
   def lazy_in: (untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::CommonEvent::Index
+  def []: (untyped) -> untyped
+  def initialize: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
 class Game::Enemy
@@ -3328,9 +3334,10 @@ end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::Map::ShopState
   def model: () -> untyped
-  def model=: (untyped) -> untyped
   def has_menu: () -> untyped
-  def has_menu=: (untyped) -> untyped
+  def gold: () -> untyped
+  def terms: () -> untyped
+  def interp: () -> untyped
   def screen: () -> untyped
   def screen=: (untyped) -> untyped
   def index: () -> untyped
@@ -3341,8 +3348,6 @@ class RPG2k::Scene::Map::ShopState
   def cmd_index=: (untyped) -> untyped
   def window: () -> untyped
   def window=: (untyped) -> untyped
-  def gold: () -> untyped
-  def gold=: (untyped) -> untyped
   def status: () -> untyped
   def status=: (untyped) -> untyped
   def party: () -> untyped
@@ -3351,17 +3356,13 @@ class RPG2k::Scene::Map::ShopState
   def desc=: (untyped) -> untyped
   def prompt: () -> untyped
   def prompt=: (untyped) -> untyped
-  def terms: () -> untyped
-  def terms=: (untyped) -> untyped
   def browsed: () -> untyped
   def browsed=: (untyped) -> untyped
-  def interp: () -> untyped
-  def interp=: (untyped) -> untyped
   def confirm_timer: () -> untyped
   def confirm_timer=: (untyped) -> untyped
   def quantity: () -> untyped
   def quantity=: (untyped) -> untyped
-  def initialize: () -> untyped
+  def initialize: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::MapViewer < RPG2k::Scene::Base
@@ -8035,6 +8036,10 @@ module RPG2k
         @common_event_id: Integer?
         @wait_timer: Integer?
       end
+      # A live shop: #open_shop's ShopState.new is the one construction, and passes its Game::Shop.new.
+      class ShopState
+        @model: Game::Shop
+      end
     end
 
     class DebugMenu
@@ -12113,7 +12118,7 @@ end
 
 # bc2cpp-native: typed_returns
 class RPG2k::Scene::Map::ShopState
-  def model: () -> nil
+  def model: () -> Game::Shop
   def has_menu: () -> nil
   def screen: () -> nil
   def index: () -> Integer?
@@ -12130,7 +12135,7 @@ class RPG2k::Scene::Map::ShopState
   def interp: () -> nil
   def confirm_timer: () -> nil
   def quantity: () -> nil
-  def initialize: () -> nil
+  def initialize: (Game::Shop, untyped, untyped, untyped, untyped, untyped) -> nil
 end
 
 # bc2cpp-native: typed_returns
@@ -13886,8 +13891,9 @@ class Game::Battle::Combatant
   @actor: Game::Actor?
 end
 class Game::MoveRoute
-  # Scene::Map#run_route_step's character (an event's char, @player_char or a vehicle's char), passed down unchanged.
-  def execute: (untyped, Game::Character? character, untyped) -> untyped
-  def do_move: (Game::Character? character, untyped, untyped) -> untyped
-  def land_jump: (Game::Character? character, untyped, untyped, untyped, untyped) -> untyped
+  # Scene::Map#run_route_step's character, passed down unchanged: an event's `e.char` (MapEventState's @char), or
+  # @player_char / a @vehicle_chars entry, each read through (`.move_frequency`) just before; never nil.
+  def execute: (untyped, Game::Character character, untyped) -> untyped
+  def do_move: (Game::Character character, untyped, untyped) -> untyped
+  def land_jump: (Game::Character character, untyped, untyped, untyped, untyped) -> untyped
 end

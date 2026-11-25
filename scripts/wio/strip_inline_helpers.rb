@@ -213,7 +213,7 @@ REWRITES = {
         expect_lines: 3, digest: '3f678e4331c22464' },
       { first: '      def start_player_slide',
         last: '      end', # def start_player_slide's own `end`
-        expect_lines: 9, digest: '9386f02d3d4aeb05' },
+        expect_lines: 10, digest: 'fbf77eea43b75e59' },
       { first: '      def player_slide_step',
         last: '      end', # def player_slide_step's own `end`
         expect_lines: 6, digest: 'a4a1e055635d91b1' },
@@ -243,7 +243,7 @@ REWRITES = {
         expect_lines: 4, digest: 'bbbd0119410c2397' },
       { first: '      def apply_pending_choice_lines',
         last: '      end', # def apply_pending_choice_lines's own `end`
-        expect_lines: 8, digest: '13ef77385b6bba89' },
+        expect_lines: 9, digest: '15f397aa98fa9988' },
       { first: '      def hero_screen_y',
         last: '      end', # def hero_screen_y's own `end`
         expect_lines: 5, digest: 'ebdb38f1868b9e1b' },
@@ -255,7 +255,7 @@ REWRITES = {
         expect_lines: 6, digest: 'b81382a16878ceaf' },
       { first: '      def player_draw_charset',
         last: '      end', # def player_draw_charset's own `end`
-        expect_lines: 7, digest: '6d6cc4e373db29ff' },
+        expect_lines: 8, digest: 'a1b54c83e13bdf9c' },
       { first: '      def release_transition_capture',
         last: '      end', # def release_transition_capture's own `end`
         expect_lines: 6, digest: '06c2324cd2991682' },
@@ -291,7 +291,7 @@ REWRITES = {
         expect_lines: 4, digest: '10d336ce72e2f0d5' },
       { first: '      def choice_row_indent(line_index)',
         last: '      end', # def choice_row_indent's own `end`
-        expect_lines: 4, digest: '2a4c5f7d7f228b75' },
+        expect_lines: 5, digest: 'e243e1956bb006ff' },
       { first: '      def player_bush_depth',
         last: '      end', # def player_bush_depth's own `end`
         expect_lines: 4, digest: '7129b15b7fcca216' },
@@ -318,11 +318,12 @@ REWRITES = {
              'Game::EventGraphic.spin_direction(e.anim_phase) : ch.direction' },
       { old: '        ev.forced_freq = valid_move_freq(freq)',
         new: '        ev.forced_freq = ((freq && freq >= 1 && freq <= 8) ? freq : nil)' },
+      { old: "        ch.through = @player_through\n        ch.move_frequency = valid_move_freq(freq) || ch.move_frequency",
+        new: "        ch.through = @player_through\n        ch.move_frequency = ((freq && freq >= 1 && freq <= 8) ? freq : nil) || " \
+             'ch.move_frequency' },
       { old: '        ch.move_frequency = valid_move_freq(freq) || ch.move_frequency',
         new: '        ch.move_frequency = ((freq && freq >= 1 && freq <= 8) ? freq : nil) || ' \
              'ch.move_frequency' },
-      { old: '        @player_char.move_frequency = valid_move_freq(freq) ||',
-        new: '        @player_char.move_frequency = ((freq && freq >= 1 && freq <= 8) ? freq : nil) ||' },
       { old: '        apply_tile_substitution(interp)',
         new: '        (interp.take_tiles_changed; nil)' },
       { old: '        setup_screen_overlay
@@ -405,11 +406,9 @@ REWRITES = {
 ',
         new: '          when :key_input then (resolve_key_input(@interpreter))
 ' }, # drive_key_input
-      { old: '        shop.gold = build_shop_gold_window
-',
-        new: '        shop.gold = (gw = SHOP_STATUS_W; win = Window.new(SCREEN_W - gw - 6, SHOP_GOLD_Y,
-                         gw, SHOP_LINE_H + Window::BORDER * 2); win.z = 300; win.windowskin = @windowskin; win)
-' }, # build_shop_gold_window
+      { old: ' screen, build_shop_gold_window, shop_terms',
+        new: ' screen, (gw = SHOP_STATUS_W; win = Window.new(SCREEN_W - gw - 6, SHOP_GOLD_Y,
+                         gw, SHOP_LINE_H + Window::BORDER * 2); win.z = 300; win.windowskin = @windowskin; win), shop_terms' }, # build_shop_gold_window
       { old: '        inner_h = [inner_h, shop_list_min_inner_h].max
 ',
         new: '        inner_h = [inner_h, (SCREEN_H - SHOP_DESC_H - MSG_WIN_H - Window::BORDER * 2)].max
@@ -572,9 +571,9 @@ REWRITES = {
 ',
         new: '        face_sheet = (!(cfg.face?) ? nil : (load_face_bitmap(cfg.face_name)))
 ' }, # load_face
-      { old: '          x = @message.text_x + choice_row_indent(start + i)
+      { old: '          x = msg.text_x + choice_row_indent(start + i)
 ',
-        new: '          x = @message.text_x + (!(@message && @message.choice) ? 0 : ((start + i) >= (@message.choice_start || 0) ? MSG_CHOICE_INDENT : 0))
+        new: '          x = msg.text_x + (!(@message && @message.choice) ? 0 : ((start + i) >= (@message.choice_start || 0) ? MSG_CHOICE_INDENT : 0))
 ' }, # choice_row_indent
       { old: '        bush = player_bush_depth
 ',
