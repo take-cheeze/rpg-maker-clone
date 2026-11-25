@@ -185,8 +185,13 @@ void snapshot(uint32_t slot, uint32_t kind, const char* name, bool classes) {
   }
   h->n_blocks = blocks;
   char* out = reinterpret_cast<char*>(r);
-  if (classes && g_mrb)
+  // mrb_class_name's strings are left in the GC arena: kept there, those of a
+  // boot snapshot would stay live for the whole run.
+  if (classes && g_mrb) {
+    const int ai = mrb_gc_arena_save(g_mrb);
     mrb_objspace_each_objects(g_mrb, class_names, &out);
+    mrb_gc_arena_restore(g_mrb, ai);
+  }
   h->n_classes_bytes = out - reinterpret_cast<char*>(r);
   heapwalk_flush(slot, out - reinterpret_cast<char*>(h), heap_base(),
                  top - heap_base());
