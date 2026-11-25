@@ -101,7 +101,9 @@ MRB_API_ALLOW = {
     'mrb_iv_get', 'mrb_iv_set', 'mrb_iv_defined',
     'mrb_obj_as_string', 'mrb_obj_class', 'mrb_obj_classname', 'mrb_obj_equal', 'mrb_obj_is_kind_of',
     'mrb_obj_new', 'mrb_obj_value',
-    'mrb_raise', 'mrb_raisef', 'mrb_exc_get_id',
+    'mrb_raise', 'mrb_raisef', 'mrb_exc_get_id', 'mrb_exc_raise',
+    # PIXEL_GC (mruby-rgss/src/lib.cxx): a collection scans the VM stack but reads nothing of the calling frame.
+    'mrb_full_gc',
     'mrb_str_new', 'mrb_str_new_cstr', 'mrb_str_new_static', 'mrb_str_to_cstr', 'mrb_string_value_cstr',
     'mrb_string_value_len', 'mrb_str_cat', 'mrb_str_cat_cstr', 'mrb_str_cat_str', 'mrb_str_append',
     'mrb_debug_get_position',
