@@ -80,15 +80,19 @@ def _unwind_of(entries, starts, lo, size):
     return runs
 
 
+# The internal-flash code: qspi_xip.ld splits it around the QSPI sections.
+TEXT_OUTPUTS = (".text", ".text_rest")
+
+
 def _text_input_sections(map_path):
-    """(name, addr, size) of each input section the map places in the .text output section."""
+    """(name, addr, size) of each input section the map places in the TEXT_OUTPUTS output sections."""
     out, inside, pending = [], False, None
     for line in open(map_path, errors="replace").read().split("\n"):
-        if not inside:
-            inside = line.startswith(".text ")
-            continue
         if line and not line.startswith(" "):
-            break
+            inside = line.split()[0] in TEXT_OUTPUTS
+            continue
+        if not inside:
+            continue
         m = re.match(r"^ (\.text\S*)\s*$", line)
         if m:
             pending = m.group(1)
@@ -155,7 +159,10 @@ def _link(target, source, env):
     elf = str(target[0])
     order = os.path.join(build, "exidx_order.ld")
     text = open(_find(script, cmd)).read()
-    anchor = "KEEP(*(.isr_vector))"
+    # A script that marks the place (qspi_xip.ld) gets the order there, else right after the vector table.
+    anchor = "/* EXIDX_ORDER (app/wio/exidx_merge.py) */"
+    if anchor not in text:
+        anchor = "KEEP(*(.isr_vector))"
     if text.count(anchor) != 1:
         raise SystemExit("exidx_merge: %s has no single %s to order .text after" % (script, anchor))
     merged = os.path.join(build, "exidx_merge.ld")
