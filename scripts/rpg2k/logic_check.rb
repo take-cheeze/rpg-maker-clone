@@ -11104,6 +11104,46 @@ check 'Game::Picture with zero duration applies immediately' do
   ok !p.moving?
 end
 
+check 'Show/Move Picture clamps huge variable coordinates so every fixed value fits 32 bits' do
+  int32 = ->(n) { n.nil? || (n >= -0x8000_0000 && n <= 0x7fff_ffff) }
+  max = Game::Picture::COORD_MAX
+  eq max << Game::Picture::FIX_SHIFT, Game::Picture::FIXED_MAX
+  # An RPG2003 variable reaches +-9_999_999, past the 2_097_151 px an unclamped `x << 10` fits in 32 bits.
+  st = new_state(rpg2003: true)
+  st.variables[7] = 9_999_999
+  st.variables[8] = -9_999_999
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_PICTURE,
+                        [1, 1, 7, 8, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0], string: 'p'),
+            FakeCmd.new(IC::MOVE_PICTURE,
+                        [1, 1, 8, 7, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0], string: '')])
+  it.update
+  p = st.pictures[1]
+  eq [max, -max], [p.show_x, p.show_y], 'Show Picture clamps to +-COORD_MAX px'
+  eq [-max, max], [p.x, p.y], 'Move Picture clamps too'
+  # The opposite extreme over 7 frames: the per-frame difference is 2 * FIXED_MAX.
+  st.move_picture(1, 2_147_483_647, -2_147_483_648, 2_000_000_000, 255, 100, 100, 100, 100, 7)
+  seen = []
+  7.times do
+    p.update
+    seen.push(p.x)
+    %i[@x @y @zoom @tx @ty @tzoom].each { |iv| ok int32.call(p.instance_variable_get(iv)), "#{iv} fits 32 bits" }
+  end
+  eq max, seen.last, 'lands on the clamped target'
+  eq [max, -max, max], [p.x, p.y, p.zoom]
+  ok seen.each_cons(2).all? { |a, b| b > a }, "moves monotonically: #{seen.inspect}"
+  # A save's :double is clamped too: a Float in pixels, or the no-Float build's fixed Integer.
+  eq Game::Picture::FIXED_MAX, Game::Picture.fixed_of(1.0e12)
+  eq(-Game::Picture::FIXED_MAX, Game::Picture.fixed_of(-1.0e12))
+  eq Game::Picture::FIXED_MAX, Game::Picture.arg(0x7fff_ffff, true, 0)
+  # div_round keeps the rounding the add-half formula had.
+  [[7, 2], [-7, 2], [5, 3], [-5, 3], [10_240, 7], [-10_240, 7], [0, 4],
+   [2 * Game::Picture::FIXED_MAX, 3]].each do |a, b|
+    want = a < 0 ? -(((-a) + (b >> 1)) / b) : (a + (b >> 1)) / b
+    eq want, Game::Picture.div_round(a, b), "div_round(#{a}, #{b})"
+  end
+end
+
 check 'Show Picture creates a picture from its parameters' do
   st = new_state
   it = Game::Interpreter.new(st)
