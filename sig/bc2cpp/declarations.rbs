@@ -169,7 +169,7 @@ module LCF
   def self.pack_int32: (Array) -> String
   def self.rom_get: (untyped, untyped) -> untyped
   def self.rom_keys: (untyped) -> untyped
-  def self.unpack_double: (*untyped) -> Float?
+  def self.unpack_double: (untyped) -> Float?
   def self.unpack_int32: (String) -> Array
   def self.utf8_to_cp932: (String) -> String
 end
