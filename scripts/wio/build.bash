@@ -66,6 +66,12 @@ inc="$inc:$framework/variants/wio_terminal:$root/.pio/libdeps/wio_sd_upload/Seee
     RGSS_WIO_ARDUINO_INCLUDES="$inc" MRUBY_CONFIG="$root/build_config.rb" rake -m -j"$(nproc)"
 )
 
+# Without mruby-bigint (build_config.rb) no Integer pool literal may reach the wio world's bytecode.
+if [ "${WIO_BIGINT:-0}" != 1 ]; then
+  ruby "$root/scripts/wio/bignum_literal_check.rb" "$build_dir/host/mrbc/bin/mrbc" --self-test
+  ruby "$root/scripts/wio/bignum_literal_check.rb" "$build_dir/host/mrbc/bin/mrbc" "$build_dir"
+fi
+
 log="$build_dir/pio-wio.log"
 flags="-Wl,--print-memory-usage"
 [ "${WIO_QSPI_XIP:-1}" = 0 ] && flags="-Wl,--noinhibit-exec $flags"

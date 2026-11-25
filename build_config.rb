@@ -195,6 +195,12 @@ def bc2cpp_drop_mrblib(conf)
   end
 end
 
+# Wio's integer model, 32-bit mrb_int and no mruby-bigint (see rpg_maker_gems): wio unless WIO_BIGINT=1, and the
+# closed host build with BC2CPP_CLOSED_WIO_INT=1 (the host sweep of that model, scripts/bc2cpp/host_sweep.bash).
+def wio_integer_model?(conf)
+  (conf.name == 'wio' && ENV['WIO_BIGINT'] != '1') || (conf.name == 'closed' && ENV['BC2CPP_CLOSED_WIO_INT'] == '1')
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
@@ -362,11 +368,14 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
   # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
 
-  # mruby 4.0's compiler emits any integer literal wider than 32 bits (e.g. the
-  # 0xFFFFFFFF masks in the LCF codecs) as a bignum pool entry, and its default
-  # mrb_int is 32-bit, so such literals need mruby-bigint at runtime or they
-  # raise "integer overflow" on load.
-  conf.gem core: 'mruby-bigint'
+  # mruby 4.0's compiler emits any integer literal wider than 32 bits as a bignum
+  # pool entry, and a 32-bit mrb_int needs mruby-bigint at runtime to load one
+  # or to hold an Integer result past 32 bits. Wio's Ruby has neither
+  # (scripts/wio/bignum_literal_check.rb; the LCF codecs and the wide engine
+  # arithmetic are native), so it leaves the gem out. wio and closed take it in
+  # their own blocks (wio_integer_model?), where the kill switches are read: this
+  # condition stays one bc2cpp's gem-list reader evaluates (compiled_gems.rb).
+  conf.gem core: 'mruby-bigint' unless %w[wio closed].include?(conf.name)
 
   # Only the maix smoke evaluates Ruby source at runtime. Closed RPG2k hosts initialize through native APIs.
   conf.gem core: 'mruby-compiler' if conf.name == 'maix'
@@ -1223,6 +1232,7 @@ if wio
     conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     rpg_maker_gems(conf)
+    conf.gem core: 'mruby-bigint' unless wio_integer_model?(conf)
     # Core method-table omission for wio, from lists proven for the wio world (bc2cpp_core_mt_exclude). Under bc2cpp
     # only.
     bc2cpp_core_mt_exclude(conf, world: 'wio') if ENV['RPGMAKER_BC2CPP']
@@ -1433,8 +1443,10 @@ if closed
     # entry no registration names.
     [conf.cc, conf.cxx].each { |t| t.flags << '-ffunction-sections' << '-fdata-sections' }
 
+    [conf.cc, conf.cxx].each { |t| t.defines << 'MRB_INT32' } if wio_integer_model?(conf)
     bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
+    conf.gem core: 'mruby-bigint' unless wio_integer_model?(conf)
     # mruby-enumerator arrives only as a dependency (mruby-set, mruby-enum-chain, mruby-enum-lazy), which mruby resolves
     conf.gem core: 'mruby-enumerator'
     # mruby-string-ext arrives only as a dependency, which mruby resolves after this block; declared here so the
