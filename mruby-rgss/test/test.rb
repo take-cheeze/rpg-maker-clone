@@ -2285,6 +2285,42 @@ assert "RGSS::Bitmap#_defer composes to the immediate draws" do
   end
 end
 
+# LAZY_PIXELS (mruby-rgss/src/lib.cxx): a Bitmap.new(w, h) holds no pixels
+# until something draws or reads them, and reads as transparent until then.
+assert "RGSS::Bitmap.new allocates its pixels on first use" do
+  next true unless RGSS::Bitmap.respond_to?(:_pixel_bytes)
+  GC.start if Object.const_defined?(:GC)
+  base = RGSS::Bitmap._pixel_bytes
+  fresh = RGSS::Bitmap.new(6, 4)
+  layer = RGSS::Bitmap.new(6, 4)
+  layer._defer
+  layer.clear
+  fresh.clear
+  assert_equal base, RGSS::Bitmap._pixel_bytes
+  assert_equal [[0, 0, 0, 0]] * 24, pixels_of(fresh)
+  assert_equal base + 6 * 4 * 4, RGSS::Bitmap._pixel_bytes
+
+  # Drawn from or drawn into before anything else, it is a cleared bitmap.
+  lazy = RGSS::Bitmap.new(6, 4)
+  read = RGSS::Bitmap.new(6, 4)
+  read.get_pixel(0, 0)
+  [lazy, read].each do |dst|
+    dst.blt(1, 1, RGSS::Bitmap.new(3, 2), RGSS::Rect.new(0, 0, 3, 2))
+    dst.copy_blt(0, 0, RGSS::Bitmap.new(2, 2), RGSS::Rect.new(0, 0, 2, 2))
+    dst.fill_rect(2, 1, 3, 2, RGSS::Color.new(10, 20, 30, 200))
+    dst.blt_quads(0, 2, RGSS::Bitmap.new(2, 2), [[0, 0, 0, 0, 2, 2]])
+    dst.stretch_blt(RGSS::Rect.new(0, 0, 6, 4), RGSS::Bitmap.new(1, 1), RGSS::Rect.new(0, 0, 1, 1))
+  end
+  assert_equal pixels_of(read), pixels_of(lazy)
+  into = RGSS::Bitmap.new(6, 4)
+  into._defer
+  into.blt(0, 0, RGSS::Bitmap.new(6, 4), RGSS::Rect.new(0, 0, 6, 4))
+  into.fill_rect(1, 1, 2, 2, RGSS::Color.new(1, 2, 3, 255))
+  flat = RGSS::Bitmap.new(6, 4)
+  flat.fill_rect(1, 1, 2, 2, RGSS::Color.new(1, 2, 3, 255))
+  assert_equal pixels_of(flat), pixels_of(into)
+end
+
 assert "RGSS::Bitmap blits from a palette PNG like from a direct-colour one" do
   path = "test-palette-blt.png"
   File.open(path, "wb") { |io| io.write(PAL_PNG_4X2) }

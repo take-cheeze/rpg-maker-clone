@@ -317,6 +317,12 @@ static size_t g_bitmap_bytes_blank = 0;
 
 struct DeferredList;
 
+// LAZY_PIXELS: a `Bitmap.new(w, h)` holds no pixels until something reads or
+// draws them; until then every pixel is transparent black. ensure_pixels
+// allocates them, and DataType::get, promote_to_direct, bmp_require_shared and
+// spr_bind_display call it, so only bmp_raw users see the empty buffer.
+struct LazyPixels {};
+
 struct Bitmap {
   static constexpr const char* kTypeName = "Bitmap";
   int32_t width, height;
@@ -339,6 +345,9 @@ struct Bitmap {
   // Set by Bitmap#_defer: a materialized bitmap goes back to recording once a
   // clear or a whole-bitmap fill makes its pixels irrelevant.
   bool wants_defer = false;
+  // See LAZY_PIXELS: `buffer` is empty and stands for width x height
+  // transparent pixels.
+  bool lazy = false;
   // Set whenever `buffer` is mutated so Graphics.update can invalidate the
   // sprites showing this bitmap and have LVGL redraw them. Starts true so the
   // initial contents are painted on the first frame after assignment.
@@ -360,6 +369,14 @@ struct Bitmap {
         decoded_from_source(decoded) {
     counter() += bytes();
   }
+
+  Bitmap(mrb_int w, mrb_int h, lv_color_format_t f, LazyPixels)
+      : width(w),
+        height(h),
+        format(f),
+        direct_format(f),
+        lazy(w > 0 && h > 0),
+        decoded_from_source(false) {}
 
   ~Bitmap() { counter() -= bytes(); }
 
@@ -394,6 +411,7 @@ struct Bitmap {
     rom_px = other.rom_px;
     rom_pal = other.rom_pal;
     deferred = other.deferred;
+    lazy = other.lazy;
     dirty = other.dirty;
     counter() += bytes();
     return *this;
@@ -452,11 +470,23 @@ void bmp_read(const Bitmap& b,
 // in-place writer (hue_change) takes its own copy first (own_palette).
 void deferred_materialize(Bitmap& b);
 
+// See LAZY_PIXELS.
+void ensure_pixels(Bitmap& b) {
+  if (!b.lazy)
+    return;
+  b.buffer.assign(static_cast<size_t>(b.width) * b.height *
+                      lv_color_format_get_size(b.format),
+                  0);
+  b.lazy = false;
+  b.counter() += b.bytes();
+}
+
 void promote_to_direct(Bitmap& b, bool keep = true) {
   if (b.deferred) {
     deferred_materialize(b);
     return;
   }
+  ensure_pixels(b);
   if (!b.indexed())
     return;
   const unsigned bpp = lv_color_format_get_size(b.direct_format);
@@ -533,6 +563,7 @@ inline void settle_for_access(T&) {}
 inline void settle_for_access(Bitmap& b) {
   if (b.deferred)
     deferred_materialize(b);
+  ensure_pixels(b);
 }
 
 template <class T>
@@ -1345,7 +1376,8 @@ mrb_value bmp_init_size_native_body(mrb_state* M,
                                     mrb_value self,
                                     mrb_int w,
                                     mrb_int h) {
-  DataType<Bitmap>::alloc_obj(M, self, w, h, LV_COLOR_FORMAT_ARGB8888);
+  DataType<Bitmap>::alloc_obj(M, self, w, h, LV_COLOR_FORMAT_ARGB8888,
+                              LazyPixels{});
   return self;
 }
 
@@ -1774,6 +1806,14 @@ static bool bmp_init_rom(mrb_state* M,
 }
 
 #if !defined(WIO_TERMINAL)
+// Ruby: Bitmap._pixel_bytes -> the heap bytes every live bitmap's pixels and
+// palettes take (the tests' view of LAZY_PIXELS).
+mrb_value bmp_s_pixel_bytes(mrb_state* M, V self) {
+  (void)self;
+  return mrb_int_value(
+      M, static_cast<mrb_int>(g_bitmap_bytes_decoded + g_bitmap_bytes_blank));
+}
+
 // Ruby: Bitmap._rom_bitmaps(section or nil, root) -> whether it was taken.
 // The tests' way in to the ROM path. Each section is copied and kept for good:
 // bitmaps loaded from an earlier one still point into it.
@@ -1884,7 +1924,10 @@ const std::shared_ptr<Bitmap>& bmp_require_shared(mrb_state* M, void* p) {
     mrb_raise(M, mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError)),
               "disposed Bitmap");
   }
-  return *reinterpret_cast<std::shared_ptr<Bitmap>*>(p);
+  const std::shared_ptr<Bitmap>& s =
+      *reinterpret_cast<std::shared_ptr<Bitmap>*>(p);
+  ensure_pixels(*s);
+  return s;
 }
 
 // Write an RGBA color into the bitmap at (x, y). LVGL stores ARGB8888 as
@@ -1993,8 +2036,10 @@ mrb_value bmp_clear(mrb_state* M, V self) {
     b.dirty = true;
     return self;
   }
-  promote_to_direct(b, /* keep = */ false);
-  std::fill(b.buffer.begin(), b.buffer.end(), 0);
+  if (!b.lazy) {
+    promote_to_direct(b, /* keep = */ false);
+    std::fill(b.buffer.begin(), b.buffer.end(), 0);
+  }
   b.dirty = true;
   return self;
 }
@@ -2794,6 +2839,7 @@ bool deferred_begin(Bitmap& b) {
   std::vector<uint8_t>().swap(b.buffer);
   std::vector<uint8_t>().swap(b.palette);
   b.rom_px = b.rom_pal = nullptr;
+  b.lazy = false;
   b.format = b.direct_format = LV_COLOR_FORMAT_ARGB8888;
   b.counter() += b.bytes();
   b.deferred = std::make_shared<DeferredList>();
@@ -3214,7 +3260,7 @@ mrb_value bmp_defer(mrb_state* M, V self) {
     settle_for_access(b);
     return self;
   }
-  if (!deferred_begin(b)) {
+  if (!deferred_begin(b) && !b.lazy) {
     promote_to_direct(b, /* keep = */ false);
     std::fill(b.buffer.begin(), b.buffer.end(), 0);
   }
@@ -5204,6 +5250,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   if (mrb_nil_p(bmp_v))
     return;
   Bitmap& src = DataType<Bitmap>::raw(M, bmp_v);
+  // The draw-time path below reads the pixels without settling them.
+  ensure_pixels(src);
 
   SpriteFx f;
   f.mirror = mrb_test(mrb_iv_get(M, self, MRB_IVSYM(mirror)));
@@ -8635,7 +8683,8 @@ mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
 // both paths do equally). `_begin_load`'s own global diagnostics are a
 // String-branch-only affair, never touched here.
 mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int w, mrb_int h) {
-  return DataType<Bitmap>::make(M, klass, w, h, LV_COLOR_FORMAT_ARGB8888);
+  return DataType<Bitmap>::make(M, klass, w, h, LV_COLOR_FORMAT_ARGB8888,
+                                LazyPixels{});
 }
 
 mrb_value sprite_bitmap_set_direct(mrb_state* M,
@@ -10183,6 +10232,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(bmp_decoder_ran, MRB_SYM_Q(_decoder_ran),
                    MRB_ARGS_NONE())  //
 #if !defined(WIO_TERMINAL)
+      MRB_MT_ENTRY(bmp_s_pixel_bytes, MRB_SYM(_pixel_bytes),
+                   MRB_ARGS_NONE())  //
       MRB_MT_ENTRY(bmp_s_rom_bitmaps, MRB_SYM(_rom_bitmaps),
                    MRB_ARGS_REQ(2))  //
 #endif
