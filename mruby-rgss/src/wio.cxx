@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>  // from Seeed_Arduino_LCD (a TFT_eSPI fork)
+#include <mruby.h>
 
 namespace {
 
@@ -104,5 +105,13 @@ uint64_t wio_input_scan(void) {
   }
   return mask;
 }
+
+#ifdef MRB_USE_CUSTOM_RO_DATA_P
+// Internal flash (0x0) and the QSPI XIP window (0x04000000) sit below SRAM
+// (0x20000000), and nothing writes them while mruby runs.
+extern "C" mrb_bool mrb_ro_data_p(const char* p) {
+  return reinterpret_cast<uintptr_t>(p) < 0x20000000u;
+}
+#endif
 
 #endif  // WIO_TERMINAL
