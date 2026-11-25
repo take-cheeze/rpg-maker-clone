@@ -5653,29 +5653,6 @@ class RPG2k
         @parent.push Scene::Menu.new(@parent, @state)
       end
 
-      # RPG_RT's F9 debug menu: a switch/variable viewer-editor, reachable from
-      # the field map only (not while an event holds the interpreter) and only
-      # during Test Play -- a released game (RPG2k#test_play false) never sees
-      # F9 open anything, same as every other test-play-gated tool (see
-      # changelog.d/test-play-gated-debug-tooling.added.md). A battle does NOT
-      # block it, per community RPG_RT trivia (@2000_battle_bot /
-      # デフォ戦bot): "テストプレイ中にＦ９キーを押せば スイッチ・変数の値を
-      # 好きに変えられる。これは戦闘中でも行える。" -- so `@battle` alone is
-      # excluded from the busy check here (Scene::Battle#update calls this
-      # directly, see there), while every other #event_busy? condition (a
-      # message window, an interpreter mid-wait) still gates the ordinary
-      # field-map case exactly as before.
-      def try_open_debug_menu
-        return if event_busy? && @battle.nil?
-        return unless @parent.test_play
-        return unless Input.trigger?(Input::F9)
-        # psp/wio builds drop debug_menu.rb (mruby-rpg2k/mrbgem.rake): Test Play never happens on those, but nothing else stops a
-        # future build flag from flipping @parent.test_play on regardless, so
-        # this stays a no-op rather than a NameError if that ever happens.
-        return unless defined?(Scene::DebugMenu)
-        @parent.push Scene::DebugMenu.new(@parent, @state)
-      end
-
       def drive_event
         # An Input Number that followed a Show Text draws its digit cells
         # inside the still-open message window (see #open_number_input) --
@@ -10899,8 +10876,8 @@ class RPG2k
       public :char_in_sight?
 
       # The rest of the "services Scene::Battle calls back into" (see the
-      # readers next to #dispose): BGM, backdrop, animation-player and
-      # debug-menu methods a fight shares with the field map, reached from
+      # readers next to #dispose): BGM, backdrop and animation-player
+      # methods a fight shares (the F9 debug-menu one is in map_debug.rb) with the field map, reached from
       # Scene::Battle with an explicit `@map.` receiver, which -- like any
       # cross-object call -- only reaches a public method.
       #
@@ -10910,15 +10887,12 @@ class RPG2k
       # with the union -- a behaviorally inert refactor for every build,
       # wio or otherwise. The first call lists exactly this owner's own
       # methods NOT covered by mruby-rpg2k-compiled's own bc2cpp.rb
-      # registry (try_open_debug_menu included -- confirmed directly
-      # against a real wio_registered_methods.rb run, not assumed), the
-      # second lists exactly the ones that are -- a mixed list of both
+      # registry, the second lists exactly the ones that are -- a mixed list of both
       # would hit strip_wio_bc2cpp_stubs.rb's own documented
       # partial-argument-list raise, for the same reason.
       public :play_battle_bgm, :play_victory_bgm, :restore_pre_battle_bgm,
              :backdrop_for_terrain_id, :map_properties, :perform_game_over,
-             :build_animation, :anim_target, :fire_animation_flashes, :load_face_bitmap,
-             :try_open_debug_menu
+             :build_animation, :anim_target, :fire_animation_flashes, :load_face_bitmap
       public :terrain_backdrop, :drive_map_animation,
              :frames_from_tenths, :step_map_animation, :close_battle, :current_map_tone
 

@@ -479,6 +479,13 @@ The `changes` job's path filter (dorny/paths-filter) has not been exercised on a
 `merge_group` as well as on `pull_request`; every job here has no event filter
 beyond excluding `issue_comment`, so it is.
 
+### RPG2k developer tools on wio
+
+`scripts/wio/debug_scenes_check.rb` (the `ruby-checks` job) fails unless the wio closed world leaves out the files
+`tools/rpg2k_debug_tools_config.rb` names (Scene::DebugMenu, Scene::MapViewer, Scene::ChipsetEditor and their entry
+points in `scene/map_debug.rb`), compiles `mrblib_limited/map_debug_off.rb` in their place, names none of the three
+classes, and every other build (or `WIO_DEBUG_SCENES=1`) keeps them. The build itself stops when a reference survives.
+
 ### RGSS::Tts in limited builds (ADR 0417)
 
 `scripts/tts_limited_check.rb` (the `ruby-checks` job, no submodules needed) evaluates the real `mruby-rgss` and
