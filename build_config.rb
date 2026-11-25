@@ -1108,12 +1108,13 @@ if wio
       # The micro-controller tuning knobs from mruby's own mrbconf.h (the
       # MRB_CONSTRAINED_BASELINE_PROFILE set, minus MRB_NO_METHOD_CACHE which
       # costs dispatch speed on a CPU-bound handheld): a smaller GC heap page
-      # (256 vs 1024 objects) cuts the slack an under-filled last page wastes,
-      # and a smaller initial khash bucket count (16 vs 32) shrinks the symbol
-      # and instance-variable tables that start nearly empty. Both are pure
+      # (64 vs 1024 objects) cuts the slack an under-filled last page wastes
+      # and lets the sweep free a page once its few objects are dead, and a
+      # smaller initial khash bucket count (16 vs 32) shrinks the symbol and
+      # instance-variable tables that start nearly empty. Both are pure
       # footprint wins with no behaviour change -- the same object graph just
       # allocates in smaller, tighter units.
-      t.defines << 'MRB_HEAP_PAGE_SIZE=256'
+      t.defines << 'MRB_HEAP_PAGE_SIZE=64'
       # Fixed buffers sized for 192 KB of RAM: mrb_state's tables (12.6 KB at mruby's defaults), a readable IO's read
       # buffer and the symbol name pool's chunk (4 KB each, STDIN's and the first symbol's at boot). The gray stack
       # overflows into a heap rescan (gray_overflow), the caches only miss more, the IO buffer grows when a read needs
