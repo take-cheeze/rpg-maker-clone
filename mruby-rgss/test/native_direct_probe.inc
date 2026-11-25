@@ -70,6 +70,11 @@
    (void)a;
    return rgss::bmp_load_error_direct(M, self);
  }},
+{"bmp_s_pixel_bytes_direct", 0,
+ [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
+   (void)a;
+   return rgss::bmp_s_pixel_bytes_direct(M, self);
+ }},
 {"bmp_stbi_error_direct", 0,
  [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
    (void)a;
