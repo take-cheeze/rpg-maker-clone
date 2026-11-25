@@ -151,6 +151,7 @@ end
 
 def same?(a, b)
   return a.equal?(b) if a.is_a?(LCF::Array1D) || a.is_a?(LCF::Array2D)
+  return b.is_a?(LCF::ShortArray) && a.to_a == b.to_a if a.is_a?(LCF::ShortArray)
   return true if a.is_a?(Float) && b.is_a?(Float) && a.nan? && b.nan?
   a == b
 end
