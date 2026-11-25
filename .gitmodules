@@ -18,9 +18,6 @@
 [submodule "3rd/mgem-list"]
 	path = 3rd/mgem-list
 	url = https://github.com/mruby/mgem-list.git
-[submodule "3rd/mruby-marshal"]
-	path = 3rd/mruby-marshal
-	url = https://github.com/take-cheeze/mruby-marshal.git
 [submodule "3rd/mruby-onig-regexp"]
 	path = 3rd/mruby-onig-regexp
 	url = https://github.com/take-cheeze/mruby-onig-regexp.git

@@ -94,7 +94,7 @@ check.call('computed singleton definers still refuse globally', singleton.global
 
 puts '-- the same tree from every read of a file'
 foreign = Dir["#{ROOT}/3rd/mruby/mrblib/**/*.rb"] + Dir["#{ROOT}/3rd/mruby/mrbgems/*/mrblib/**/*.rb"] +
-          Dir["#{ROOT}/3rd/mruby-marshal/mrblib/**/*.rb"] + Dir["#{ROOT}/3rd/mruby-onig-regexp/mrblib/**/*.rb"] +
+          Dir["#{ROOT}/mrbgems/mruby-marshal/mrblib/**/*.rb"] + Dir["#{ROOT}/3rd/mruby-onig-regexp/mrblib/**/*.rb"] +
           Dir["#{ROOT}/3rd/mruby-stringio/mrblib/**/*.rb"]
 if foreign.empty?
   puts '  skip real foreign mrblib (3rd/mruby not checked out)'

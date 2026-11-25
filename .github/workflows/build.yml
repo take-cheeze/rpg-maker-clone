@@ -1058,7 +1058,7 @@ jobs:
       # Shallow, and only the gems the closed-world closure reads
       # (compiled_gems.rb bc2cpp_rake_dependencies).
       - name: Init mruby submodules
-        run: git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio 3rd/mruby-marshal 3rd/mruby-onig-regexp 3rd/nfcxx
+        run: git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio 3rd/mruby-onig-regexp 3rd/nfcxx
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
@@ -1585,7 +1585,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           # The mruby cross-build needs 3rd/mruby, uni-algo, stb, lvgl, quickjs,
-          # mruby-marshal, mruby-stringio, mruby-onig-regexp and mgem-list. The
+          # mruby-stringio, mruby-onig-regexp and mgem-list (mruby-marshal is in-tree). The
           # rest go unused by this job.
           submodules: false
           show-progress: false
