@@ -1,8 +1,9 @@
 // Renode-only Wio firmware that plays real game data: the same compiled engine
-// as env:wio, with the game read from the image game_rom.repl maps at
-// game_rom_base() (wio_game_rom.cxx), and a heap census line per phase in the
-// diagnostic log. scripts/wio/renode_game.bash builds the image, boots this
-// and checks how far it got.
+// as env:wio, with the game read from the microSD card's game folder when the
+// card has one, else from the image game_rom.repl maps at game_rom_base()
+// (wio_game_rom.cxx), and a heap census line per phase in the diagnostic log.
+// scripts/wio/renode_game.bash builds the image, boots this and checks how far
+// it got. The run's config below always comes from the image.
 //
 // The image's config (scripts/wio/game_rom.rb --config) sets the run:
 //   frames=N        main_loop frames before stopping (default 600)
@@ -46,6 +47,7 @@
 #include "wio.hxx"
 #include "wio_game_rom.h"
 #include "wio_qspi_xip.h"
+#include "wio_sd.h"
 
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
@@ -56,6 +58,10 @@ extern "C" bool rgss_set_rom_bitmaps(const void* section,
 extern "C" char __end__;
 extern "C" char __StackTop;
 extern "C" void* _sbrk(ptrdiff_t);
+// HEAPWALK (wio_heapwalk.cxx), linked by env:wio_renode_game_heapwalk only.
+extern "C" void wio_heapwalk_begin(mrb_state*) __attribute__((weak));
+extern "C" void wio_heapwalk_probe(const char*, long) __attribute__((weak));
+extern "C" void wio_heapwalk_frame(long) __attribute__((weak));
 
 namespace {
 
@@ -215,6 +221,8 @@ void probe(const char* phase) {
         wio_diag_printf(" %d:%u", t, static_cast<unsigned>(c.tt[t]));
   }
   wio_diag_write("\n", 1);
+  if (wio_heapwalk_probe)
+    wio_heapwalk_probe(phase, g_frame);
   __asm__ volatile("mov %0, sp" : "=r"(sp));
   paint_gap(static_cast<char*>(_sbrk(0)), sp);
 }
@@ -330,6 +338,9 @@ void setup(void) {
   if (!wio_game_rom_config("keys", g_keys, sizeof(g_keys)))
     g_keys[0] = '\0';
   probe("setup");
+  wio_game_files_begin();
+  const bool from_sd = wio_sd_state() == WIO_SD_GAME;
+  probe("sd");
 
   lv_init();
   lv_display_t* disp = wio_display_create(320, 240);
@@ -341,6 +352,8 @@ void setup(void) {
     g_result = kFailBoot;
     return;
   }
+  if (wio_heapwalk_begin)
+    wio_heapwalk_begin(g_mrb);
   rpg_maker_init_shared_gems(g_mrb);
   if (!g_mrb->exc)
     rpg_maker_init_rpg2k_gem(g_mrb);
@@ -358,10 +371,13 @@ void setup(void) {
   // registered below; the arena entries would hold the rest forever.
   const int boot_ai = mrb_gc_arena_save(g_mrb);
   // scripts/wio/game_rom.rb's decoded images, read in place (ROM_BITMAP).
+  // They are the image's game's, not the card's.
   size_t bitmaps_len = 0;
-  if (const void* bitmaps = wio_game_rom_file("/rgss/bitmaps", &bitmaps_len))
-    rgss_set_rom_bitmaps(bitmaps, bitmaps_len, "/rom");
-  set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, "/rom"));
+  const void* bitmaps =
+      from_sd ? nullptr : wio_game_rom_file("/rgss/bitmaps", &bitmaps_len);
+  if (bitmaps)
+    rgss_set_rom_bitmaps(bitmaps, bitmaps_len, WIO_GAME_ROOT);
+  set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, WIO_GAME_ROOT));
   set_const("RTP_DIR", mrb_str_new_cstr(g_mrb, ""));
   set_const("TEST_PLAY", mrb_false_value());
   set_const("NO_RENDER_WAIT", mrb_true_value());
@@ -405,6 +421,8 @@ void loop(void) {
   // Every call below leaves its result in the GC arena (mrb_funcall's
   // contract); without the restore it grows by a slot per frame.
   const int ai = mrb_gc_arena_save(g_mrb);
+  if (wio_heapwalk_frame)
+    wio_heapwalk_frame(g_frame);
   track_scene();
   tap_keys();
   if (!g_mrb->exc)

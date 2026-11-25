@@ -2178,6 +2178,7 @@ class Game::Picture
   def y: () -> untyped
   def zoom: () -> untyped
   def self.arg: (untyped, untyped, untyped) -> untyped
+  def self.clamp_fixed: (untyped) -> untyped
   def self.div_round: (untyped, untyped) -> untyped
   def self.fix: (untyped) -> untyped
   def self.fixed_of: (untyped) -> untyped
@@ -2734,6 +2735,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def update_enemy_shakes: () -> untyped
   def whole_side_anim_targets: (untyped) -> untyped
   def windowskin: () -> untyped
+  def self.new_ui: (untyped, untyped, untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::Battle::Ui
@@ -2834,8 +2836,7 @@ class RPG2k::Scene::Battle::Ui
   def target_i=: (untyped) -> untyped
   def target_win: () -> untyped
   def target_win=: (untyped) -> untyped
-  def initialize: () -> untyped
-  def start: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def initialize: (untyped, untyped, untyped, untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::ChipsetEditor < RPG2k::Scene::Base
@@ -7988,22 +7989,22 @@ module RPG2k
       # One writer, `@ui = Ui.new` in #initialize (RPG2k3::Scene::Battle reuses it), before any other method can run.
       @ui: RPG2k::Scene::Battle::Ui
 
-      # Fields of the fight state; nil until Ui#start sets them, so each is `T?`. Writers: Ui#start's stores
-      # (:battle Game::Battle.new, :troop Game::Troop.new, :events Game::Interpreter.new, :allies/:foes block
-      # `map`s, :pages_run `{}`), `@ui.pages_run = {}` each round, :enemy_sprites/:actor_sprites `Array.new(n) { }`,
+      # Fields of the fight state. Ui#initialize stores every field, and its arguments are Scene::Battle#initialize's
+      # Game::Battle.new, Game::Troop.new, Game::Interpreter.new and block `map`s, so the model fields are never nil.
+      # Other writers: `@ui.pages_run = {}` each round, :enemy_sprites/:actor_sprites `Array.new(n) { }` or nil,
       # :pending nil or a Hash literal, :skills/:items `[]` or Party#battle_skills / #battle_items.
       class Ui
-        @battle: Game::Battle?
-        @troop: Game::Troop?
-        @events: Game::Interpreter?
-        @allies: Array[untyped]?
-        @foes: Array[untyped]?
-        @pages_run: Hash[untyped, untyped]?
+        @battle: Game::Battle
+        @troop: Game::Troop
+        @events: Game::Interpreter
+        @allies: Array[untyped]
+        @foes: Array[untyped]
+        @pages_run: Hash[untyped, untyped]
         @enemy_sprites: Array[untyped]?
         @actor_sprites: Array[untyped]?
         @pending: Hash[untyped, untyped]?
-        @skills: Array[untyped]?
-        @items: Array[untyped]?
+        @skills: Array[untyped]
+        @items: Array[untyped]
       end
     end
 

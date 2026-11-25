@@ -3,8 +3,8 @@
 
 # wio-only build step (WIO_WORLD_STRIP's opt-in debug pass): strips
 # $stderr.puts statements out of a copy of a .rb file. That includes the
-# [RPG2k]/[RGSS] logs of recovered errors, which env:wio prints on its USB
-# serial console, so no build runs it by default.
+# [RPG2k]/[RGSS] logs of recovered errors the firmware writes to stderr, so
+# no build runs it by default.
 #
 # Deliberately not a regex/sed pass: this codebase has real multi-line
 # $stderr.puts calls joined by a trailing `\` (e.g.

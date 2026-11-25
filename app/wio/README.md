@@ -56,7 +56,15 @@ nothing. `WIO_DEBUG_SCENES=1` at build time keeps them.
 
 The engine is compiled from a rewritten copy of its mrblib (`scripts/wio/world_strip.rb`): by default, helpers with
 one caller are folded into it. `WIO_WORLD_STRIP=0` compiles the source as it is, and a list such as
-`WIO_WORLD_STRIP=inline,debug` picks the passes. `debug` also removes the `[RPG2k]` error lines on the serial log.
+`WIO_WORLD_STRIP=inline,debug` picks the passes. `debug` also removes the `[RPG2k]` error lines from the stderr log.
+
+## Game data on the microSD card
+
+The firmware takes the game's files from the microSD card when it has a `/rpg2k` folder holding the game folder's
+contents (`/rpg2k/RPG_RT.ldb`, `/rpg2k/Title/...`); otherwise from the game image in the QSPI flash. The card must be
+FAT12/16/32: exFAT (how SDXC cards of 64 GB and up come) is not read. Japanese file names work. The boot screen and
+the `[Wio]` log lines say where the files come from, or why the card was not used. `WIO_SD=0` at build time leaves
+the card driver out. `wio` itself does not play the game yet; `wio_renode_game` does, under Renode.
 
 ## Renode: `wio_sim`
 
