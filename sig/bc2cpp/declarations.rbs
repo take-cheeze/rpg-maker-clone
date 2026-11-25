@@ -1501,6 +1501,7 @@ module Game::CommonEvent
   def self.eager?: () -> untyped
   def self.eager_load: (untyped) -> untyped
   def self.eligible: (untyped, untyped) -> untyped
+  def self.index: (untyped, untyped) -> untyped
   def self.load: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
@@ -1521,6 +1522,11 @@ class Game::CommonEvent::CommonEventRecord
   def commands=: (untyped) -> untyped
   def initialize: () -> untyped
   def lazy_in: (untyped) -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::CommonEvent::Index
+  def []: (untyped) -> untyped
+  def initialize: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
 class Game::Enemy
