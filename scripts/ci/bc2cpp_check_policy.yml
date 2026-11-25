@@ -828,6 +828,13 @@ checks:
     fixture_capabilities: []
     fixture_gate: false
     reason: Fixture directories stand in for base_rbs_all.rb's output; the committed file's round trip needs no generator.
+  scripts/bc2cpp/base_rbs_determinism_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - clang
+    fixture_gate: false
+    reason: The Ruby half runs on the host; the native half needs clang (or the nfcxx front end) and is skipped without it.
   scripts/bc2cpp/type_check.rb:
     tier: runtime
     capabilities:
