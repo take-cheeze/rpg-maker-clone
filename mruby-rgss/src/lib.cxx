@@ -2684,19 +2684,30 @@ static void copy_pixels(Bitmap& dst,
   }
 }
 
+// `rc_fields` non-null stands in for `srect` (STACK_RECT).
+static mrb_value copy_blt_rect(mrb_state* M,
+                               V self,
+                               mrb_int x,
+                               mrb_int y,
+                               void* src,
+                               V srect,
+                               const Rect* rc_fields) {
+  Bitmap& dst = bmp_raw(M, self);
+  const Rect& rc = rc_fields ? *rc_fields : DataType<Rect>::get(M, srect);
+  if (!dst.deferred ||
+      !deferred_record(dst, bmp_require_shared(M, src), x, y, rc, 255, true))
+    copy_pixels(bmp_self(M, self), bmp_require(M, src), x, y, rc);
+  dst.dirty = true;
+  return self;
+}
+
 mrb_value bmp_copy_blt_body(mrb_state* M,
                             V self,
                             mrb_int x,
                             mrb_int y,
                             void* src,
                             V srect) {
-  Bitmap& dst = bmp_raw(M, self);
-  Rect& rc = DataType<Rect>::get(M, srect);
-  if (!dst.deferred ||
-      !deferred_record(dst, bmp_require_shared(M, src), x, y, rc, 255, true))
-    copy_pixels(bmp_self(M, self), bmp_require(M, src), x, y, rc);
-  dst.dirty = true;
-  return self;
+  return copy_blt_rect(M, self, x, y, src, srect, nullptr);
 }
 
 mrb_value bmp_copy_blt(mrb_state* M, V self) {
@@ -3280,17 +3291,21 @@ bool deferred_stretch(Bitmap& dst,
                       const Rect& sr,
                       int opacity);
 
-mrb_value bmp_stretch_blt_body(mrb_state* M,
-                               mrb_value self,
-                               mrb_value drect_v,
-                               void* src,
-                               mrb_value srect_v,
-                               mrb_value opacity_value,
-                               mrb_bool opacity_given) {
+// A non-null `dr_fields` / `sr_fields` stands in for that Rect argument
+// (STACK_RECT, bitmap_stretch_blt_rects_direct).
+static mrb_value stretch_blt_rects(mrb_state* M,
+                                   mrb_value self,
+                                   mrb_value drect_v,
+                                   const Rect* dr_fields,
+                                   void* src,
+                                   mrb_value srect_v,
+                                   const Rect* sr_fields,
+                                   mrb_value opacity_value,
+                                   mrb_bool opacity_given) {
   mrb_int opacity = opacity_given ? mrb_as_int(M, opacity_value) : 255;
   Bitmap& dst = bmp_raw(M, self);
-  Rect& dr = DataType<Rect>::get(M, drect_v);
-  Rect& sr = DataType<Rect>::get(M, srect_v);
+  const Rect& dr = dr_fields ? *dr_fields : DataType<Rect>::get(M, drect_v);
+  const Rect& sr = sr_fields ? *sr_fields : DataType<Rect>::get(M, srect_v);
   if (opacity < 0)
     opacity = 0;
   if (opacity > 255)
@@ -3305,6 +3320,17 @@ mrb_value bmp_stretch_blt_body(mrb_state* M,
   }
   dst.dirty = true;
   return self;
+}
+
+mrb_value bmp_stretch_blt_body(mrb_state* M,
+                               mrb_value self,
+                               mrb_value drect_v,
+                               void* src,
+                               mrb_value srect_v,
+                               mrb_value opacity_value,
+                               mrb_bool opacity_given) {
+  return stretch_blt_rects(M, self, drect_v, nullptr, src, srect_v, nullptr,
+                           opacity_value, opacity_given);
 }
 
 // RGSS-adjacent Bitmap#mosaic_blt(src, block_size): copy `src` into this
@@ -8638,19 +8664,21 @@ mrb_value bitmap_fill_rect_direct(mrb_state* M,
   return self;
 }
 
-mrb_value bitmap_blt_direct(mrb_state* M,
-                            mrb_value self,
-                            mrb_value x_value,
-                            mrb_value y_value,
-                            mrb_value source,
-                            mrb_value source_rect,
-                            mrb_value opacity_value,
-                            mrb_bool opacity_given) {
+// `rc_fields` non-null stands in for `source_rect` (STACK_RECT).
+static mrb_value blt_rect(mrb_state* M,
+                          mrb_value self,
+                          mrb_value x_value,
+                          mrb_value y_value,
+                          mrb_value source,
+                          mrb_value source_rect,
+                          const Rect* rc_fields,
+                          mrb_value opacity_value,
+                          mrb_bool opacity_given) {
   const mrb_int x = mrb_as_int(M, x_value);
   const mrb_int y = mrb_as_int(M, y_value);
   void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
   Bitmap& dst = bmp_raw(M, self);
-  Rect& rc = DataType<Rect>::get(M, source_rect);
+  const Rect& rc = rc_fields ? *rc_fields : DataType<Rect>::get(M, source_rect);
   mrb_int opacity = opacity_given ? mrb_as_int(M, opacity_value) : 255;
   if (opacity < 0)
     opacity = 0;
@@ -8663,6 +8691,74 @@ mrb_value bitmap_blt_direct(mrb_state* M,
                opacity);
   dst.dirty = true;
   return self;
+}
+
+mrb_value bitmap_blt_direct(mrb_state* M,
+                            mrb_value self,
+                            mrb_value x_value,
+                            mrb_value y_value,
+                            mrb_value source,
+                            mrb_value source_rect,
+                            mrb_value opacity_value,
+                            mrb_bool opacity_given) {
+  return blt_rect(M, self, x_value, y_value, source, source_rect, nullptr,
+                  opacity_value, opacity_given);
+}
+
+static Rect rect_of(const RectFields& f) {
+  Rect r;
+  r.x = f.x;
+  r.y = f.y;
+  r.width = f.width;
+  r.height = f.height;
+  return r;
+}
+
+mrb_value bitmap_blt_rects_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_value x_value,
+                                  mrb_value y_value,
+                                  mrb_value source,
+                                  const RectFields& source_rect,
+                                  mrb_value opacity_value,
+                                  mrb_bool opacity_given) {
+  const Rect rc = rect_of(source_rect);
+  return blt_rect(M, self, x_value, y_value, source, mrb_nil_value(), &rc,
+                  opacity_value, opacity_given);
+}
+
+mrb_value bitmap_stretch_blt_rects_direct(mrb_state* M,
+                                          mrb_value self,
+                                          mrb_value destination_rect,
+                                          const RectFields* destination_fields,
+                                          mrb_value source,
+                                          mrb_value source_rect,
+                                          const RectFields* source_fields,
+                                          mrb_value opacity,
+                                          mrb_bool opacity_given) {
+  void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
+  Rect dr, sr;
+  if (destination_fields)
+    dr = rect_of(*destination_fields);
+  if (source_fields)
+    sr = rect_of(*source_fields);
+  return stretch_blt_rects(M, self, destination_rect,
+                           destination_fields ? &dr : nullptr, source_data,
+                           source_rect, source_fields ? &sr : nullptr, opacity,
+                           opacity_given);
+}
+
+mrb_value bitmap_copy_blt_rects_direct(mrb_state* M,
+                                       mrb_value self,
+                                       mrb_value x,
+                                       mrb_value y,
+                                       mrb_value source,
+                                       const RectFields& source_rect) {
+  mrb_int dx = mrb_as_int(M, x);
+  mrb_int dy = mrb_as_int(M, y);
+  void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
+  const Rect rc = rect_of(source_rect);
+  return copy_blt_rect(M, self, dx, dy, source_data, mrb_nil_value(), &rc);
 }
 
 mrb_value bitmap_stretch_blt_direct(mrb_state* M,

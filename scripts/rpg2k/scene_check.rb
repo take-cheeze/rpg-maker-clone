@@ -338,6 +338,7 @@ load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.expand_path('../../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
+require_relative 'native_stand_ins'
 load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file
 load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(lib, 'game', 'legacy_lsd.rb')
@@ -21039,7 +21040,7 @@ check 'Scene::Menu: choosing Save opens Scene::SaveLoad in :save mode' do
   pushed = scene.parent.pushed.last
   ok pushed.is_a?(RPG2k::Scene::SaveLoad), "Save pushes Scene::SaveLoad, got #{pushed.class}"
   eq :save, pushed.instance_variable_get(:@mode), 'opened in :save mode'
-  eq st, pushed.instance_variable_get(:@state), 'carrying the running game state to write out'
+  eq st, pushed.instance_variable_get(:@game_state), 'carrying the running game state to write out'
 end
 
 check 'Scene::Menu: Save access forbidden refuses the selection silently, no message' do
@@ -21685,7 +21686,7 @@ check 'Open Save Menu pushes Scene::SaveLoad in :save mode and resumes the event
   pushed = parent.pushed.first
   ok pushed.is_a?(RPG2k::Scene::SaveLoad), "pushed Scene::SaveLoad, got #{pushed.class}"
   eq :save, pushed.instance_variable_get(:@mode), 'opened in :save mode'
-  eq st, pushed.instance_variable_get(:@state), 'carrying the running game state to write out'
+  eq st, pushed.instance_variable_get(:@game_state), 'carrying the running game state to write out'
   eq 0, st.variables[7], 'the event is paused while the picker is open'
   scene.update # back from the picker: the wait is released...
   scene.update # ...and the next frame runs the rest of the event

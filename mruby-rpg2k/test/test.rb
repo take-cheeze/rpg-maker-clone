@@ -324,33 +324,42 @@ assert 'Game::Actor NATIVE_ARG_TARGETS methods: correct results for a real Integ
   assert_raise(NoMethodError) { actor.slot_cursed?(nil) }
 end
 
-assert 'Game::Interpreter NATIVE_ARG_TARGETS methods: correct results for a real ' \
-       'Integer argument, and each one\'s own already-documented behavior for a nil one' do
-  # Game::Interpreter#initialize only ever stores its own `state` argument
-  # (mruby-rpg2k/mrblib/interpreter.rb) -- neither #trunc_div nor
-  # #character_ref ever reads it, so a real Game::State is not needed to
-  # exercise either one.
-  interp = Game::Interpreter.new(nil)
+assert 'Game.var_op: Control Variables results past 32 bits clamp exactly, on either mrb_int width' do
+  big = 9_999_999
+  vars = Game::Variables.new(true)
+  vars[1] = Game.var_op(3, big, big)
+  assert_equal big, vars[1]
+  vars[2] = Game.var_op(3, big, -big)
+  assert_equal(-big, vars[2])
+  vars[3] = Game.var_op(1, big, 2_147_483_647)
+  assert_equal big, vars[3]
+  vars[4] = Game.var_op(2, -big, 2_147_483_647)
+  assert_equal(-big, vars[4])
+  assert_equal 2_147_483_647, Game.var_op(3, 65_536, 65_536)
+  assert_equal(-2_147_483_647 - 1, Game.var_op(3, -65_536, 65_536))
+  # / and % truncate toward zero; a zero divisor leaves / unchanged and zeroes %.
+  assert_equal(-3, Game.var_op(4, -7, 2))
+  assert_equal 3, Game.var_op(4, -7, -2)
+  assert_equal(-1, Game.var_op(5, -7, 2))
+  assert_equal 1, Game.var_op(5, 7, -2)
+  assert_equal 7, Game.var_op(4, 7, 0)
+  assert_equal 0, Game.var_op(5, 7, 0)
+  assert_equal 5, Game.var_op(0, 1, 5)
+  assert_equal 1, Game.var_op(9, 1, 5)
+  assert_equal 2_147_483_647, Game.var_op(4, -2_147_483_647 - 1, -1)
+end
 
-  # Both #trunc_div and #character_ref are registered
-  # `mrb_define_private_method` (mruby-rpg2k-compiled/src/register.cxx) --
-  # `#send` reaches a private method the same way an ordinary self-implicit
-  # call from within another Game::Interpreter method already does.
-  #
-  # #trunc_div(n, d) (BOTH mandatory positions native-typed -- see
-  # NATIVE_ARG_TARGETS' own comment): C++ truncate-toward-zero division,
-  # not mruby's own native `/`, which floors toward negative infinity --
-  # the two only disagree when the operands' signs differ.
-  assert_equal 3, interp.send(:trunc_div, 7, 2)
-  assert_equal 3, interp.send(:trunc_div, -7, -2)
-  assert_equal(-3, interp.send(:trunc_div, -7, 2))
-  assert_equal(-3, interp.send(:trunc_div, 7, -2))
-  assert_equal 0, interp.send(:trunc_div, 0, 5)
-  # The interpreted body's own `n.abs`/`d.abs` reach a real `nil.abs`/
-  # `'2'.abs` -- NoMethodError (see this test's own opening comment for why
-  # this cannot observe NATIVE_ARG_TARGETS' own stricter TypeError here).
-  assert_raise(NoMethodError) { interp.send(:trunc_div, nil, 2) }
-  assert_raise(NoMethodError) { interp.send(:trunc_div, 7, '2') }
+assert 'Game.mul_div floors a 64-bit product' do
+  assert_equal 999_984, Game.mul_div(65_536, 1_000_000, 65_537)
+  assert_equal(-4, Game.mul_div(-7, 1, 2))
+  assert_equal 3, Game.mul_div(7, 1, 2)
+  assert_raise(ZeroDivisionError) { Game.mul_div(1, 1, 0) }
+  assert_raise(RangeError) { Game.mul_div(65_536, 65_536, 1) }
+end
+
+assert 'Game::Interpreter#character_ref resolves this event and passes other refs through' do
+  # Game::Interpreter#initialize only ever stores its own `state` argument, which #character_ref never reads.
+  interp = Game::Interpreter.new(nil)
 
   # #character_ref(ref): 0 or CHAR_THIS_EVENT resolve to this interpreter's
   # own @event_id (set directly here -- #initialize never touches it, only

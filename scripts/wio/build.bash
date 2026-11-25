@@ -3,9 +3,10 @@
 # closed-world wio libmruby (WIO_MRUBY_BUILD_DIR), a standalone arm-none-eabi uni-algo (WIO_UNIALGO_LIB_DIR), then
 # the firmware link. CI's `wio` job runs this.
 #
-# The image does not fit the board's flash yet, so the link runs with --noinhibit-exec: the ELF and the size lines
-# are the measurement, an overflow is reported, and only an undefined reference or a failed vector-table check
-# (scripts/wio/vector_table_check.rb) fails the script.
+# The link runs the cold code from the external QSPI flash (app/wio/qspi_xip.py), and fails if internal flash
+# overflows or scripts/wio/qspi_xip_check.rb or scripts/wio/vector_table_check.rb does. WIO_QSPI_XIP=0 links all of
+# it internally, which does not fit: that link runs with --noinhibit-exec, so the ELF and the size lines are the
+# measurement, and only an undefined reference or a failed vector-table check fails the script.
 #
 # Usage:
 #   scripts/wio/build.bash [BUILD_DIR, default ./build-wio]
@@ -66,9 +67,10 @@ inc="$inc:$framework/variants/wio_terminal:$root/.pio/libdeps/wio_sd_upload/Seee
 )
 
 log="$build_dir/pio-wio.log"
+flags="-Wl,--print-memory-usage"
+[ "${WIO_QSPI_XIP:-1}" = 0 ] && flags="-Wl,--noinhibit-exec $flags"
 rc=0
-WIO_MRUBY_BUILD_DIR="$build_dir/wio" WIO_UNIALGO_LIB_DIR="$unialgo" \
-  PLATFORMIO_BUILD_FLAGS="-Wl,--noinhibit-exec -Wl,--print-memory-usage" \
+WIO_MRUBY_BUILD_DIR="$build_dir/wio" WIO_UNIALGO_LIB_DIR="$unialgo" PLATFORMIO_BUILD_FLAGS="$flags" \
   pio run -e wio >"$log" 2>&1 || rc=$?
 cat "$log"
 elf="$root/.pio/build/wio/firmware.elf"
@@ -79,3 +81,7 @@ grep -E "region \`[A-Z]+' overflowed by [0-9]+ bytes" "$log" || true
 # With --noinhibit-exec pio still exits non-zero on the overflow; the ELF must exist all the same.
 [ -s "$elf" ] || { echo "error: pio run -e wio (exit $rc) wrote no $elf" >&2; exit 1; }
 ruby "$root/scripts/wio/vector_table_check.rb" "$elf"
+if [ "${WIO_QSPI_XIP:-1}" != 0 ]; then
+  [ "$rc" = 0 ] || { echo "error: pio run -e wio failed (exit $rc)" >&2; exit 1; }
+  ruby "$root/scripts/wio/qspi_xip_check.rb" "$elf" "$toolchain/arm-none-eabi-"
+fi
