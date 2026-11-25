@@ -70,9 +70,14 @@ before the call and uses the local after it holds the only reference, and a coll
   and the plain Array/String/Hash allocators. An allocation may run the GC, but an element no code has unlinked is
   still reachable from its container. `BC2CPP_ELEMENT_READ_PURE=0` counts them as calls again.
 - A method that RegisterFlow refuses, and a method compiled without the flow pass (`REGISTER_FLOW=0`, a resumable
-  body, a method with a prefix), roots every element read: there is no liveness to narrow it. So does every body
-  compiled outside the method's own pass: a rescue's try body, a block that stays a function, an inlined loop or
-  call body.
+  body, a method with a prefix), roots every element read: there is no liveness to narrow it.
+- `ELEMENT_READ_BODIES` (`tools/bc2cpp/element_read_body_roots.rb`): a block that stays a function, a rescue's try
+  body and an inlined loop body run the same test over their own instruction texts. A try body's last return and a
+  raise leave into `bc2cpp_protect`, which roots the result and the alias registers again, so they end the walk. A
+  loop body's exits (the next iteration, a break, a return) count as a call: the enclosing function's registers are
+  live everywhere, and a value the leaving text stores is rooted. A body whose CFG is not placed (a handler inside
+  it, an alias, an unknown goto) roots every read, as do an ensure body and a class body.
+  `BC2CPP_ELEMENT_READ_BODIES=0` roots every read in these bodies.
 - The inlined loops over a live Array root their element register each iteration when the body contains a call
   (`ElementReadRoots.loop_keep`): `each`, `map`/`select`/`find`, `inject`/`any?`/..., and the `sort_by` key loop.
   The `&:sym` loop roots its element unconditionally, since it calls the element by name. The inlined `Hash#each`,
@@ -142,6 +147,6 @@ only root, and the caller no longer uses the element after the call). On master 
 check (`bc2cpp_keep` after an element read); with the argument term of the call test removed, `arg_clear_by_name`
 fails.
 
-`BC2CPP_HOST_GC_STRESS=1000 scripts/bc2cpp/host_sweep.bash BUILD_DIR` runs the whole sweep with a GC cycle starting
-as soon as the last one ends, about 20 times slower per map. A missing root then shows up: a
-`BC2CPP_GC_KEEP_OVERWRITTEN=0` build passes the plain sweep but aborts in `mrb_gc_mark` under this mode.
+`BC2CPP_HOST_GC_STRESS=1 scripts/bc2cpp/host_sweep.bash BUILD_DIR` runs the whole sweep with a full GC before every
+object allocation after the boot (N: every Nth), about 2 minutes on 12 jobs. A missing root then shows up: a
+`BC2CPP_GC_KEEP_OVERWRITTEN=0` build passes the plain sweep but fails 34 maps and 5 of the 7 scenarios under this mode.
