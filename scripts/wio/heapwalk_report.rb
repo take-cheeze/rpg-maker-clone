@@ -30,7 +30,7 @@ TT = %w[false true symbol undef free float integer cptr object class module scla
         array string range env fiber struct istruct break complex rational bigint backtrace set].freeze
 TT_FREE = 4
 PAGE_HEADER = 20
-PAGE_OBJECTS = 256
+PAGE_OBJECTS = [64, 128, 256, 512, 1024].freeze # MRB_HEAP_PAGE_SIZE, read off the pages
 CHAIN = 12
 HEADER = 'a4L11a64'
 HEADER_SIZE = 112
@@ -117,13 +117,15 @@ Dir[File.join(dir, 'snap-*.out')].sort.each do |out_path|
   word = ->(addr) { heap.unpack1('L', offset: addr - heap_base) }
   by_ptr = recs.to_h { |r| [r[:ptr], r] }
 
-  # GC pages: the most common size of the PAGE_HEADER + 256 * slot form.
-  slot_size = [20, 24, 28, 32].max_by { |s| recs.count { |r| r[:req] == PAGE_HEADER + PAGE_OBJECTS * s } }
-  pages = recs.select { |r| r[:req] == PAGE_HEADER + PAGE_OBJECTS * slot_size }
+  # GC pages: the most common size of the PAGE_HEADER + objects * slot form.
+  page_objects, slot_size = PAGE_OBJECTS.product([20, 24, 28, 32]).max_by do |n, s|
+    recs.count { |r| r[:req] == PAGE_HEADER + n * s }
+  end
+  pages = recs.select { |r| r[:req] == PAGE_HEADER + page_objects * slot_size }
   pages.each { |r| r[:owner] = 'gc page' }
   objs = []
   pages.each do |pg|
-    PAGE_OBJECTS.times do |j|
+    page_objects.times do |j|
       a = pg[:ptr] + PAGE_HEADER + j * slot_size
       tt = word.(a + 4) & 0xff
       next if tt == TT_FREE
@@ -211,7 +213,7 @@ Dir[File.join(dir, 'snap-*.out')].sort.each do |out_path|
               kb(inuse - tracked - 4 * recs.size))
   puts format('GC pages: %d x %d B (slot %d B) = %s KB; %d live slots, %d free',
               pages.size, pages.first ? pages.first[:usable] : 0, slot_size, kb(page_bytes), objs.size,
-              pages.size * PAGE_OBJECTS - objs.size)
+              pages.size * page_objects - objs.size)
 
   by_tt = Hash.new { |h, k| h[k] = [k, 0, 0] }
   objs.each { |_, tt, _| by_tt[TT[tt]][1] += 1; by_tt[TT[tt]][2] += slot_size }
