@@ -1058,7 +1058,7 @@ jobs:
       # Shallow, and only the gems the closed-world closure reads
       # (compiled_gems.rb bc2cpp_rake_dependencies).
       - name: Init mruby submodules
-        run: git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio mrbgems/mruby-marshal 3rd/mruby-onig-regexp 3rd/nfcxx
+        run: git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio 3rd/mruby-marshal 3rd/mruby-onig-regexp 3rd/nfcxx
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store

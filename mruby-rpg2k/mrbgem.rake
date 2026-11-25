@@ -228,7 +228,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # appear -- "press"/"release", "main_loop", "width"/"height", "name" on an
   # RGSS::Font value, "message"/"backtrace"/"log_tail"/"install", ...  -- is
   # a real, different, unrelated method). Also checked the always-active
-  # external mrbgems' own native sources (mrbgems/mruby-marshal, 3rd/
+  # external mrbgems' own native sources (3rd/mruby-marshal, 3rd/
   # mruby-stringio, 3rd/mruby-onig-regexp, mirroring compiled_gems.rb's own
   # `external_gem_native_srcs`): the one hit, `mruby-stringio/src/
   # stringio.c`'s own `mrb_funcall(..., "replace", ...)`, calls `#replace`
@@ -305,7 +305,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # Gem-init-ordering correctness (same methodology and same real closed-
   # world file list as round 35's own comment above, re-run against all 159
   # unique method names these 13 owners' 216 real registered methods use):
-  # zero real call sites found. `mrbgems/mruby-marshal`, `3rd/mruby-stringio`,
+  # zero real call sites found. `3rd/mruby-marshal`, `3rd/mruby-stringio`,
   # `3rd/mruby-onig-regexp` (not checked out in every worktree by default --
   # `git submodule update --init` them to re-run this yourself) each have
   # real `mrb_funcall`/`mrb_funcall_id`/`mrb_funcall_argv`/
@@ -498,7 +498,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # `"warn_stub"`/`"clear"`/`"blt"`/`"log_tail"`/`"message"`/`"backtrace"`/
   # `"install"`/`"probe!"`) is, as every prior round already found, real,
   # different, and unrelated. The three always-active external mrbgems
-  # (`mrbgems/mruby-marshal`, `3rd/mruby-stringio`, `3rd/mruby-onig-regexp`)
+  # (`3rd/mruby-marshal`, `3rd/mruby-stringio`, `3rd/mruby-onig-regexp`)
   # re-checked too: same real call sites rounds 35/36 already documented
   # (`"marshal_dump"`, `"_dump"`, `"instance_variables"`, `"sort!"`,
   # `"source"`, `"options"`, `"_dump_data"`, `"write"`, `"marshal_load"`,
@@ -678,7 +678,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # `mrb_funcall_with_block` grep every prior round's own comment
   # describes -- `src/`, `app/`, all three `*-compiled/src/register.cxx`,
   # every `mruby-rgss/src/*.cxx`, plus the always-active external mrbgems
-  # `mrbgems/mruby-marshal`/`3rd/mruby-stringio`/`3rd/mruby-onig-regexp`,
+  # `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/mruby-onig-regexp`,
   # `git submodule update --init`d fresh for this round's own check rather
   # than assumed already checked out -- re-run against every one of this
   # round's own 7 new owners' real method names, including `Game::ChipSet`'s
@@ -795,7 +795,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # `mrb_funcall_with_block` grep every prior round's own comment
   # describes -- `src/`, `app/`, all three `*-compiled/src/register.cxx`,
   # every `mruby-rgss/src/*.cxx`, plus the always-active external mrbgems
-  # `mrbgems/mruby-marshal`/`3rd/mruby-stringio`/`3rd/mruby-onig-regexp`,
+  # `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/mruby-onig-regexp`,
   # `git submodule update --init`d fresh for this round's own check rather
   # than assumed already checked out -- re-run against all 69 of this
   # round's own in-scope method names): exactly one real literal match,
@@ -948,7 +948,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # `mrb_funcall_with_block` grep every prior round's own comment
   # describes -- `src/`, `app/`, all three `*-compiled/src/register.cxx`,
   # every `mruby-rgss/src/*.cxx`, plus the always-active external mrbgems
-  # `mrbgems/mruby-marshal`/`3rd/mruby-stringio`/`3rd/mruby-onig-regexp`,
+  # `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/mruby-onig-regexp`,
   # `git submodule update --init`d fresh for this round's own check rather
   # than assumed already checked out -- re-run against all 173 of this
   # round's own real registered method names): exactly two real literal
@@ -1191,7 +1191,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # describes -- `src/error_dump.cxx`, `src/main.cxx`, `app/wio/src/
   # mruby_sd_smoke_main.cxx`, `app/psp/main.cxx`, all three `*-compiled/src/
   # register.cxx`, every `mruby-rgss/src/*.cxx`, plus the always-active
-  # external mrbgems `mrbgems/mruby-marshal`/`3rd/mruby-stringio`/`3rd/
+  # external mrbgems `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/
   # mruby-onig-regexp`, `git submodule update --init`d fresh for this
   # round's own check rather than assumed already checked out -- re-run
   # against all 223 of this round's own real registered method names via a
@@ -1396,7 +1396,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # describes -- `src/error_dump.cxx`, `src/main.cxx`, `app/wio/src/
   # mruby_sd_smoke_main.cxx`, `app/psp/main.cxx`, all three `*-compiled/src/
   # register.cxx`, every `mruby-rgss/src/*.cxx`, plus the always-active
-  # external mrbgems `mrbgems/mruby-marshal`/`3rd/mruby-stringio`/`3rd/
+  # external mrbgems `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/
   # mruby-onig-regexp`, `git submodule update --init`d fresh for this
   # round's own check -- re-run via a small script against all 81 of this
   # round's own real registered method names, including both literal

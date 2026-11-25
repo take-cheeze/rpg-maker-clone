@@ -826,7 +826,8 @@ past where the last one stopped:
   seekable backend to build the rest of that fix on.
 - **Fixed: `Marshal.dump` called a custom `marshal_dump` with a stray
   argument.** A real bug in the vendored `mruby-marshal` gem (its own
-  repo, checked out at `mrbgems/mruby-marshal`):
+  separate submodule, `take-cheeze/mruby-marshal` — not nested in
+  `3rd/mruby`'s own gem tree, so it gets its own patch file the same way):
   `Marshal.dump` called a class's `marshal_dump` with one argument (a
   literal `nil`) instead of the zero arguments real Ruby's documented
   protocol defines for it — a leftover copy/paste from the `marshal_load`

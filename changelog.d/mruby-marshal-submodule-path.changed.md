@@ -1,1 +1,0 @@
-- The `mruby-marshal` submodule now lives at `mrbgems/mruby-marshal` instead of `3rd/mruby-marshal` (still pinned to `take-cheeze/mruby-marshal` at `82db80d`). `3rd/mruby-marshal` remains as a symlink for the bc2cpp sources in `3rd/nfcxx` until that submodule's paths move.

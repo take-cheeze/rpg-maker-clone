@@ -20,7 +20,7 @@ build. For this measurement only, `tools/bc2cpp/bc2cpp.rb` line 176 was set to
 C++ keeps its `DECIDED_BRANCH` markers. Nothing else in the source was changed.
 
 Submodules initialised (shallow) in each worktree: `3rd/mruby`,
-`mrbgems/mruby-marshal`, `3rd/mruby-onig-regexp`, `3rd/mruby-stringio`,
+`3rd/mruby-marshal`, `3rd/mruby-onig-regexp`, `3rd/mruby-stringio`,
 `3rd/mgem-list`, `3rd/stb`, `3rd/ng-log`, `3rd/inicpp`, `3rd/uni-algo`,
 `3rd/lvgl`, `3rd/quickjs`.
 
@@ -30,7 +30,7 @@ Submodules initialised (shallow) in each worktree: `3rd/mruby`,
 git worktree add --detach <scratch>/wt-base 7864e134
 git worktree add --detach <scratch>/wt-fold 984084a3
 # in each worktree
-git submodule update --init --depth 1 3rd/mruby mrbgems/mruby-marshal 3rd/mruby-onig-regexp \
+git submodule update --init --depth 1 3rd/mruby 3rd/mruby-marshal 3rd/mruby-onig-regexp \
   3rd/mruby-stringio 3rd/mgem-list 3rd/stb 3rd/ng-log 3rd/inicpp 3rd/uni-algo 3rd/lvgl 3rd/quickjs
 # build (g++ compile included)
 scripts/bc2cpp/closed_build.bash <scratch>/build-base   # in wt-base

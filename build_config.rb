@@ -382,7 +382,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
 
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   # RPG2000/2003 saves use LCF; the other makers load Marshal game data/scripts.
-  conf.gem "#{__dir__}/mrbgems/mruby-marshal" unless single_format_only
+  conf.gem "#{MRUBY_ROOT}/../mruby-marshal" unless single_format_only
 
   # psp/wio/maix ship one RPG Maker format only, RPG2000/2003
   # -- unlike desktop/wasm/android, which run whichever format a game

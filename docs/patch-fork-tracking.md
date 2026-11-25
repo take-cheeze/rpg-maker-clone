@@ -6,12 +6,9 @@ no longer live in `patches/`.
 
 ## What the build uses
 
-- **`3rd/mruby`, `3rd/mruby-stringio`, `3rd/mruby-onig-regexp`** are submodules
-  pinned to the fork commits listed below. `.gitmodules` points at the forks.
-  Nothing is applied at build time.
-- **`mrbgems/mruby-marshal`** is a submodule of the fork, checked out at its own
-  path. `3rd/mruby-marshal` is a symlink to it, kept only for bc2cpp in
-  `3rd/nfcxx`, which hard-codes that path.
+- **`3rd/mruby`, `3rd/mruby-stringio`, `3rd/mruby-marshal`,
+  `3rd/mruby-onig-regexp`** are submodules pinned to the fork commits listed
+  below. `.gitmodules` points at the forks. Nothing is applied at build time.
 - **pspsdk** (`scripts/build/psp_fixup_imports.bash`, `flake.nix`) builds
   psp-fixup-imports from the fork commit `723862d`.
 - **ppsspp** (`flake.nix`) builds `take-cheeze/ppsspp` at commit `70cb2fb`,
@@ -90,7 +87,7 @@ committed up to date.
 `rpg-maker-clone/patches` (`c034c07`) carries `native-getbyte` on the default
 branch. It is superseded by the pin branch.
 
-### take-cheeze/mruby-marshal (`mrbgems/mruby-marshal`, pin `82db80d`)
+### take-cheeze/mruby-marshal (pin `7da40de`, `rpg-maker-clone/patches-pin` at `a628ef1`)
 
 - `mruby-marshal-psp-wio-onigmo-optional`: **applied**.
 
