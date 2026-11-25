@@ -139,6 +139,7 @@ end
 
 ROOT = File.expand_path('..', __dir__)
 load File.join(ROOT, 'mruby-lcf/mrblib/lcf.rb')
+require_relative 'lcf/native_stand_ins'
 load File.join(ROOT, 'mruby-lcf/mrblib/schema.rb')
 load File.join(ROOT, 'mruby-lcf/mrblib/lcf_file.rb')
 load File.join(ROOT, 'mruby-lcf/mrblib/save_typed.rb')

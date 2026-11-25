@@ -49,9 +49,8 @@ class RPGXP
     # 32 bits into an IREP bignum-pool entry regardless of the eventual
     # runtime's own mrb_int width, and OP_LOADL re-parses that pool entry's
     # own string form into a fresh bignum (mrb_bint_new_str) on every
-    # execution of the instruction -- see mruby-lcf/mrblib/lcf.rb's own
-    # INT32_MASK/INT32_SIGN_BIT/INT32_WRAP comment for the full mechanism,
-    # fixed there first. `advance` below (`(key * 7 + 3) % MASK`) runs once
+    # execution of the instruction -- see AGENTS.md's 32-bit mrb_int section
+    # for the full mechanism. `advance` below (`(key * 7 + 3) % MASK`) runs once
     # per byte of every filename plus once per length/size field while
     # parsing an archive's entry table (#parse_v1/#parse_v3), and
     # #decrypt_data calls it once per 4 bytes of every file's own data --

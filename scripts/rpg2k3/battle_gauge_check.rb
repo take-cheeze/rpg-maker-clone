@@ -38,6 +38,7 @@ module LCF
 end
 lcf_lib = File.expand_path('../../mruby-lcf/mrblib', __dir__)
 load File.join(lcf_lib, 'lcf.rb')
+require_relative '../lcf/native_stand_ins'
 load File.join(lcf_lib, 'schema.rb')
 load File.join(lcf_lib, 'lcf_file.rb')
 load File.join(lcf_lib, 'save_typed.rb')

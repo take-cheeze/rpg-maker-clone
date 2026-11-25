@@ -44,6 +44,7 @@ end
 ROOT = File.expand_path('../..', __dir__)
 lcf_lib = File.join(ROOT, 'mruby-lcf', 'mrblib')
 load File.join(lcf_lib, 'lcf.rb')
+require_relative '../lcf/native_stand_ins'
 load File.join(lcf_lib, 'schema.rb')
 load File.join(lcf_lib, 'lcf_file.rb')
 load File.join(lcf_lib, 'save_typed.rb')
