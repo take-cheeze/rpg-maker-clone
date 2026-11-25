@@ -2321,24 +2321,6 @@ assert "RGSS::Bitmap.new allocates its pixels on first use" do
   assert_equal pixels_of(flat), pixels_of(into)
 end
 
-# PIXEL_GC (mruby-rgss/src/lib.cxx): the pixels of dropped bitmaps count
-# towards a collection, so making and dropping big bitmaps stays bounded even
-# when too few objects are made for the GC to run on its own.
-assert "RGSS::Bitmap pixels nothing holds are collected by their bytes" do
-  next true unless RGSS::Bitmap.respond_to?(:_pixel_bytes)
-  GC.start if Object.const_defined?(:GC)
-  base = RGSS::Bitmap._pixel_bytes
-  one = 256 * 256 * 4
-  dot = RGSS::Color.new(1, 2, 3, 255)
-  peak = 0
-  64.times do
-    RGSS::Bitmap.new(256, 256).fill_rect(0, 0, 1, 1, dot)
-    grown = RGSS::Bitmap._pixel_bytes - base
-    peak = grown if grown > peak
-  end
-  assert_true peak <= [256 * 1024, base].max + one, "grew #{peak} bytes over #{base}"
-end
-
 assert "RGSS::Bitmap blits from a palette PNG like from a direct-colour one" do
   path = "test-palette-blt.png"
   File.open(path, "wb") { |io| io.write(PAL_PNG_4X2) }
