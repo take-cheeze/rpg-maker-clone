@@ -11,6 +11,8 @@
 # Usage:
 #   scripts/wio/renode_boot.bash .pio/build/wio_sd_upload/firmware.elf
 #   scripts/wio/renode_boot.bash .pio/build/wio_walk/firmware.elf 00:00:02
+# RENODE_PLATFORM names another board description (default app/wio/renode/wio_terminal.repl); the `wio` game
+# image is bigger than the real flash, so it boots on wio_terminal_oversized_flash.repl.
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -22,6 +24,7 @@ elf="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 duration="${2:-00:00:00.300}"
 renode="${RENODE_BIN:-renode}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+platform="${RENODE_PLATFORM:-$repo_root/app/wio/renode/wio_terminal.repl}"
 
 if ! command -v "$renode" >/dev/null 2>&1; then
   echo "error: '$renode' not found -- install Renode or set RENODE_BIN" >&2
@@ -54,7 +57,7 @@ if [[ "$setup_addr" == "0x" || "$loop_addr" == "0x" ]]; then
 fi
 
 exec "$renode" --disable-gui --console --plain \
-  -e "set platform_path @$repo_root/app/wio/renode/wio_terminal.repl" \
+  -e "set platform_path @$platform" \
   -e "set elf_path @$elf" \
   -e "set setup_addr $setup_addr" \
   -e "set loop_addr $loop_addr" \
