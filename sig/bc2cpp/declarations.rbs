@@ -3059,7 +3059,6 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def drive_wait_key_enter: () -> untyped
   def event_at: (untyped, untyped) -> untyped
   def event_draw_order: () -> untyped
-  def event_drawn_after?: (untyped, untyped) -> untyped
   def event_id_at: (untyped, untyped) -> untyped
   def event_position: (untyped) -> untyped
   def finish_inn: (untyped, ?untyped) -> untyped
@@ -13803,7 +13802,7 @@ class RPG2k::Window
 end
 class RPG2k::Scene::Map
   # #store_event_draw_sigs passes `i * EVENT_DRAW_SIG_FIELDS`.
-  def store_event_draw_sig: (untyped, Array, Integer) -> untyped
+  def store_event_draw_sig: (RPG2k::Scene::Map::MapEventState, Array, Integer) -> untyped
   # A move count (0..TILE).
   def jump_offset_for: (Integer) -> untyped
   # Game::Parallax.axis_offset, the image's width / height and SCREEN_W / SCREEN_H.
@@ -13883,6 +13882,15 @@ class RPG2k::Scene::Map
   # (#draw_event_charset, #start_event_slide and #animate_event are declared with their other facts above.)
   def start_event: (RPG2k::Scene::Map::MapEventState?, ?untyped) -> untyped
   def erase_event: (RPG2k::Scene::Map::MapEventState?) -> untyped
+  # An @events element, never nil: #step_forced_movement's and #store_event_draw_sigs' / #events_dirty?'s loops,
+  # #event_draw_order's insertion sort over `@events.dup` (#event_drawn_after?), #step_event's and #animate_event's
+  # `@events[i]` (#event_sliding?), and #event_pixel's / #store_event_draw_sig's event (#event_pixel_x / _y; every
+  # #event_pixel caller passes an `@events.find` result it tested, or a drawn event).
+  def step_forced_event: (RPG2k::Scene::Map::MapEventState) -> untyped
+  def event_drawn_after?: (RPG2k::Scene::Map::MapEventState, RPG2k::Scene::Map::MapEventState) -> untyped
+  def event_sliding?: (RPG2k::Scene::Map::MapEventState) -> untyped
+  def event_pixel_x: (RPG2k::Scene::Map::MapEventState) -> untyped
+  def event_pixel_y: (RPG2k::Scene::Map::MapEventState) -> untyped
 end
 class Game::Battle::Combatant
   # Combatant.new's `actor` (nil by default): Battle.from_actor passes its Game::Actor, from_enemy nil; nothing calls
