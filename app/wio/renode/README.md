@@ -305,4 +305,5 @@ of every live heap block. With `--heapwalk DIR` the run saves a heap snapshot at
 and at each scene's peak (pre-GC, within 2 KB), and the image window grows to 32 MB so every palette image fits
 decoded. `scripts/wio/heapwalk_report.rb ELF DIR` breaks each snapshot down: GC pages by type, blocks by owning object
 class, unowned blocks by allocating function, and a per-snapshot summary (`--largest N` prints the biggest blocks'
-stacks). Stacks are found by scanning for return addresses, so a frame can be stale.
+stacks; `--strings` adds a census of the live Strings by kind, holder, buffer site and duplicate bytes). Stacks are
+found by scanning for return addresses, so a frame can be stale.
