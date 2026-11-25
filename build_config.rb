@@ -1118,7 +1118,7 @@ if wio
       # buffer and the symbol name pool's chunk (4 KB each, STDIN's and the first symbol's at boot). The gray stack
       # overflows into a heap rescan (gray_overflow), the caches only miss more, the IO buffer grows when a read needs
       # it and a long symbol name gets a chunk of its own, so results are the same. WIO_STATE_TABLES=default keeps
-      # mruby's sizes.
+      # mruby's sizes. MRB_STATE_LAYOUT: platformio.ini repeats the three that size mrb_state, for the app's own code.
       unless ENV['WIO_STATE_TABLES'] == 'default'
         t.defines << 'MRB_GRAY_STACK_SIZE=256' << 'MRB_METHOD_CACHE_SIZE=64' << 'MRB_ROWS_CACHE_SIZE=16'
         t.defines << 'MRB_IO_BUF_SIZE=512' << 'MRB_SYM_POOL_CHUNK_SIZE=1024'
