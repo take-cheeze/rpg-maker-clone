@@ -204,10 +204,13 @@ constexpr uint64_t kDoubleFrac = 0x000fffffffffffffull;
 // LCF.unpack_double(d): nil for nil or fewer than 8 bytes, else the double
 // (any NaN as the platform's quiet NaN).
 mrb_value unpack_double(mrb_state* M, mrb_value) {
-  const char* p;
-  mrb_int l;
-  mrb_get_args(M, "s!", &p, &l);
-  if (p == nullptr || l < 8)
+  mrb_value d;
+  mrb_get_args(M, "o", &d);
+  if (mrb_nil_p(d))
+    return mrb_nil_value();
+  d = mrb_ensure_string_type(M, d);
+  const char* p = RSTRING_PTR(d);
+  if (RSTRING_LEN(d) < 8)
     return mrb_nil_value();
   uint64_t bits = 0;
   for (int i = 7; i >= 0; --i)
