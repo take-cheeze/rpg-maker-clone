@@ -16,6 +16,9 @@
 #     --seconds N        virtual-time budget (default 120)
 #     --font FILE        gothic.bin for kanji (the wio libmruby build's)
 #     --log FILE         keep the log there
+#     --trace FILE       also write Renode's PC trace of half a virtual second
+#                        to FILE (scripts/wio/qspi_xip_hot.rb reads it), from
+#     --trace-at N       virtual second N (default 25: map frames by then)
 # RENODE_BIN is the Renode binary (see app/wio/renode/README.md); RENODE_GAME_RAW
 # names a file to keep Renode's own output in (per-step PC and log length).
 set -euo pipefail
@@ -28,7 +31,7 @@ usage() {
 elf="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 game="$2"
 shift 2
-board=real config='frames=600' seconds=120 font='' log='' expects=()
+board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 expects=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --board) board=$2 ;;
@@ -37,6 +40,8 @@ while [[ $# -gt 0 ]]; do
     --seconds) seconds=$2 ;;
     --font) font=$2 ;;
     --log) log=$2 ;;
+    --trace) trace=$2 ;;
+    --trace-at) trace_at=$2 ;;
     *) usage ;;
   esac
   shift 2
@@ -79,6 +84,11 @@ step=5
   echo "cpu0 AddHook $(addr mrb_raise_nomemory) \"print('=== NOMEMORY'); cpu.RemoveHooksAt(cpu.PC)\""
   echo 'logLevel 3'
   for ((t = 0; t < seconds; t += step)); do
+    if [[ -n "$trace" && $t == "$trace_at" ]]; then
+      echo "cpu0 CreateExecutionTracing \"trace\" @$trace PC"
+      echo 'emulation RunFor "00:00:00.5"'
+      echo 'cpu0 DisableExecutionTracing'
+    fi
     echo "emulation RunFor \"00:00:0$step\""
     echo "echo \"RESULT\""
     echo "sysbus ReadDoubleWord $result"
