@@ -4,24 +4,31 @@
 # HEAPWALK report: reads the snapshots the wio_renode_game_heapwalk firmware writes (app/wio/src/wio_heapwalk.cxx,
 # scripts/wio/renode_game.bash --heapwalk DIR) and breaks each heap down by owner.
 #
-#   scripts/wio/heapwalk_report.rb ELF DIR [--snap NAME_REGEX] [--top N] [--nm NM]
+#   scripts/wio/heapwalk_report.rb ELF DIR [--snap NAME_REGEX] [--top N] [--nm NM] [--strings]
 #
 # A malloc block belongs to the mruby object whose slot holds its address (a String's buffer, an Array's values, an
 # ivar table, a C data's struct), and to that owner too when only another owned block points at it (a hash's entries,
 # a bitmap's pixels). The rest is charged to the first allocating function outside the allocator plumbing (malloc,
 # mrb_realloc, lv_malloc, operator new, std::), named from the ELF's symbols. GC pages are split by object type and
 # class. Sizes are the blocks' usable bytes; newlib-nano adds a 4-byte header to each.
+#
+# --strings adds a String census: every live String by kind (embedded, normal, shared, fshared, nofree), by holder (the
+# object whose slot or block points at it, followed up through Arrays and Hashes), by the site that allocated its
+# buffer, and the strings whose bytes another live String already has. A shared buffer is charged once, split evenly
+# over the strings that share it.
 require 'optparse'
 
 top = 25
 snap_re = nil
 largest = 0
+strings = false
 nm = ENV.fetch('ARM_NM', File.expand_path('~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-nm'))
 OptionParser.new do |o|
   o.on('--snap RE') { |v| snap_re = Regexp.new(v) }
   o.on('--top N', Integer) { |v| top = v }
   o.on('--largest N', Integer, 'also list the N largest blocks with their whole stacks') { |v| largest = v }
   o.on('--nm NM') { |v| nm = v }
+  o.on('--strings', 'also break the live Strings down') { strings = true }
 end.parse!
 elf, dir = ARGV
 abort 'usage: heapwalk_report.rb ELF DIR [--snap RE] [--top N]' unless elf && dir && File.directory?(dir)
@@ -94,6 +101,92 @@ def table(rows, head, top)
   puts format('  %8s KB total', kb(total))
 end
 
+# A String buffer's allocating function past mruby's own string plumbing (str_share, resize_capa, mrb_str_new...), and
+# the compiled Ruby method above it.
+STR_PLUMBING = /\A(str_\w+|mrb_str_\w+|resize_capa|mrb_obj_alloc)\z/
+def string_site(chain)
+  names = chain.reject(&:zero?).map { |a| fn_of(a) }
+  short = ->(n) { n.gsub('(anonymous namespace)', 'anon').sub(/\(.*/m, '') }
+  names.shift while names.size > 1 && (names.first =~ PLUMBING || short.(names.first) =~ STR_PLUMBING)
+  ruby = names.drop(1).find { |n| n =~ RUBY_METHOD }
+  [names.first, ruby].compact.map(&short).join(' < ')
+end
+
+STR_KIND = { 8 => 'embed', 4 => 'nofree', 1 => 'shared', 2 => 'fshared', 0 => 'normal' }.freeze
+
+# The --strings census (see the file comment). An RString on this 32-bit target: the 8-byte header (flags from bit 12
+# of its second word, the type in their low 4 bits, an embedded length in bits 6..10), then len, aux (capa, the
+# mrb_shared_string or the frozen String shared) and ptr.
+def string_census(heap, heap_base, objs, recs, slot_size, block_at, owner_label, top)
+  heap_end = heap_base + heap.bytesize
+  word = ->(addr) { heap.unpack1('L', offset: addr - heap_base) }
+  obj_at = objs.to_h { |a, tt, cls| [a, [tt, cls]] }
+  holders = Hash.new { |h, k| h[k] = [] }
+  objs.each do |a, tt, _|
+    next if tt == 18
+
+    (2...(slot_size / 4)).each { |k| v = word.(a + 4 * k); holders[v] << a if obj_at.key?(v) }
+  end
+  recs.each do |r|
+    next unless r[:owner_obj] && r[:owner] != 'gc page' && r[:ptr] + r[:usable] <= heap_end
+
+    heap.unpack("L#{r[:usable] / 4}", offset: r[:ptr] - heap_base).each { |v| holders[v] << r[:owner_obj] if obj_at.key?(v) }
+  end
+  holder_of = lambda do |a|
+    path = []
+    4.times do
+      h = holders[a].first
+      break unless h
+
+      tt, cls = obj_at[h]
+      path << owner_label.(tt, cls, h)
+      break unless [12, 17].include?(tt) # through an Array or a Hash to what holds it
+
+      a = h
+    end
+    path.empty? ? '(no holder seen)' : path.join(' < ')
+  end
+  shared_users = Hash.new(0)
+  strs = objs.select { |_, tt, _| tt == 18 }.map do |a, _, _|
+    flags = word.(a + 4) >> 12
+    kind = STR_KIND[[8, 4, 1, 2].find { |bit| flags & bit != 0 } || 0]
+    s = { addr: a, kind: kind }
+    if kind == 'embed'
+      s[:bytes] = heap.byteslice(a + 8 - heap_base, (flags >> 6) & 31)
+    else
+      len, aux, ptr = heap.unpack('l<LL', offset: a + 8 - heap_base)
+      s[:bytes] = heap.byteslice(ptr - heap_base, len) if ptr >= heap_base && ptr + len <= heap_end && len >= 0
+      s[:block] = kind == 'shared' ? block_at.(ptr) : (kind == 'normal' ? block_at.(ptr) : nil)
+      s[:header] = aux if kind == 'shared'
+      shared_users[aux] += 1 if kind == 'shared'
+    end
+    s
+  end
+  strs.each do |s|
+    b = s[:block]
+    s[:buf] = if s[:kind] == 'shared'
+                hdr = block_at.(s[:header])
+                ((b ? b[:usable] + 4 : 0) + (hdr ? hdr[:usable] + 4 : 0)).fdiv(shared_users[s[:header]])
+              else
+                b ? b[:usable] + 4 : 0
+              end
+    s[:site] = b ? string_site(b[:chain]) : '(no buffer)'
+    s[:holder] = holder_of.(s[:addr])
+  end
+  group = lambda do |head, key|
+    rows = strs.group_by(&key).map { |k, v| [k, v.size, v.size * slot_size + v.sum { |x| x[:buf] }] }
+    table(rows, head, top)
+  end
+  puts format('Strings: %d, %s KB of slots and %s KB of buffers', strs.size, kb(strs.size * slot_size),
+              kb(strs.sum { |x| x[:buf] }))
+  group.('Strings by kind (slot + buffer):', ->(s) { s[:kind] })
+  group.('Strings by holder (slot + buffer):', ->(s) { s[:holder] })
+  group.('Strings by buffer site (slot + buffer):', ->(s) { "#{s[:kind]} #{s[:site]}" })
+  dups = strs.group_by { |s| s[:bytes] }.select { |k, v| k && v.size > 1 }
+  rows = dups.map { |k, v| [k.dump[0, 60], v.size - 1, (v.size - 1) * slot_size + v.drop(1).sum { |x| x[:buf] }] }
+  table(rows, 'Strings whose bytes another live String has (count = the extra copies):', top)
+end
+
 classes = {}
 summary = []
 memo = {}
@@ -162,6 +255,7 @@ Dir[File.join(dir, 'snap-*.out')].sort.each do |out_path|
       next if !b || b[:owner]
 
       b[:owner] = label
+      b[:owner_obj] = a
       b[:direct] = TT[tt]
       queue << b unless tt == 18 # a String's bytes hold no pointers
     end
@@ -175,6 +269,7 @@ Dir[File.join(dir, 'snap-*.out')].sort.each do |out_path|
       next if !c || c[:owner] || c[:noscan]
 
       c[:owner] = b[:owner]
+      c[:owner_obj] = b[:owner_obj]
       c[:direct] = "#{b[:direct]}>"
       queue << c
     end
@@ -235,6 +330,8 @@ Dir[File.join(dir, 'snap-*.out')].sort.each do |out_path|
   us = Hash.new { |h, k| h[k] = [k, 0, 0] }
   unowned.each { |r| e = us[r[:site]]; e[1] += 1; e[2] += r[:usable] }
   table(us.values, 'blocks no object owns, by allocating function:', top)
+
+  string_census(heap, heap_base, objs, recs, slot_size, block_at, owner_label, top) if strings
 
   hist = Hash.new { |h, k| h[k] = [k, 0, 0] }
   recs.each do |r|
