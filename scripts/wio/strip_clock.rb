@@ -14,11 +14,10 @@
 #   The pattern matches the method body only: a method name mentioned under
 #   scripts/ counts as a dynamic call to bc2cpp_static_dispatch_check.rb.
 #
-# It then refuses any output that still names Time. Running over every wio
-# mrblib file makes that a build-time guarantee, not a convention.
-# build_config.rb's wio_strip_clock runs it after wio_strip_inline_helpers,
-# which inlines #bug_report_stamp into its caller, so the main.rb pattern is
-# that inlined form. scripts/wio/strip_scripts_check.rb runs it in CI.
+# It then refuses any output that still names Time. WIO_WORLD_STRIP's opt-in
+# clock pass (world_strip.rb) runs it after the inline pass, which inlines
+# #bug_report_stamp into its caller, so the main.rb pattern is that inlined
+# form. scripts/wio/strip_scripts_check.rb runs it in CI.
 #
 # Usage: ruby strip_wio_clock.rb <input.rb> <output.rb>
 

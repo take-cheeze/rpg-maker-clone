@@ -54,6 +54,10 @@ engine.
 The developer tools (F9 debug menu, map viewer/editor, chipset editor) are not in the Wio firmware: F9 does
 nothing. `WIO_DEBUG_SCENES=1` at build time keeps them.
 
+The engine is compiled from a rewritten copy of its mrblib (`scripts/wio/world_strip.rb`): by default, helpers with
+one caller are folded into it. `WIO_WORLD_STRIP=0` compiles the source as it is, and a list such as
+`WIO_WORLD_STRIP=inline,debug` picks the passes. `debug` also removes the `[RPG2k]` error lines from the stderr log.
+
 ## Game data on the microSD card
 
 The firmware takes the game's files from the microSD card when it has a `/rpg2k` folder holding the game folder's
