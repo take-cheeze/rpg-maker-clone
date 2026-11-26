@@ -99,4 +99,7 @@ void wic_release(void* ctx, uint32_t index);
 // ROM_BITMAP_SOURCE under `root`. Logs the outcome with a [Wio] tag; false
 // leaves every image to its file.
 bool wio_image_cache_begin(const char* root);
+// One [Wio] line of the cache's counts since wio_image_cache_begin; nothing
+// without a cache.
+void wio_image_cache_report();
 #endif
