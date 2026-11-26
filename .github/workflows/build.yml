@@ -50,6 +50,8 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       # On a pull request nano7-qemu runs only when its own files changed.
       nano7: ${{ steps.filter.outputs.nano7 }}
+      # On a pull request wio and wio-renode run only when app/wio/ changed.
+      wio: ${{ steps.filter.outputs.wio }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -77,6 +79,8 @@ jobs:
               - 'scripts/stage_nano7_walk_app.bash'
               - 'scripts/download/nepheshel.bash'
               - '.github/workflows/build.yml'
+            wio:
+              - 'app/wio/**'
 
   # Native desktop build, its test suite, and the in-game smokes.
   build:
@@ -1481,7 +1485,10 @@ jobs:
   wio:
     # Builds the Wio game firmware `wio` (closed world only) and the
     # `wio_sd_upload` SD loader. See app/wio/README.md.
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    needs: changes
+    if: >-
+      ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'pull_request' && needs.changes.outputs.wio == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -1574,6 +1581,20 @@ jobs:
         with:
           name: wio-sd-upload-firmware
           path: .pio/build/wio_sd_upload/firmware.elf
+          if-no-files-found: error
+
+      - name: Build the Renode game firmware
+        # wio_renode_game on the 192 KB board: wio-renode plays a game from a simulated microSD card on it.
+        env:
+          WIO_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-wio/wio
+          WIO_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-wio/unialgo
+        run: pio run -e wio_renode_game
+
+      - name: Upload the Renode game firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: wio-renode-game-firmware
+          path: .pio/build/wio_renode_game/firmware.elf
           if-no-files-found: error
 
       # Summarises the flash and SRAM budget, which is tight on this board.
@@ -1867,8 +1888,10 @@ jobs:
     # Covers the CPU running setup()/loop() and the ILI9341 model's pixels.
     # Not covered: a firmware-driven map render (the walk firmware's tile pushes go
     # through Adafruit_ZeroDMA, which this platform does not model yet).
-    needs: wio
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    needs: [changes, wio]
+    if: >-
+      ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'pull_request' && needs.changes.outputs.wio == 'true') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -1894,6 +1917,14 @@ jobs:
         with:
           name: wio-sd-upload-firmware
           path: firmware/wio_sd_upload
+      - name: Download the Renode game firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: wio-renode-game-firmware
+          path: firmware/wio_renode_game
+      - name: Init 3rd/stb
+        # scripts/wio/sd_bitmaps.rb decodes the card's images with the runtime's own stb.
+        run: git submodule update --init --depth 1 3rd/stb
 
       - name: Install mtools/dosfstools/ImageMagick
         # mtools and dosfstools test renode_sdcard.bash. ImageMagick reads pixels
@@ -1908,8 +1939,8 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/wio-renode-build
-          # Keyed on the pinned commit and the peripheral sources it copies in.
-          key: wio-renode-${{ runner.os }}-${{ hashFiles('scripts/wio/renode_build.bash', 'app/wio/renode/peripherals/**') }}
+          # Keyed on the pinned commit and the peripheral sources and patches it copies in.
+          key: wio-renode-${{ runner.os }}-${{ hashFiles('scripts/wio/renode_build.bash', 'app/wio/renode/peripherals/**', 'app/wio/renode/patches/**') }}
 
       - name: Build Renode with the Wio Terminal peripherals
         if: steps.renode-cache.outputs.cache-hit != 'true'
@@ -1962,6 +1993,42 @@ jobs:
           scripts/wio/renode_sdcard.bash /tmp/wio_renode_sdcard_check \
             /tmp/wio_renode_sdcard_check_input.txt:/RPG2kWalk/test.txt
           mdir -i /tmp/wio_renode_sdcard_check/sdcard.img ::/RPG2kWalk | grep -q test
+
+      - name: Play a game from the SD card under Renode
+        # A synthetic game (scripts/gen/wio-sd-game.rb) on the simulated card, with its image pack, on the 192 KB
+        # board: the first boot copies its images into the QSPI cache, a reboot from that flash finds them there, and a
+        # card without the pack decodes System's PNG. That card has no title picture: decoded into the heap, the
+        # 320x240 one does not fit this board. renode_game.bash fails on an OOM, a fault or a missing --expect.
+        env:
+          RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
+          ARM_NM: arm-none-eabi-nm
+        run: |
+          ruby scripts/gen/wio-sd-game.rb /tmp/wio-sd-game
+          elf=firmware/wio_renode_game/firmware.elf
+          cfg='frames=120;new_game=0'
+          cp -r /tmp/wio-sd-game /tmp/wio-sd-notitle
+          rm /tmp/wio-sd-notitle/Title/wio.png
+          refuse() { if grep -E "$2" "$1"; then echo "::error::$1 has /$2/"; exit 1; fi; }
+          echo "::group::first boot"
+          scripts/wio/renode_game.bash "$elf" /tmp/wio-sd-game --sd pack --config "$cfg" --seconds 30 \
+            --qspi-out /tmp/wio-qspi.bin --log /tmp/wio-sd-1.log \
+            --expect 'image cache: a new pack \(crc [0-9a-f]+, 2 images\)' \
+            --expect 'image cache: copied System/wio' --expect 'image cache: copied Title/wio' \
+            --expect 'image cache: [0-9]+ hits, 2 misses' --expect 'Scene::Title'
+          echo "::endgroup::"
+          echo "::group::reboot from the saved flash"
+          scripts/wio/renode_game.bash "$elf" /tmp/wio-sd-game --sd pack --config "$cfg" --seconds 30 \
+            --qspi-in /tmp/wio-qspi.bin --log /tmp/wio-sd-2.log \
+            --expect '^QSPI erases 0$' --expect 'image cache: 2 images, 2 already cached' \
+            --expect 'image cache: [1-9][0-9]* hits, 0 misses' --expect 'Scene::Title'
+          refuse /tmp/wio-sd-2.log 'image cache: (copied|a new pack)'
+          echo "::endgroup::"
+          echo "::group::no pack"
+          scripts/wio/renode_game.bash "$elf" /tmp/wio-sd-notitle --sd nopack --config "$cfg" --seconds 30 \
+            --log /tmp/wio-sd-3.log \
+            --expect '\[Wio\] image cache: no /rpg2k/wio_bitmaps.bin on the card' --expect 'Scene::Title'
+          refuse /tmp/wio-sd-3.log 'image cache: (copied|[0-9]+ hits)'
+          echo "::endgroup::"
 
   # M5Stack Core (ESP32) P1 HAL firmware. It is a standalone PlatformIO project
   # under app/m5stack, not an environment in the root platformio.ini: Arduino

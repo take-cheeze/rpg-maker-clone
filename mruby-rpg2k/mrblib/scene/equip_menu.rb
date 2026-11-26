@@ -462,7 +462,7 @@ class RPG2k
         @desc_window = Window.new(0, 0, SCREEN_W, DESC_H)
         @desc_window.z = 400
         @desc_window.windowskin = @skin
-        @desc_contents = Bitmap.new(inner_w, LINE_H)
+        @desc_contents = contents_bitmap(inner_w, LINE_H)
         @desc_window.contents = @desc_contents
         refresh_desc
       end
@@ -488,7 +488,7 @@ class RPG2k
         @stats_window = Window.new(0, PANEL_Y, STATS_W, PANEL_H)
         @stats_window.z = 400
         @stats_window.windowskin = @skin
-        c = Bitmap.new(inner_w, h)
+        c = contents_bitmap(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         a = actor
         draw_system_text c, 0, 0, inner_w, LINE_H, a.name.to_s, @skin, TEXT_COLOR
@@ -608,7 +608,7 @@ class RPG2k
         @slot_window = Window.new(STATS_W, PANEL_Y, SLOT_W, PANEL_H)
         @slot_window.z = 400
         @slot_window.windowskin = @skin
-        c = Bitmap.new(inner_w, h)
+        c = contents_bitmap(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         eq = actor.equipment
         @slots.each_with_index do |label, i|
@@ -727,7 +727,7 @@ class RPG2k
         @cand_window = Window.new(0, CAND_Y, SCREEN_W, CAND_H)
         @cand_window.z = 450
         @cand_window.windowskin = @skin
-        c = Bitmap.new(inner_w, h)
+        c = contents_bitmap(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         col_w = cand_col_w
         first = @cand_top * COLUMN_MAX

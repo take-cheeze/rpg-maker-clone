@@ -291,7 +291,9 @@ images as the 16 MB still holds; the rest load from their files as before.
 (`peripherals/SPI/SAMD51_QSPI.cs`) models the QSPI controller and the flash's erase/program commands with their typical
 busy times, so the image cache's writes run as on the board; `--qspi-out FILE` saves the flash when the run ends and
 `--qspi-in FILE` boots from it again. The SD card needs a Renode built by `scripts/wio/renode_build.bash` (the ACMD42
-patch).
+patch). CI's `wio-renode` job runs these on `scripts/gen/wio-sd-game.rb`'s synthetic game: a first boot that copies its
+two images into the cache, a `--qspi-in` reboot that must erase nothing, and `nopack`; the end-of-run `[Wio] image
+cache: N hits, M misses ...` line has the counts.
 
 ```sh
 pio run -e wio_renode_game

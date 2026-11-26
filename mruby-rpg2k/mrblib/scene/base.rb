@@ -67,6 +67,7 @@ class RPG2k
         sprite = Sprite.new
         sprite.z = 300
         bmp = Bitmap.new(RPG2k::WIDTH, RPG2k::HEIGHT)
+        bmp._defer # one fill, kept as a draw (DEFERRED_BITMAP)
         colour = if skin
                    skin.get_pixel(FIELD_BACKDROP_X, FIELD_BACKDROP_Y)
                  else
@@ -143,6 +144,15 @@ class RPG2k
           next if w <= 0
           bmp.fill_rect r, row, w, 1, color
         end
+      end
+
+      # A window's contents bitmap, kept as its draws (text runs, and blits
+      # from their sources) rather than ARGB pixels: Bitmap#_defer,
+      # DEFERRED_BITMAP in mruby-rgss/src/lib.cxx. Nothing reads it back.
+      def contents_bitmap(w, h)
+        bmp = Bitmap.new(w, h)
+        bmp._defer
+        bmp
       end
 
       # Draw `text` the way RPG_RT draws every piece of window text: a shadow

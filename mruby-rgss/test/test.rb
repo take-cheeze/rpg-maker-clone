@@ -2285,6 +2285,51 @@ assert "RGSS::Bitmap#_defer composes to the immediate draws" do
   end
 end
 
+# Text runs into a deferred bitmap are kept as their glyph pixels and composed
+# to the bytes draw_text and blend_text give at once, clipped runs included.
+assert "RGSS::Bitmap#_defer composes text runs to the immediate draws" do
+  next true unless RGSS::Bitmap.new(1, 1).respond_to?(:blend_text)
+  swatch = RGSS::Bitmap.new(4, 6)
+  6.times { |y| swatch.fill_rect(0, y, 4, 1, RGSS::Color.new(40 * y, 200 - 30 * y, 90, 255 - 20 * y)) }
+  pal = RGSS::Bitmap.new(4, 4)
+  pal.fill_rect(0, 0, 4, 4, RGSS::Color.new(9, 99, 199, 255))
+  draw = lambda do |b|
+    b.font.color = RGSS::Color.new(250, 20, 30, 255)
+    b.fill_rect(0, 0, 30, 10, RGSS::Color.new(1, 2, 3, 120))
+    b.draw_text(-3, -5, 40, 16, "Hi 12")
+    b.draw_text(0, 10, b.width, 16, "\u3042\uFF71x", 1)
+    b.blend_text(1, 15, b.width, 16, "Wait", swatch, 0, 0, 4, 6, 2)
+    b.blend_text(0, 14, b.width, 16, "Wait", swatch, 0, 0, 4, 6, 2)
+    b.blend_text(30, 27, 40, 16, "edge", swatch, 1, 1, 2, 4)
+    b.blt(5, 12, pal, RGSS::Rect.new(0, 0, 4, 4), 128)
+    b.font.color = RGSS::Color.new(5, 6, 7, 80)
+    b.draw_text(20, 2, 40, 12, "Lo")
+    # Wholly inside a later fill: gone.
+    b.draw_text(0, 30, 20, 12, "zz")
+    b.fill_rect(0, 30, 40, 4, RGSS::Color.new(7, 7, 7, 255))
+  end
+  ref = RGSS::Bitmap.new(44, 34)
+  lay = RGSS::Bitmap.new(44, 34)
+  src = RGSS::Bitmap.new(44, 34)
+  [lay, src].each(&:_defer)
+  [ref, lay, src].each { |b| draw.call(b) }
+  assert_true ref.get_pixel(10, 3).alpha > 0, "nothing drawn"
+  # Drawn from while deferred, then redrawn: the copy keeps what it read.
+  out_ref = RGSS::Bitmap.new(44, 34)
+  out_def = RGSS::Bitmap.new(44, 34)
+  out_def._defer
+  out_ref.blt(2, 1, ref, RGSS::Rect.new(0, 0, 44, 34))
+  out_def.blt(2, 1, src, RGSS::Rect.new(0, 0, 44, 34))
+  src.clear
+  src.draw_text(0, 0, 44, 16, "again")
+  assert_equal pixels_of(ref), pixels_of(lay)
+  assert_equal pixels_of(out_ref), pixels_of(out_def)
+  fresh = RGSS::Bitmap.new(44, 34)
+  fresh.font.color = RGSS::Color.new(5, 6, 7, 80)
+  fresh.draw_text(0, 0, 44, 16, "again")
+  assert_equal pixels_of(fresh), pixels_of(src)
+end
+
 # LAZY_PIXELS (mruby-rgss/src/lib.cxx): a Bitmap.new(w, h) holds no pixels
 # until something draws or reads them, and reads as transparent until then.
 assert "RGSS::Bitmap.new allocates its pixels on first use" do

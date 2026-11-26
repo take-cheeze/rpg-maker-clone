@@ -35,6 +35,7 @@ constexpr uint32_t kMinRegion = 64 * 1024;
 
 uintptr_t g_region = 0;
 int g_pack = -1;
+const WicCache* g_cache = nullptr;
 uint32_t g_pos = 0;
 
 void flash_erase(void*, uint32_t off) {
@@ -135,7 +136,21 @@ bool wio_image_cache_begin(const char* root) {
   std::fprintf(stderr, "[Wio] image cache: %u KB of QSPI flash at 0x%08x\n",
                static_cast<unsigned>(flash.size / 1024),
                static_cast<unsigned>(g_region));
+  g_cache = c;
   return true;
+}
+
+void wio_image_cache_report() {
+  if (!g_cache)
+    return;
+  const WicStats& s = g_cache->stats;
+  std::fprintf(
+      stderr,
+      "[Wio] image cache: %u hits, %u misses (%u bytes copied), %u "
+      "erased, %u evicted, %u failed\n",
+      static_cast<unsigned>(s.hits), static_cast<unsigned>(s.misses),
+      static_cast<unsigned>(s.copied_bytes), static_cast<unsigned>(s.erased),
+      static_cast<unsigned>(s.evicted), static_cast<unsigned>(s.failed));
 }
 
 #else
@@ -143,5 +158,7 @@ bool wio_image_cache_begin(const char* root) {
 bool wio_image_cache_begin(const char*) {
   return false;
 }
+
+void wio_image_cache_report() {}
 
 #endif
