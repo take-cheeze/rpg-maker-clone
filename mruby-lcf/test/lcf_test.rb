@@ -808,6 +808,39 @@ assert 'Array2D rows of an in-memory table are slices of its bytes' do
   assert_raise(RuntimeError) { LCF::Array2D.new(lcf_ber(1) + lcf_ber(1) + lcf_ber(31) + lcf_ber(9), nil) }
 end
 
+assert 'LCF.ber_at / ber_next / row_end read a String through a position' do
+  d = "\x05\x82\x2c\x8f\xff\xff\xff\x7f"
+  assert_equal 5, LCF.ber_at(d, 0)
+  assert_equal 1, LCF.ber_next(d, 0)
+  assert_equal 300, LCF.ber_at(d, 1)
+  assert_equal 3, LCF.ber_next(d, 1)
+  assert_equal(-1, LCF.ber_at(d, 3))
+  assert_equal 8, LCF.ber_next(d, 3)
+  assert_raise(RuntimeError) { LCF.ber_at(d, 8) }
+  assert_raise(RuntimeError) { LCF.ber_next("\x81", 0) }
+  assert_raise(ArgumentError) { LCF.ber_at(d, -1) }
+  row = lcf_array1d([lcf_int_field(12, 5), lcf_field(13, "ab")])
+  assert_equal row.bytesize, LCF.row_end(row + "\x09", 0)
+  # A row without its terminator runs to the end; a chunk past the end raises.
+  assert_equal 3, LCF.row_end(row[0, 3], 0)
+  assert_raise(RuntimeError) { LCF.row_end(row[0, 6], 0) }
+  assert_raise(RuntimeError) { LCF.row_end(lcf_ber(1) + lcf_ber(-1), 0) }
+end
+
+assert 'Array1D and Array2D read a String as they read the same bytes from a stream' do
+  e1 = lcf_array1d([lcf_int_field(31, 1), lcf_field(32, "x" * 40), lcf_field(33, "\x07"), lcf_field(34, '')])
+  body = lcf_array2d([[1, e1], [4, lcf_array1d([lcf_int_field(31, 5)])]])
+  from_str = LCF::Array2D.new(body, nil)
+  from_io = LCF::Array2D.new(StringIO.new(body), nil)
+  assert_equal from_io.to_lcf, from_str.to_lcf
+  assert_equal from_io[1].to_lcf, from_str[1].to_lcf
+  assert_equal LCF::Array1D.new(StringIO.new(e1), nil).to_lcf, LCF::Array1D.new(e1, nil).to_lcf
+  # The truncation checks are the stream reader's.
+  assert_raise(RuntimeError) { LCF::Array1D.new(lcf_ber(1) + lcf_ber(5) + 'ab', nil) }
+  assert_raise(RuntimeError) { LCF::Array1D.new(lcf_ber(70_000) + lcf_ber(0), nil) }
+  assert_raise(RuntimeError) { LCF::Array2D.new(lcf_ber(2) + lcf_ber(1) + lcf_ber(0), nil) }
+end
+
 assert 'Array1D#[]= re-encodes int and string fields through the schema' do
   schema = { elements: LCF::Schema::SAVE_MOVABLE }
   a = LCF::Array1D.new(lcf_array1d([lcf_int_field(12, 5), lcf_int_field(13, 7),
