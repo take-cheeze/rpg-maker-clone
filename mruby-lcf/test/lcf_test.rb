@@ -918,6 +918,60 @@ assert 'A map layer read once stands in for its chunk bytes' do
   assert_equal odd, o.to_lcf
 end
 
+assert 'LCF.chunk_at finds the last chunk of an id before the terminator' do
+  row = lcf_array1d([lcf_int_field(1, 5), lcf_field(3, 'ab'), lcf_int_field(1, 7)])
+  at = LCF.chunk_at(row, 1)
+  assert_equal 7, LCF.ber_at(row, LCF.ber_next(row, at))
+  assert_equal 2, LCF.ber_at(row, LCF.chunk_at(row, 3))
+  assert_nil LCF.chunk_at(row, 2)
+  assert_nil LCF.chunk_at(lcf_ber(0) + lcf_field(4, 'x'), 4)
+  assert_nil LCF.chunk_at('', 1)
+  assert_raise(RuntimeError) { LCF.chunk_at(lcf_ber(1) + lcf_ber(5) + 'ab', 1) }
+end
+
+assert 'An Array1D read from a String reads, writes and deletes as one read from a stream' do
+  schema = { elements: { 1 => { name: :a, type: :int, default: 0 }, 2 => { name: :s, type: :string, default: '' },
+                         3 => { name: :b, type: :bool, default: false }, 4 => { name: :big, type: :int, default: 0 },
+                         5 => { name: :shorts, type: :int16_array, default: [] } } }
+  body = lcf_array1d([lcf_int_field(1, 5), lcf_str_field(2, 'name'), lcf_field(3, "\x01"),
+                      lcf_int_field(4, -1), lcf_shorts_field(5, [1, 2])])
+  r = LCF::Array1D.new(body, schema)
+  eager = LCF::Array1D.new(StringIO.new(body), schema)
+  %i[a s b big shorts].each { |k| assert_equal eager[k], r[k] }
+  assert_equal(-1, r[:big])
+  assert_true r.key?(:a)
+  assert_false r.key?(6)
+  assert_equal [1, 2], r.int16_values(5)
+  assert_nil r.int16_values(6)
+  assert_equal body, r.to_lcf
+  r[:a] = 9
+  assert_equal 9, r[:a]
+  assert_equal 'name', r[:s]
+  assert_equal(-1, r[:big])
+  d = LCF::Array1D.new(body, schema)
+  assert_equal lcf_ber(5), d.delete(1)
+  assert_false d.key?(1)
+  assert_equal 0, d[:a]
+  # An :int chunk whose BER runs past the chunk still raises.
+  bad = LCF::Array1D.new(lcf_array1d([lcf_field(1, "\x81\x81"), lcf_int_field(3, 1)]), schema)
+  assert_raise(RuntimeError) { bad[:a] }
+  assert_raise(RuntimeError) { LCF::Array1D.new(lcf_array1d([lcf_field(1, '')]), schema)[:a] }
+end
+
+assert 'An in-memory Array2D reads, peeks and writes back the rows it holds as offsets' do
+  schema = { elements: { 1 => { name: :a, type: :int, default: 0 } } }
+  e1 = lcf_array1d([lcf_int_field(1, 3)])
+  e4 = lcf_array1d([lcf_int_field(1, 8)])
+  body = lcf_array2d([[1, e1], [4, e4]])
+  t = LCF::Array2D.new(body, schema)
+  assert_equal 8, t.peek(4)[:a]
+  assert_equal 3, t[1][:a]
+  assert_nil t[2]
+  assert_equal body, t.to_lcf
+  t.load_lazy
+  assert_equal [1, 4], t.map { |i, _| i }
+end
+
 assert 'Array2D rows of an in-memory table are slices of its bytes' do
   e1 = lcf_array1d([lcf_int_field(31, 1), lcf_field(32, "x" * 40)])
   e3 = lcf_array1d([lcf_int_field(31, 5)])

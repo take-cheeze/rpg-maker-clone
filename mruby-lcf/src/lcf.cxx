@@ -188,6 +188,33 @@ mrb_value row_end(mrb_state* M, mrb_value) {
   return mrb_int_value(M, pos);
 }
 
+// LAZY_RECORD: LCF.chunk_at(s, idx), the offset of the length of chunk idx in
+// the record s (the last one before the id-0 terminator), or nil when s has
+// none. Array1D#read_chunks has checked s's chunks when the record was built.
+mrb_value chunk_at(mrb_state* M, mrb_value) {
+  const uint8_t* p;
+  mrb_int l, want;
+  mrb_get_args(M, "si", &p, &l, &want);
+  mrb_int pos = 0;
+  mrb_int found = -1;
+  while (pos < l) {
+    const mrb_int idx = static_cast<int32_t>(ber_read(M, p, l, pos));
+    if (idx == 0)
+      break;
+    const mrb_int at = pos;
+    const mrb_int len = static_cast<int32_t>(ber_read(M, p, l, pos));
+    if (len < 0 || len > l - pos)
+      mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(RuntimeError)),
+                 "truncated chunk %i: %i bytes declared", idx, len);
+    if (idx == want)
+      found = at;
+    pos += len;
+  }
+  if (found < 0)
+    return mrb_nil_value();
+  return mrb_int_value(M, found);
+}
+
 // EVENT_LIST: an :event_packed command list (LCF::EventList) is its LCF bytes
 // plus an index String of each command's start offset, little-endian, 2 bytes
 // an entry when every offset fits in 16 bits and 4 otherwise. A command is
@@ -681,6 +708,7 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(ber_at, MRB_SYM(ber_at), MRB_ARGS_REQ(2))              //
       MRB_MT_ENTRY(ber_next, MRB_SYM(ber_next), MRB_ARGS_REQ(2))          //
       MRB_MT_ENTRY(row_end, MRB_SYM(row_end), MRB_ARGS_REQ(2))            //
+      MRB_MT_ENTRY(chunk_at, MRB_SYM(chunk_at), MRB_ARGS_REQ(2))          //
       MRB_MT_ENTRY(event_index, MRB_SYM(event_index), MRB_ARGS_REQ(1))    //
       MRB_MT_ENTRY(event_count, MRB_SYM(event_count), MRB_ARGS_REQ(2))    //
       MRB_MT_ENTRY(event_code, MRB_SYM(event_code), MRB_ARGS_REQ(3))      //

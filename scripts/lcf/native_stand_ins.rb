@@ -60,6 +60,27 @@ module LCF
     pos
   end
 
+  # LCF.chunk_at (LAZY_RECORD): the offset of the length of the last chunk +want+ of a record, or nil.
+  def self.chunk_at(s, want)
+    raise TypeError, 'no implicit conversion into Integer' unless want.is_a?(Integer)
+
+    size = s.bytesize
+    pos = 0
+    found = nil
+    while pos < size
+      idx, pos = ber_read(s, pos)
+      break if idx.zero?
+
+      at = pos
+      len, pos = ber_read(s, pos)
+      raise "truncated chunk #{idx}: #{len} bytes declared" if len.negative? || len > size - pos
+
+      found = at if idx == want
+      pos += len
+    end
+    found
+  end
+
   # EVENT_LIST (src/lcf.cxx): an :event_packed list's offset index, and the fields of one command.
   def self.event_index(bytes)
     width = bytes.bytesize <= 0xffff ? 2 : 4

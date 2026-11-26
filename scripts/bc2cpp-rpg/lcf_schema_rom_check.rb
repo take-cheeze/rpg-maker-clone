@@ -206,7 +206,8 @@ Dir.mktmpdir('lcf-schema-rom') do |dir|
   File.write(cc, SchemaRom.cpp(enc))
   suite.check('mrblib_rom/schema.rb is the generator\'s output for today\'s schema.rb',
               File.exist?(HANDLES) && File.binread(HANDLES) == File.binread(fresh_rb))
-  # SchemaRom.encoder loaded lcf.rb and schema.rb: the Hashes.
+  # SchemaRom.encoder loaded lcf.rb and schema.rb: the Hashes. The readers below also call the record natives.
+  require_relative '../lcf/native_stand_ins'
   hash_consts = SchemaRom.schema_constants(SCHEMA)
   hash_lcf_constants = LCF::Schema.constants.sort
 
@@ -484,6 +485,7 @@ Dir.mktmpdir('lcf-schema-rom') do |dir|
     'LCF.elements_of' => nil,
     'LCF::Array1D#initialize' => nil, 'LCF::Array1D#[]' => nil, 'LCF::Array1D#int16_values' => nil,
     'LCF::Array1D#[]=' => nil, 'LCF::Array1D#field?' => nil, 'LCF::Array1D#sym2idx' => nil,
+    'LCF::Array1D#buf_value' => nil, 'LCF::Array2D#row_record' => nil,
     'LCF::Array2D#initialize' => nil, 'LCF::Array2D#[]' => nil, 'LCF::Array2D#[]=' => nil,
     'LCF::Array2D#peek' => nil, 'LCF::Array2D#same_schema?' => nil, 'LCF::Array1D.blank_record' => nil, 'LCF::Array2D.blank_table' => nil,
     'LCF::Array2D.lazy_section' => nil,
@@ -597,16 +599,18 @@ suite.finish!
 # LCF.sget f352029d7ab23e37
 # LCF.skeys 1d6cf657876a6c81
 # LCF.elements_of dd92622942b68777
-# LCF::Array1D#initialize b29bb56bd89ed799
-# LCF::Array1D#[] 1a12796fd1aeab8e
-# LCF::Array1D#int16_values 586b2fc3f39a5d4a
-# LCF::Array1D#[]= 4af3eb957f4d25df
+# LCF::Array1D#initialize 1636735024f078b2
+# LCF::Array1D#[] 7bf4fb4f977e3364
+# LCF::Array1D#int16_values edc5eaa0a1f9971f
+# LCF::Array1D#[]= 78a375738088a7ee
+# LCF::Array1D#buf_value c4c634d33cd7c146
+# LCF::Array2D#row_record 42c16cf46c89be30
 # LCF::Array1D#field? b6c72477f79534c7
 # LCF::Array1D#sym2idx 846fdfdfb6e4edbb
 # LCF::Array2D#initialize 9c662470d804af37
-# LCF::Array2D#[] 0bd3d8ee88588dc7
+# LCF::Array2D#[] b2aeca8c284de986
 # LCF::Array2D#[]= 8f62693a42874353
-# LCF::Array2D#peek f83dc4310648ec2d
+# LCF::Array2D#peek b52069721435b29b
 # LCF::Array2D#same_schema? 46dfcbb99268bcd5
 # LCF::Array1D.blank_record 67a22e0df0d5c2c1
 # LCF::Array2D.blank_table b85106192df023c6

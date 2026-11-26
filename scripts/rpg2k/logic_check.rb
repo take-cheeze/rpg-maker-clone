@@ -74,6 +74,9 @@ load File.join(lib, 'interpreter.rb')
 $failures = 0
 $checks = 0
 
+# The chunk ids an LCF record holds (a record read back from bytes keeps no chunk table to look at).
+def lcf_chunk_ids(rec) = (1..255).select { |i| rec.key?(i) }
+
 def check(name)
   $checks += 1
   yield
@@ -5777,9 +5780,9 @@ check 'to_lsd/from_lsd round-trips the step counter and battle tallies' do
   # declared defaults (0/false) for all of them. #to_lsd used to write
   # every one unconditionally.
   fresh = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  untouched = fresh.to_lsd[109].instance_variable_get(:@data)
+  untouched = fresh.to_lsd[109]
   [23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 34, 35, 42].each do |field|
-    ok untouched[field].nil?, "field #{field} is absent when never touched"
+    ok !untouched.key?(field), "field #{field} is absent when never touched"
   end
 
   fresh.timer(0).frames = 100
@@ -5787,7 +5790,7 @@ check 'to_lsd/from_lsd round-trips the step counter and battle tallies' do
   touched = fresh.to_lsd[109]
   eq 100, touched[:timer1_frames], 'a touched timer is still written'
   ok touched[:timer1_active]
-  ok !touched.instance_variable_get(:@data)[25], 'the untouched sibling field (visible) stays absent'
+  ok !touched.key?(25), 'the untouched sibling field (visible) stays absent'
 end
 
 check 'restore_pictures restores zoom, opacity and tone, not just name/position' do
@@ -5909,8 +5912,7 @@ check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' d
   ok !empty_saved.nil?, 'chunk 103 is present even with no pictures ever shown'
   eq (1..Game::State::MAX_PICTURE_ID).to_a, empty_saved.map { |id, _| id }.sort,
      'all 50 RPG2000 picture slots are present as their own (empty) entries'
-  raw1 = empty_saved[1].instance_variable_get(:@data)
-  eq [], raw1.each_index.select { |i| raw1[i] },
+  eq [], lcf_chunk_ids(empty_saved[1]),
      'an untouched slot carries no fields of its own'
 
   # The same fixed 50-slot range holds around a live picture too: only its
@@ -5919,8 +5921,7 @@ check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' d
   sparse_check = st.to_lsd[103]
   eq (1..Game::State::MAX_PICTURE_ID).to_a, sparse_check.map { |id, _| id }.sort,
      'a State with one shown picture (id 3/4) still carries all 50 slots'
-  raw7 = sparse_check[7].instance_variable_get(:@data)
-  eq [], raw7.each_index.select { |i| raw7[i] },
+  eq [], lcf_chunk_ids(sparse_check[7]),
      'a slot with no picture of its own stays an empty placeholder alongside the live ones'
 end
 
@@ -5951,9 +5952,9 @@ check 'to_lsd mirrors the RPG2003-only bottom-half transparency fields ' \
   # A picture never shown (still at its own default opacity/transparency 0)
   # must leave both mirrored fields elided too, the same "omit at default"
   # convention every other picture field here already follows.
-  untouched = st.to_lsd[103][7].instance_variable_get(:@data)
-  ok untouched[18].nil?, 'an untouched slot has no current_bot_trans of its own'
-  ok untouched[35].nil?, 'an untouched slot has no finish_bot_trans of its own'
+  untouched = st.to_lsd[103][7]
+  ok !untouched.key?(18), 'an untouched slot has no current_bot_trans of its own'
+  ok !untouched.key?(35), 'an untouched slot has no finish_bot_trans of its own'
 end
 
 check 'to_lsd/from_lsd round-trips a picture still mid-Move-Picture, resuming ' \
@@ -6032,8 +6033,7 @@ check 'to_lsd writes chunk 103\'s current_x/y/zoom/etc unconditionally (not ' \
 
   st.show_picture(8, name: 'black', x: 111, y: 77) # every visual param at default
   at_default = st.to_lsd[103][8]
-  raw = at_default.instance_variable_get(:@data)
-  present = (0...raw.size).select { |i| raw[i] }
+  present = lcf_chunk_ids(at_default)
   eq [1, 2, 3, 4, 5, 31, 32], present,
      'zoom/transparency/tone are all absent when every one sits at its own default'
   eq 111.0, at_default[:current_x]
@@ -6043,8 +6043,7 @@ check 'to_lsd writes chunk 103\'s current_x/y/zoom/etc unconditionally (not ' \
                   zoom: 133, opacity: Game.trans_to_opacity(25),
                   red: 140, green: 60, blue: 180, saturation: 50)
   off_default = st.to_lsd[103][9]
-  raw2 = off_default.instance_variable_get(:@data)
-  present2 = (0...raw2.size).select { |i| raw2[i] }
+  present2 = lcf_chunk_ids(off_default)
   eq [1, 2, 3, 4, 5, 7, 8, 11, 12, 13, 14, 18, 31, 32, 33, 34, 35, 41, 42, 43, 44], present2,
      'zoom/transparency/tone are all present (current and finish alike) once ' \
      'every one is off its own default, though the picture was never moved -- ' \
@@ -11337,8 +11336,7 @@ check 'from_lsd reconstructs an already-erased picture\'s stale fields from a ' 
   eq 133, pic.zoom
 
   resaved = loaded.to_lsd[103][5]
-  eq foreign_save[103][5].instance_variable_get(:@data),
-     resaved.instance_variable_get(:@data),
+  eq foreign_save[103][5].to_lcf, resaved.to_lcf,
      'a second Save/Continue writes the exact same stale bytes as the first'
 end
 
