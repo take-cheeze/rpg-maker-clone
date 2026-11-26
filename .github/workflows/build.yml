@@ -1526,6 +1526,21 @@ jobs:
         # Before the nix shell, so pio keeps setup-python's interpreter.
         run: pip install -q --disable-pip-version-check --upgrade platformio
 
+      # ROM_GRAPH: the graph is dumped under Renode below. Same cache as `wio-renode`, which restores what this saves.
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "8.0.x"
+      - name: Cache the Renode build
+        id: renode-cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/wio-renode-build
+          key: wio-renode-${{ runner.os }}-${{ hashFiles('scripts/wio/renode_build.bash', 'app/wio/renode/peripherals/**', 'app/wio/renode/patches/**') }}
+      - name: Build Renode with the Wio Terminal peripherals
+        # Before the nix shell, with the runner's own compilers, as in `wio-renode`.
+        if: steps.renode-cache.outputs.cache-hit != 'true'
+        run: scripts/wio/renode_build.bash /tmp/wio-renode-build
+
       # The wio libmruby is a bc2cpp closed-world build, so it needs the bc2cpp shell's Ruby with Prism.
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
@@ -1556,9 +1571,33 @@ jobs:
           # A prefix hit seeds a fresh fixed-point proof; its stale digest is never trusted.
           restore-keys: bc2cpp-lists-wio-
 
-      - name: Build the wio firmware
-        # Fails on an undefined reference or a vector-table problem, not on the flash overflow.
-        run: scripts/wio/build.bash build-wio
+      - name: Build the wio libmruby and a firmware with no class graph
+        run: |
+          scripts/wio/build.bash build-wio
+          cp build-wio/pio-wio.log build-wio/pio-wio-nograph.log
+
+      - name: Make the ROM class graph
+        # ROM_GRAPH: regenerated from this build every run, never cached, so a graph cannot outlive its libmruby. The
+        # dump stops before the game loads, so the synthetic game does not shape it. `check` fails unless a boot on the
+        # graph leaves the same graph.
+        env:
+          RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
+        run: |
+          ruby scripts/gen/wio-sd-game.rb /tmp/wio-graph-game
+          scripts/wio/rom_graph.bash dump build-wio /tmp/wio-graph-game build-wio/rom_graph.c
+          scripts/wio/rom_graph.bash check build-wio /tmp/wio-graph-game build-wio/rom_graph.c
+
+      - name: Build the wio firmware on the graph
+        # Fails on an undefined reference, a vector-table or QSPI_XIP problem, or an internal flash overflow.
+        env:
+          WIO_ROM_GRAPH: ${{ github.workspace }}/build-wio/rom_graph.c
+        run: |
+          scripts/wio/build.bash build-wio
+          echo "With no graph:"; grep -E '^(RAM|Flash):' build-wio/pio-wio-nograph.log
+          echo "On the graph:"; grep -E '^(RAM|Flash):' build-wio/pio-wio.log
+          # mruby/rom_graph.h declares the graph weak, so an ELF with no graph links fine but has no defined (`V`) one.
+          ~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-nm .pio/build/wio/firmware.elf |
+            grep -q ' [VR] mrb_rom_class_graph$' || { echo '::error::wio links no ROM class graph'; exit 1; }
 
       - name: Upload the wio firmware
         # `pio run -e wio_sd_upload` below prunes .pio/build/wio.
@@ -1584,11 +1623,15 @@ jobs:
           if-no-files-found: error
 
       - name: Build the Renode game firmware
-        # wio_renode_game on the 192 KB board: wio-renode plays a game from a simulated microSD card on it.
+        # wio_renode_game on the 192 KB board: wio-renode plays a game from a simulated microSD card on it. It links
+        # the graph too (app/wio/rom_graph.py).
         env:
           WIO_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-wio/wio
           WIO_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-wio/unialgo
-        run: pio run -e wio_renode_game
+        run: |
+          pio run -e wio_renode_game
+          ~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-nm .pio/build/wio_renode_game/firmware.elf |
+            grep -q ' [VR] mrb_rom_class_graph$' || { echo '::error::wio_renode_game links no ROM class graph'; exit 1; }
 
       - name: Upload the Renode game firmware
         uses: actions/upload-artifact@v7
@@ -1996,11 +2039,12 @@ jobs:
 
       - name: Play a game from the SD card under Renode
         # A synthetic game (scripts/gen/wio-sd-game.rb) on the simulated card, with its image pack, on the 192 KB
-        # board: the first boot copies its images into the QSPI cache, a reboot from that flash finds them there, and a
-        # card without the pack decodes System's PNG. That card has no title picture: decoded into the heap, the
-        # 320x240 one does not fit this board. renode_game.bash fails on an OOM, a fault or a missing --expect. Each run
-        # plays 600 title frames, past where garbage the GC has not reached yet fills the heap (about frame 300), and
-        # `flat` fails when the heap after a full GC grew by more than 2 KB from the title's first frame to the last.
+        # board and the ROM class graph: the first boot copies its images into the QSPI cache, a reboot from that flash
+        # finds them there, and a card without the pack decodes System's PNG. That card has no title picture: decoded
+        # into the heap, the 320x240 one does not fit this board. renode_game.bash fails on an OOM, a fault or a missing
+        # --expect. Each run plays 600 title frames, past where garbage the GC has not reached yet fills the heap (about
+        # frame 300), and `flat` fails when the heap after a full GC grew by more than 2 KB from the title's first frame
+        # to the last.
         env:
           RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
           ARM_NM: arm-none-eabi-nm
