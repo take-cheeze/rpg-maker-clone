@@ -60,21 +60,4 @@ int __wrap__write(int fd, const char* buf, int len) {
   return -1;
 }
 
-// The core's _sbrk lets the heap grow right up to the stack pointer, so the
-// next deeper call writes over the last block. Linked with --wrap=_sbrk, this
-// keeps kStackReserve bytes free below the stack and fails the growth instead,
-// which reaches mruby as NoMemoryError.
-constexpr ptrdiff_t kStackReserve = 8192;
-void* __real__sbrk(ptrdiff_t incr);
-void* __wrap__sbrk(ptrdiff_t incr) {
-  char* top = static_cast<char*>(__real__sbrk(0));
-  char* sp;
-  __asm__ volatile("mov %0, sp" : "=r"(sp));
-  if (incr > 0 && top + incr + kStackReserve > sp) {
-    errno = ENOMEM;
-    return reinterpret_cast<void*>(-1);
-  }
-  return __real__sbrk(incr);
-}
-
 }  // extern "C"
