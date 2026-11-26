@@ -278,13 +278,14 @@ stderr and one `P <phase>` line per phase (heap extent, bytes in use, stack
 depth, and a live-object census), and exits non-zero unless the run finished
 and every `--expect` regex matched. The firmware has no LCD output (no DMA
 model) and no audio. On the 192 KB board a game does not reach its title
-screen yet: the title graphic alone is a 300 KB 32-bit bitmap.
+screen yet: the boot and the database leave too little heap for the title's
+window bitmaps.
 
 The image carries palette graphics already decoded (`game_rom.rb --bitmaps`,
 `--no-bitmaps`), which the firmware reads in place from the window instead of
 the heap. They take about seven times their PNG's room, so only some fit: by
-default System, ChipSet, FaceSet, then as many CharSet and other images as the
-16 MB still holds; the rest load from their files as before.
+default System and Title, then ChipSet, FaceSet and as many CharSet and other
+images as the 16 MB still holds; the rest load from their files as before.
 
 With an SD card image layered on the board (`--board` with a description that adds the `sdcard:` lines
 `scripts/wio/renode_sdcard.bash` writes), a game in the card's `/rpg2k` is played instead of the image's; the

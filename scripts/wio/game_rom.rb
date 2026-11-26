@@ -30,8 +30,8 @@ config = 'frames=600'
 adds = []
 exclude = %w[Music Sound Movie]
 max_file = nil
-# The map frame's own material first.
-bitmap_dirs = %w[System ChipSet FaceSet CharSet Title GameOver Battle Monster Backdrop Picture Panorama]
+# What the boot draws (the windowskin and the title) first, then the map frame's own material.
+bitmap_dirs = %w[System Title ChipSet FaceSet CharSet GameOver Battle Monster Backdrop Picture Panorama]
 bitmaps_out = nil
 limit = 0x0100_0000
 OptionParser.new do |o|
