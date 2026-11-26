@@ -1140,6 +1140,9 @@ if wio
       # (platformio.ini's `-DWIO_TERMINAL`); this rake-driven libmruby.a needs
       # its own copy since it never sees that build's flags.
       t.defines << 'WIO_TERMINAL'
+      # mrb_ro_data_p (mruby-rgss/src/wio.cxx): a String over flash bytes keeps pointing at them instead of copying.
+      # mruby's value.h defines mrb_ro_data_p to FALSE unless MRB_LINK_TIME_RO_DATA_P is set too.
+      t.defines << 'MRB_USE_CUSTOM_RO_DATA_P' << 'MRB_LINK_TIME_RO_DATA_P'
       # mrbc's own `-g` is stripped (Ruby-level
       # line-number/local-variable debug tables baked into compiled
       # bytecode); enable_debug's `-g3` on this same cc/cxx loop is its
