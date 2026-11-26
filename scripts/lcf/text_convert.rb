@@ -105,9 +105,9 @@ def value_to_text(value, field)
     h = {}
     value.each { |id, row| h[id] = array1d_to_text(row, field) }
     h
-  when :event
-    value.map { |c| { 'code' => c.code, 'indent' => c.indent, 'string' => c.string,
-                       'parameters' => c.parameters } }
+  when :event, :event_packed
+    value.to_a.map { |c| { 'code' => c.code, 'indent' => c.indent, 'string' => c.string,
+                            'parameters' => c.parameters } }
   when :move_commands
     value.map do |c|
       { 'command_id' => c.command_id, 'parameter_string' => c.parameter_string,
@@ -216,7 +216,7 @@ def validate_value(value, field, path, errors)
     else
       value.each { |id, row| validate_array1d(row, field, "#{path}[#{id}]", errors) }
     end
-  when :event
+  when :event, :event_packed
     validate_event_commands(value, path, errors)
   when :move_commands
     validate_move_commands(value, path, errors)
@@ -307,7 +307,7 @@ def build_value(value, field)
     obj = LCF::Array2D.new('', field)
     value.each { |id, row| obj[id.to_i] = build_array1d(row, field) }
     obj
-  when :event
+  when :event, :event_packed
     value.map { |c| LCF::EventCommand.new(c['code'], c['indent'], c['string'],
                                            c['parameters']) }
   when :move_commands

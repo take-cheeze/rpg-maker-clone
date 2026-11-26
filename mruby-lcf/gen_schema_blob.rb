@@ -71,6 +71,7 @@ TYPE_TAGS = {
   int: 1, string: 2, bool: 3, Array1D: 4, Array2D: 5, int8_array: 6,
   double: 7, int16_array: 8, uint8: 9, int32_array: 10, event: 11,
   move_commands: 12, bool_array: 13, Tree: 14, int16_packed: 15,
+  event_packed: 16,
 }.freeze
 
 DEFAULT_NIL = 0
@@ -346,6 +347,7 @@ DECODER = <<~'RUBY'
           6 => :int8_array, 7 => :double, 8 => :int16_array, 9 => :uint8,
           10 => :int32_array, 11 => :event, 12 => :move_commands,
           13 => :bool_array, 14 => :Tree, 15 => :int16_packed,
+          16 => :event_packed,
         }.freeze
 
         class Reader

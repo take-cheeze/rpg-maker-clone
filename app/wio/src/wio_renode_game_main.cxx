@@ -45,8 +45,10 @@
 // The compiled entries catch C++ exceptions, which the wio build leaves out.
 #define BC2CPP_ENTRY_BY_NAME
 #include "bc2cpp_entry.hxx"
+#include "rgss_rom_bitmaps.h"
 #include "wio.hxx"
 #include "wio_game_rom.h"
+#include "wio_image_cache.h"
 #include "wio_qspi_xip.h"
 #include "wio_sd.h"
 
@@ -54,9 +56,6 @@ extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display);
 extern "C" unsigned rgss_wio_mrb_state_size(void);
-extern "C" bool rgss_set_rom_bitmaps(const void* section,
-                                     size_t size,
-                                     const char* root);
 extern "C" char __end__;
 extern "C" char __StackTop;
 extern "C" void* _sbrk(ptrdiff_t);
@@ -381,12 +380,15 @@ void setup(void) {
   // registered below; the arena entries would hold the rest forever.
   const int boot_ai = mrb_gc_arena_save(g_mrb);
   // scripts/wio/game_rom.rb's decoded images, read in place (ROM_BITMAP).
-  // They are the image's game's, not the card's.
+  // They are the image's game's; a card game's come from its pack, through
+  // the QSPI cache (IMAGE_CACHE).
   size_t bitmaps_len = 0;
   const void* bitmaps =
       from_sd ? nullptr : wio_game_rom_file("/rgss/bitmaps", &bitmaps_len);
   if (bitmaps)
     rgss_set_rom_bitmaps(bitmaps, bitmaps_len, WIO_GAME_ROOT);
+  else if (from_sd)
+    wio_image_cache_begin(WIO_GAME_ROOT);
   set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, WIO_GAME_ROOT));
   set_const("RTP_DIR", mrb_str_new_cstr(g_mrb, ""));
   set_const("TEST_PLAY", mrb_false_value());

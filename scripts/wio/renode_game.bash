@@ -23,6 +23,13 @@
 #                        heap snapshots to DIR (scripts/wio/heapwalk_report.rb
 #                        reads them); the image window grows to 32 MB so every
 #                        palette image fits decoded
+#     --sd pack|nopack   the game on an SD card image, in its /rpg2k, instead
+#                        of in the image (which then carries the config and the
+#                        font only); with `pack`, with its wio_bitmaps.bin
+#                        (scripts/wio/sd_bitmaps.rb) for the QSPI image cache
+#     --qspi-out FILE    save the 4 MB QSPI flash when the run is over
+#     --qspi-in FILE     start from a saved flash (the same ELF and --config):
+#                        a reboot, with the image cache as the last run left it
 # RENODE_BIN is the Renode binary (see app/wio/renode/README.md); RENODE_GAME_RAW
 # names a file to keep Renode's own output in (per-step PC and log length).
 set -euo pipefail
@@ -35,7 +42,8 @@ usage() {
 elf="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 game="$2"
 shift 2
-board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 heapwalk='' expects=()
+board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 heapwalk='' sd='' qspi_out='' qspi_in=''
+expects=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --board) board=$2 ;;
@@ -47,6 +55,9 @@ while [[ $# -gt 0 ]]; do
     --trace) trace=$2 ;;
     --trace-at) trace_at=$2 ;;
     --heapwalk) heapwalk=$(mkdir -p "$2" && cd "$2" && pwd) ;;
+    --sd) [[ $2 == pack || $2 == nopack ]] || usage; sd=$2 ;;
+    --qspi-out) qspi_out=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") ;;
+    --qspi-in) qspi_in=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") ;;
     *) usage ;;
   esac
   shift 2
@@ -72,7 +83,28 @@ rom_base=0x04000000
 "$nm" "$elf" | awk '$3 == "__wio_game_rom_base" {f = 1} END {exit !f}' && rom_base=$(addr __wio_game_rom_base)
 rom_end=0x05000000
 [[ -n "$heapwalk" ]] && rom_end=0x06000000
-ruby "$repo_root/scripts/wio/game_rom.rb" "$work/game.rom" "$game" --config "$config" "${adds[@]}" \
+rom_game=$game
+if [[ -n "$sd" ]]; then
+  # The card: the game folder as game_rom.rb would pack it (no audio, no Windows binaries), at /rpg2k.
+  card=$work/card
+  mkdir -p "$card" "$work/nogame"
+  for f in "$game"/*; do
+    case $(basename "$f") in Music | Sound | Movie | *.exe | *.EXE | *.dll | *.DLL) continue ;; esac
+    cp -r "$f" "$card/"
+  done
+  [[ $sd == pack ]] && ruby "$repo_root/scripts/wio/sd_bitmaps.rb" "$card" >&2
+  mb=$(($(du -sm "$card" | cut -f1) * 5 / 4 + 16))
+  dd if=/dev/zero of="$work/sdcard.img" bs=1M count="$mb" status=none
+  # mtools and dosfstools, else from nixpkgs (as scripts/wio/renode_sdcard.bash does).
+  fat() { if command -v mkfs.vfat >/dev/null && command -v mcopy >/dev/null; then "$@"; else nix-shell -p dosfstools mtools --run "$(printf '%q ' "$@")"; fi; }
+  fat mkfs.vfat -F 16 -n WIOSD "$work/sdcard.img" >/dev/null
+  fat env LC_ALL=C.UTF-8 mcopy -s -i "$work/sdcard.img" "$card" ::/rpg2k
+  rm -rf "$card"
+  printf 'sdcard: SD.SDCard @ sercom6_spi\n    imageFile: "%s"\n    capacity: %d\n    persistent: false\n    spiMode: true\n' \
+    "$work/sdcard.img" $((mb * 1024 * 1024)) > "$work/sdcard.repl"
+  rom_game=$work/nogame
+fi
+ruby "$repo_root/scripts/wio/game_rom.rb" "$work/game.rom" "$rom_game" --config "$config" "${adds[@]}" \
   --limit $((rom_end - rom_base)) >&2
 result=$(addr '(anonymous namespace)::g_result')
 step=5
@@ -81,8 +113,10 @@ step=5
   echo "machine LoadPlatformDescription @$repl"
   echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/game_rom.repl"
   [[ -n "$heapwalk" ]] && echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/heapwalk.repl"
+  [[ -n "$sd" ]] && echo "machine LoadPlatformDescription @$work/sdcard.repl"
   echo "sysbus LoadELF @$elf"
   echo "sysbus LoadBinary @$work/game.rom $rom_base"
+  [[ -n "$qspi_in" ]] && echo "sysbus LoadBinary @$qspi_in 0x04000000"
   # The buttons and the 5-way switch are active low: release them all.
   for p in 26 27 28; do echo "portc OnGPIO $p true"; done
   for p in 20 12 9 8 10; do echo "portd OnGPIO $p true"; done
@@ -108,14 +142,23 @@ step=5
     echo "sysbus ReadDoubleWord 0x06000000"
     echo "cpu0 PC"
   done
+  [[ -n "$qspi_out" ]] &&
+    echo "python \"import System; System.IO.File.WriteAllBytes('$qspi_out', monitor.Machine.SystemBus.ReadBytes(0x04000000, 0x400000))\""
+  echo 'echo "QSPI_ERASES"'
+  echo 'qspi EraseCount'
   echo 'echo "DIAG_BEGIN"'
   echo 'sysbus ReadBytes 0x06000000 0x10000'
   echo 'echo "DIAG_END"'
 } > "$work/run.resc"
 
-"$renode" --disable-gui --console --plain \
-  -e "include @$repo_root/app/wio/renode/peripherals/SPI/SAMD51_SERCOM_SPI.cs" \
-  -e "include @$repo_root/app/wio/renode/peripherals/Video/ILI9341_SPI.cs" \
+# This repo's peripherals, but for those a scripts/wio/renode_build.bash binary has built in: Renode stops at an
+# include of one it already has.
+includes=()
+built_in=$(dirname "$(command -v "$renode")")/src/Infrastructure/src/Emulator/Peripherals/Peripherals
+for p in SPI/SAMD51_SERCOM_SPI.cs Video/ILI9341_SPI.cs SPI/SAMD51_QSPI.cs; do
+  [[ -f "$built_in/$p" ]] || includes+=(-e "include @$repo_root/app/wio/renode/peripherals/$p")
+done
+"$renode" --disable-gui --console --plain "${includes[@]}" \
   -e "include @$work/run.resc" -e "quit" < /dev/null > "$work/renode.out" 2>&1 || true
 
 ruby -e '
@@ -125,6 +168,8 @@ ruby -e '
   n = bytes[0, 4].pack("C*").unpack1("V").to_i
   text = bytes[16, n].to_a.pack("C*").force_encoding("UTF-8").scrub
   out.each_line { |l| puts l.strip if l.include?("=== ") }
+  qspi = out.scan(/QSPI_ERASES\s+(0x\h+|\d+)/).flatten.last
+  puts "QSPI erases #{Integer(qspi)}" if qspi
   puts text
   puts "RESULT #{results.last}"
 ' "$work/renode.out" > "$work/log.txt"

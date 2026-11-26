@@ -2313,7 +2313,7 @@ check 'SAVE_EVENT_EXEC_STATE round-trips a captured call-stack snapshot through 
     eq frames[i].triggered_by_decision_key, round[i].triggered_by_decision_key,
        "frame #{i} triggered_by_decision_key"
     eq frames[i].commands.size, round[i].commands.size, "frame #{i} command count"
-    frames[i].commands.each_index do |j|
+    frames[i].commands.size.times do |j|
       eq frames[i].commands[j].code, round[i].commands[j].code, "frame #{i} command #{j} code"
       eq frames[i].commands[j].parameters, round[i].commands[j].parameters,
          "frame #{i} command #{j} parameters"

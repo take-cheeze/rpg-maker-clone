@@ -15,6 +15,8 @@
 #      the compiled methods), throws not followed. main calls init then __libc_init_array first,
 #      .preinit_array is the step alone, and setup calls wio_qspi_xip_require first. Indirect calls there are
 #      counted: function pointers the check cannot follow.
+#   5. nothing a QSPI write runs while the window is closed (QSPI_WRITE: wio_qspi_xip_erase_sector,
+#      wio_qspi_xip_program and their direct-call closure, when the firmware has them) is in QSPI or names QSPI data.
 #
 # Usage: ruby scripts/wio/qspi_xip_check.rb FIRMWARE.elf [TOOL_PREFIX]
 #   TOOL_PREFIX defaults to PlatformIO's arm-none-eabi- toolchain.
@@ -155,6 +157,8 @@ errors << "main calls #{first.call('main').join(', ')} first, not init then __li
 errors << "setup calls #{calls['setup'].first} first, not wio_qspi_xip_require" unless calls['setup'].first == 'wio_qspi_xip_require'
 
 addr_of = funcs.invert
+# A literal the walk lets through: the window's base, which a write's data phase addresses rather than reads.
+allowed = nil
 seen = Set.new
 parent = {}
 path = lambda do |f|
@@ -187,7 +191,7 @@ walk = lambda do |roots, stop|
     # The QSPI step is the one function that reads the window, after opening it.
     next if f == PREINIT
 
-    words[f].select { |w| qspi_data.any? { |r| r.cover?(w) } }.each do |w|
+    words[f].select { |w| w != allowed && qspi_data.any? { |r| r.cover?(w) } }.each do |w|
       errors << "#{path.call(f)}: names QSPI data at 0x#{w.to_s(16)}"
     end
   end
@@ -197,13 +201,21 @@ walk.call(['Reset_Handler', PREINIT] + ROOTS, nil)
 # The constructors and the report run before setup() opens a VM, so no mruby function runs there (a malloc hook may
 # call one once a VM exists).
 walk.call(init.filter_map { |a| name_at.call(a) } + ['wio_qspi_xip_require'], MRUBY)
+booting = seen.dup
+# 5. While a QSPI write has the window closed.
+closed = %w[wio_qspi_xip_erase_sector wio_qspi_xip_program].select { |f| addr_of[f] }
+seen.clear
+allowed = QSPI_START
+walk.call(closed, nil)
 veneers = funcs.values.count { |n| n.end_with?('_veneer') }
 qspi_funcs = funcs.count { |a, _| qspi?(a) }
 puts format('qspi_xip_check: internal flash %d of %d bytes, QSPI image %d bytes (game ROM at 0x%x)',
             used, FLASH_END - FLASH_START, qspi_end - QSPI_START, rom || 0)
-puts "  #{qspi_funcs} functions in QSPI, #{veneers} long-branch veneers; #{seen.size} functions run before the " \
+puts "  #{qspi_funcs} functions in QSPI, #{veneers} long-branch veneers; #{booting.size} functions run before the " \
      "window opens or while a bad image is reported (#{init.size} constructors), " \
-     "#{seen.sum { |f| indirect[f] }} indirect calls among them"
+     "#{booting.sum { |f| indirect[f] }} indirect calls among them"
+puts "  #{seen.size} functions run with the window closed for a write (#{seen.sum { |f| indirect[f] }} indirect calls)" \
+  unless closed.empty?
 if errors.empty?
   puts 'qspi_xip_check: PASS'
 else

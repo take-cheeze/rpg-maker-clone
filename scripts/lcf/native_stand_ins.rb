@@ -27,6 +27,97 @@ module LCF
     int32(ret)
   end
 
+  # LCF.ber_at / LCF.ber_next / LCF.row_end (CURSOR): a BER integer at a byte position of a String.
+  def self.ber_read(s, pos)
+    raise ArgumentError, 'negative LCF position' if pos.negative?
+
+    ret = 0
+    loop do
+      b = s.getbyte(pos)
+      raise 'truncated BER integer' if b.nil?
+
+      pos += 1
+      ret = ((ret << 7) | (b & 0x7f)) & 0xffff_ffff
+      return [int32(ret), pos] if (b & 0x80).zero?
+    end
+  end
+
+  def self.ber_at(s, pos) = ber_read(s, pos)[0]
+
+  def self.ber_next(s, pos) = ber_read(s, pos)[1]
+
+  def self.row_end(s, pos)
+    size = s.bytesize
+    while pos < size
+      idx, pos = ber_read(s, pos)
+      break if idx.zero?
+
+      len, pos = ber_read(s, pos)
+      raise "truncated chunk #{idx}: #{len} bytes declared" if len.negative? || len > size - pos
+
+      pos += len
+    end
+    pos
+  end
+
+  # EVENT_LIST (src/lcf.cxx): an :event_packed list's offset index, and the fields of one command.
+  def self.event_index(bytes)
+    width = bytes.bytesize <= 0xffff ? 2 : 4
+    starts = []
+    pos = 0
+    while pos < bytes.bytesize
+      starts << pos
+      pos = event_skip(bytes, pos)
+    end
+    starts.pack(width == 2 ? 'v*' : 'V*')
+  end
+
+  def self.event_skip(bytes, pos)
+    _, pos = ber_read(bytes, pos)
+    _, pos = ber_read(bytes, pos)
+    slen, pos = ber_read(bytes, pos)
+    if slen.positive?
+      raise 'truncated BER integer' if slen > bytes.bytesize - pos
+
+      pos += slen
+    end
+    pcount, pos = ber_read(bytes, pos)
+    pcount.times { _, pos = ber_read(bytes, pos) }
+    pos
+  end
+
+  def self.event_count(bytes, starts) = starts.bytesize / (bytes.bytesize <= 0xffff ? 2 : 4)
+
+  def self.event_field(bytes, starts, i, field)
+    raise IndexError, "event command #{i} outside the list" unless i >= 0 && i < event_count(bytes, starts)
+
+    pos = starts.unpack(bytes.bytesize <= 0xffff ? 'v*' : 'V*')[i]
+    field.times do |f|
+      v, pos = ber_read(bytes, pos)
+      pos += v if f == 2 && v.positive?
+    end
+    pos
+  end
+
+  def self.event_code(bytes, starts, i) = ber_at(bytes, event_field(bytes, starts, i, 0))
+
+  def self.event_indent(bytes, starts, i) = ber_at(bytes, event_field(bytes, starts, i, 1))
+
+  def self.event_string(bytes, starts, i)
+    slen, pos = ber_read(bytes, event_field(bytes, starts, i, 2))
+    return nil unless slen.positive?
+
+    cp932_to_utf8(bytes.byteslice(pos, slen))
+  end
+
+  def self.event_params(bytes, starts, i)
+    pcount, pos = ber_read(bytes, event_field(bytes, starts, i, 3))
+    Array.new([pcount, 0].max) do
+      v, pos = ber_read(bytes, pos)
+      v
+    end
+  end
+
   def self.append_ber(out, n)
     n &= 0xffff_ffff
     shift = 0
