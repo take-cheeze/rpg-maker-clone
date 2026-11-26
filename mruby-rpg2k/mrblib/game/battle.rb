@@ -2075,11 +2075,20 @@ module Game
     # out_of_play? stops queueing or targeting it for free, with no call site
     # of its own to update.
     def sync_allies_from_party
+      party = @party
+      return unless party
+
       live_ids = {}
-      @party.actors.each { |a| live_ids[a.id] = true }
-      @allies.each { |c| c.member = false if c.actor && !live_ids[c.actor.id] }
-      @party.actors.each do |a|
-        existing = @allies.find { |c| c.actor && c.actor.id == a.id }
+      party.actors.each { |a| live_ids[a.id] = true }
+      @allies.each do |c|
+        actor = c.actor
+        c.member = false if actor && !live_ids[actor.id]
+      end
+      party.actors.each do |a|
+        existing = @allies.find do |c|
+          actor = c.actor
+          actor && actor.id == a.id
+        end
         if existing
           existing.member = true
           # A mid-battle Change Equipment event command (#equip_item_from_bag)
