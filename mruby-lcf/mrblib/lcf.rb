@@ -67,6 +67,14 @@ module LCF
     @empty_str ||= ''.freeze
   end
 
+  # The +len+ bytes of +s+ at +pos+: a shared String for 0 or 1 byte, else a slice that shares s's buffer.
+  def self.chunk_str s, pos, len
+    return byte_str(s.getbyte(pos)) if len == 1
+    return empty_str if len == 0
+
+    s.byteslice(pos, len)
+  end
+
   # STR_POOL: a decoded LCF string of at most 32 bytes comes back frozen and shared with the last equal one decoded
   # into its slot of a 64-slot table (a map's events name the same charset, sound or face a hundred times). Frozen
   # through `-s`, not `freeze` (see SHARED_STR). Callers never mutate these, so a mutation raises FrozenError.
@@ -676,14 +684,18 @@ module LCF
     # it all back first). A chunk of LAZY_MIN bytes or more is then left there:
     # @data holds the file offset of its length, and #chunk_bytes, or a lazy
     # Array2D for a table chunk, reads it when it is used.
+    # LAZY_RECORD: a record read from a String keeps only that String (@buf, no
+    # @data): a read finds its chunk there (LCF.chunk_at), and the first write
+    # splits it into @data (#materialize).
     def initialize s, schema, io = nil
-      @data = []
       @schema = schema
       @io = io
       if s.is_a? String
-        read_chunks s
+        read_chunks s, nil
+        @buf = s
         return
       end
+      @data = []
       size = io ? io.size : 0
 
       begin
@@ -744,22 +756,25 @@ module LCF
       idx = sym2idx[idx] if idx.is_a? Symbol
       cached = @decoded && @decoded[idx]
       return cached if cached
-      d = @data[idx]
+      data = @data
+      d = data ? data[idx] : nil
       return d if d.is_a?(ShortArray)
 
       elem = LCF.sget(LCF.elements_of(@schema), idx)
-      value = if !d.is_a?(Integer)
-                LCF.to_rb d, elem
+      value = if data.nil?
+                buf_value idx, elem
+              elsif !d.is_a?(Integer)
+                v = LCF.to_rb d, elem
+                # SHORT_LAYER: a map layer's table holds the same 2 bytes a tile its chunk did, so it takes the
+                # chunk's place (#to_lcf writes it back through ShortArray#to_lcf) and every read shares it.
+                data[idx] = v if v.is_a?(ShortArray) && d.is_a?(String) && d.bytesize == v.size * 2
+                v
               elsif LCF.sget(elem, :type) == :Array2D
                 Array2D.new @io, elem, d
               else
                 LCF.to_rb chunk_bytes(d), elem
               end
-      # SHORT_LAYER: a map layer's table holds the same 2 bytes a tile its chunk did, so it takes the chunk's place
-      # (#to_lcf writes it back through ShortArray#to_lcf) and every read shares it.
-      if value.is_a?(ShortArray) && d.is_a?(String) && d.bytesize == value.size * 2
-        @data[idx] = value
-      elsif value.is_a?(Array1D) || value.is_a?(Array2D) || value.is_a?(EventList) ||
+      if value.is_a?(Array1D) || value.is_a?(Array2D) || value.is_a?(EventList) ||
          LCF.sget(elem, :type) == :event || LCF.sget(elem, :type) == :move_commands
         @decoded ||= {}
         @decoded[idx] = value
@@ -778,7 +793,8 @@ module LCF
     # absent field is `field?` true, `key?` false, and reads its default).
     def key? idx
       idx = sym2idx[idx] if idx.is_a? Symbol
-      !@data[idx].nil?
+      data = @data
+      data ? !data[idx].nil? : !LCF.chunk_at(@buf, idx).nil?
     end
 
     # Raw little-endian int16 values of a chunk, bypassing any schema `order`
@@ -786,7 +802,8 @@ module LCF
     # parameter growth curve, six shorts per level) whose typed `[]` read only
     # surfaces the first row. Returns nil when the chunk is absent.
     def int16_values idx
-      d = chunk_value_bytes(@data[idx])
+      data = @data
+      d = chunk_value_bytes(data ? data[idx] : buf_bytes(idx))
       d && d.unpack(LCF.int16_format(LCF.sget(LCF.elements_of(@schema), idx)))
     end
 
@@ -797,6 +814,7 @@ module LCF
     # zero-command interpreter state behind, where removing the chunk resumes
     # with no event running at all. Returns the removed raw bytes, or nil.
     def delete idx
+      materialize
       was = chunk_value_bytes(@data[idx])
       @data[idx] = nil
       @decoded.delete(idx) if @decoded
@@ -811,6 +829,7 @@ module LCF
     # with #[] and #key?.
     def []= idx, value
       idx = sym2idx[idx] if idx.is_a? Symbol
+      materialize
       elem = @schema && LCF.sget(LCF.elements_of(@schema), idx)
       if elem
         @data[idx] = LCF.encode(value, LCF.sget(elem, :type))
@@ -837,7 +856,7 @@ module LCF
     # real RPG2000/2003 .lsd ends on the last chunk's bytes).
     def to_lcf terminate = true
       out = String.new
-      @data.each_with_index do |v, idx|
+      (@data || read_chunks(@buf, [])).each_with_index do |v, idx|
         next if idx == 0 || v.nil?
         v = chunk_bytes(v) if v.is_a?(Integer)
         bytes = LCF.binstr(v.is_a?(String) ? v : v.to_lcf)
@@ -861,16 +880,16 @@ module LCF
     # LAZY_CHUNKS: reads every chunk and table row still in the file into
     # memory, so the file can be rewritten under this record.
     def load_lazy
-      @data.each_with_index { |v, idx| @data[idx] = chunk_bytes(v) if v.is_a?(Integer) }
+      @data&.each_with_index { |v, idx| @data[idx] = chunk_bytes(v) if v.is_a?(Integer) }
       @decoded&.each_value { |v| v.load_lazy if v.is_a?(Array2D) }
       @io = nil
     end
 
     private
 
-    # CURSOR: the chunks of a record in memory, read through a position in +s+ (LCF.ber_at), each kept as a slice
-    # that shares s's buffer. The same checks as #initialize's stream loop.
-    def read_chunks s
+    # CURSOR: the chunks of a record in memory, read through a position in +s+ (LCF.ber_at), with the same checks as
+    # #initialize's stream loop. Into +table+ (or only checked, for nil) as slices that share s's buffer.
+    def read_chunks s, table
       pos = 0
       size = s.bytesize
       while pos < size
@@ -883,12 +902,41 @@ module LCF
         pos = LCF.ber_next s, pos
         raise "truncated chunk #{idx}: #{len} bytes declared" if len < 0 || len > size - pos
 
-        @data[idx] = if len == 1 then LCF.byte_str(s.getbyte(pos))
-                     elsif len > 0 then s.byteslice(pos, len)
-                     else LCF.empty_str
-                     end
+        table[idx] = LCF.chunk_str(s, pos, len) if table
         pos += len
       end
+      table
+    end
+
+    # LAZY_RECORD: the first write turns the record into its chunks.
+    def materialize
+      return if @data
+
+      @data = read_chunks(@buf, [])
+      @buf = nil
+    end
+
+    # The bytes of chunk +idx+ of @buf, or nil.
+    def buf_bytes idx
+      buf = @buf
+      at = LCF.chunk_at buf, idx
+      at && LCF.chunk_str(buf, LCF.ber_next(buf, at), LCF.ber_at(buf, at))
+    end
+
+    # Chunk +idx+ of @buf decoded as #[] decodes it; an :int is read in place.
+    def buf_value idx, elem
+      buf = @buf
+      at = LCF.chunk_at buf, idx
+      return LCF.to_rb(nil, elem) unless at
+
+      len = LCF.ber_at buf, at
+      pos = LCF.ber_next buf, at
+      if len > 1 && LCF.sget(elem, :type) == :int
+        raise 'truncated BER integer' if LCF.ber_next(buf, pos) > pos + len
+
+        return LCF.ber_at(buf, pos)
+      end
+      LCF.to_rb LCF.chunk_str(buf, pos, len), elem
     end
 
     # The bytes an @data entry stands for (SHORT_LAYER, LAZY_CHUNKS).
@@ -995,8 +1043,7 @@ module LCF
     def [] idx
       entry = @data[idx]
       return entry unless entry.is_a?(String) || entry.is_a?(Integer)
-      entry = row_bytes(entry) if entry.is_a?(Integer)
-      @data[idx] = Array1D.new(entry, @schema)
+      @data[idx] = row_record(entry)
     end
 
     # PEEK_ROWS: row +idx+ as #[] reads it, but a row #[] has not kept is not
@@ -1005,8 +1052,7 @@ module LCF
     def peek idx
       entry = @data[idx]
       return entry unless entry.is_a?(String) || entry.is_a?(Integer)
-      entry = row_bytes(entry) if entry.is_a?(Integer)
-      Array1D.new(entry, @schema)
+      row_record(entry)
     end
 
     # PEEK_ROWS: #each through #peek.
@@ -1070,26 +1116,35 @@ module LCF
 
     # LAZY_CHUNKS: reads the rows still in the file (see Array1D#load_lazy).
     def load_lazy
-      @data.each_with_index { |v, i| @data[i] = row_bytes(v) if v.is_a?(Integer) }
+      return unless @io
+
+      @data.each_with_index do |v, i|
+        if v.is_a?(Integer)
+          @data[i] = row_bytes(v)
+        elsif v.is_a?(Array1D)
+          v.load_lazy # a FILE_ROW record reads its chunks from @io
+        end
+      end
       @io = nil
     end
 
     private
 
-    # CURSOR: the rows of a table in memory, read through a position in +s+ (LCF.ber_at); each row is a slice that
-    # shares s's buffer (LCF.row_end checks its chunks as #read_row_slice does).
+    # CURSOR: the rows of a table in memory, read through a position in +s+ (LCF.ber_at), with LCF.row_end checking
+    # each row's chunks as #read_row_slice does. LAZY_RECORD: a row is kept as its offset in s (@buf), and #row_bytes
+    # slices it out when it is read.
     def read_rows s
       return if s.empty?
 
+      @buf = s
       pos = LCF.ber_next s, 0
       (0...LCF.ber_at(s, 0)).each do
         idx = LCF.ber_at s, pos
         pos = LCF.ber_next s, pos
         raise "row id #{idx} out of range" if idx < 0 || idx > MAX_CHUNK_ID
 
-        stop = LCF.row_end s, pos
-        @data[idx] = s.byteslice(pos, stop - pos)
-        pos = stop
+        @data[idx] = pos
+        pos = LCF.row_end s, pos
       end
     end
 
@@ -1143,9 +1198,50 @@ module LCF
       s.string.byteslice(start, s.pos - start)
     end
 
+    # A row entry as a record. FILE_ROW: a file row longer than LAZY_MIN is read as a record over the file, which
+    # leaves its large chunks there (LAZY_CHUNKS), so a peek at a few fields of a long row does not read it all.
+    def row_record entry
+      return Array1D.new(entry, @schema) if entry.is_a?(String)
+
+      io = @io
+      return Array1D.new(row_bytes(entry), @schema) unless io
+
+      io.seek entry
+      len = row_span io
+      io.seek entry
+      return Array1D.new(io, @schema, io) if len > LAZY_MIN
+
+      d = io.read(len)
+      raise "truncated row: #{len} bytes declared" if d.nil? || d.bytesize != len
+
+      Array1D.new(d, @schema)
+    end
+
+    # The length of the file row at +io+'s position, through its id-0 terminator (or the end of the file).
+    def row_span io
+      start = io.pos
+      size = io.size
+      until io.eof?
+        id = LCF.read_ber io
+        break if id == 0
+
+        n = LCF.read_ber io
+        raise "truncated chunk #{id}: #{n} bytes declared" if n < 0 || io.pos + n > size
+
+        io.seek(io.pos + n)
+      end
+      io.pos - start
+    end
+
+    # Row bytes at +at+: an offset in the file (@io) or in @buf.
     def row_bytes at
-      @io.seek at
-      read_row_bytes(@io)
+      io = @io
+      unless io
+        buf = @buf
+        return buf.byteslice(at, LCF.row_end(buf, at) - at)
+      end
+      io.seek at
+      read_row_bytes(io)
     end
 
     def same_schema? other

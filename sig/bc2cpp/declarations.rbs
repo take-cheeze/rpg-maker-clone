@@ -10,6 +10,7 @@ module LCF
   def self.ber_next: (String, Numeric) -> Integer
   def self.ber_shift: (Numeric, Numeric) -> Integer
   def self.ber_value: (String) -> Integer
+  def self.chunk_at: (String, Numeric) -> Integer?
   def self.cp932_to_utf8: (String) -> String
   def self.event_code: (untyped, untyped, untyped) -> Integer
   def self.event_count: (String, String) -> Integer
@@ -76,13 +77,16 @@ class LCF::Array1D
   def schema: () -> untyped
   def []: (untyped) -> untyped
   def []=: (untyped, untyped) -> untyped
+  def buf_bytes: (untyped) -> untyped
+  def buf_value: (untyped, untyped) -> untyped
   def chunk_bytes: (untyped) -> untyped
   def chunk_value_bytes: (untyped) -> untyped
   def delete: (untyped) -> untyped
   def field?: (untyped) -> untyped
   def key?: (untyped) -> untyped
   def load_lazy: () -> untyped
-  def read_chunks: (untyped) -> untyped
+  def materialize: () -> untyped
+  def read_chunks: (untyped, untyped) -> untyped
   def self.blank_record: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
@@ -99,6 +103,8 @@ class LCF::Array2D
   def read_row_slice: (untyped) -> untyped
   def read_rows: (untyped) -> untyped
   def row_bytes: (untyped) -> untyped
+  def row_record: (untyped) -> untyped
+  def row_span: (untyped) -> untyped
   def same_schema?: (untyped) -> untyped
   def self.blank_table: (untyped) -> untyped
   def self.lazy_section: (untyped, untyped) -> untyped
@@ -8454,6 +8460,9 @@ class LCF
   # STR_POOL: the argument, the frozen empty String, a pool entry equal to it, or `-s`.
   %a{bc2cpp:hint}
   def self.pool_str: (String) -> String
+  # LAZY_RECORD: a shared 0/1-byte String or a byteslice.
+  %a{bc2cpp:hint}
+  def self.chunk_str: (String, Integer, Integer) -> String
   def self.elements_of: (untyped) -> untyped
   def self.encode_event_commands: (untyped) -> untyped
   def self.pack_int16: (untyped) -> untyped

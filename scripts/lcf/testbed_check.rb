@@ -162,8 +162,13 @@ class Checker
       copy = File.join(tmp, 'RPG_RT.ldb')
       File.binwrite(copy, bytes)
       saved = LCF::Database.new(File.open(copy, 'rb'))
+      # FILE_ROW: rows #[] keeps that still read chunks from the file must read them before it is rewritten.
+      tables = LCF.elements_of(LCF::Schema::DATABASE).select { |_, e| e[:type] == :Array2D }.map { |idx, _| idx }
+      tables.each { |idx| saved[idx]&.each { |_id, r| r } }
       saved.save_to(copy)
       fail 'ldb: save_to over its own lazy file not byte-exact' if File.binread(copy) != bytes
+      events = ->(t) { t ? t.map { |id, r| [id, r[:event] && r[:event].to_lcf] } : [] }
+      fail 'ldb: rows kept across save_to read different commands' if events.(saved[:common_event]) != events.(eager[:common_event])
     end
   end
 
