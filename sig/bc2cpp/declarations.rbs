@@ -1222,7 +1222,6 @@ class Game::Battle
   def apply_command_all: (untyped, untyped, ?untyped) -> untyped
   def apply_knockout_reset: (untyped) -> untyped
   def apply_to_party: () -> untyped
-  def apply_turn_states: (untyped) -> untyped
   def attempt_escape: (?untyped) -> untyped
   def attr_rate: (untyped, untyped) -> untyped
   def attribute_physical?: (untyped) -> untyped
@@ -8172,6 +8171,9 @@ class Game::Battle
   @allies: Array[Game::Battle::Combatant]
   @enemies: Array[Game::Battle::Combatant]
   @queue: Array[Game::Battle::Combatant]
+  # #initialize's `party:` keyword: Scene::Battle#start passes `state.party` (Game::State's @party); nil otherwise.
+  @party: Game::Party?
+  def apply_turn_states: (Game::Battle::Combatant b) -> bool
   def strike: (Game::Battle::Combatant b) -> untyped
   def pay_weapon_sp_cost: (Game::Battle::Combatant b) -> untyped
   def battle_command_type: (Game::Battle::Combatant b, untyped cmd_id) -> untyped
@@ -10990,7 +10992,6 @@ class Game::Battle
   def apply_command_all: (untyped, untyped, ?untyped) -> Array?
   def apply_knockout_reset: (untyped) -> (bool | nil)
   def apply_skill_hit: (untyped, untyped, untyped, untyped, untyped) -> Hash
-  def apply_turn_states: (untyped) -> bool
   def attempt_escape: (?untyped) -> bool
   def attribute_physical?: (untyped) -> bool
   def battle_command_type: (untyped, untyped) -> Integer?
@@ -13897,6 +13898,8 @@ end
 class RPG2k::Scene::Map
   # `[]`, then only `push` of #build_event's `MapEventState.new`.
   @events: Array[RPG2k::Scene::Map::MapEventState]
+  # The one caller (#rebuild_events_preserving_positions) passes an @events element before and after #build_events.
+  def carry_event_state: (RPG2k::Scene::Map::MapEventState old, RPG2k::Scene::Map::MapEventState e) -> untyped
   # A moving character: MapWorld / VehicleWorld forward Game::MoveRoute's and Game::MoveType's `character`, and
   # Game::Character.new (an event's char, @player_char, a @vehicle_chars entry) is the only kind there is.
   # (#char_passable? and #char_in_sight? are declared with their other facts above.)
