@@ -34,6 +34,7 @@ end
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_lcf
 module LCF
+  def self.byte_str: (untyped) -> untyped
   def self.double_decode: (untyped) -> untyped
   def self.double_default: (untyped) -> untyped
   def self.double_encode: (untyped) -> untyped
@@ -41,6 +42,7 @@ module LCF
   def self.double_to_fixed: (untyped) -> untyped
   def self.double_value?: (untyped) -> untyped
   def self.edition_default: (untyped) -> untyped
+  def self.empty_str: () -> untyped
   def self.encode: (untyped, untyped) -> untyped
   def self.encode_move_commands: (untyped) -> untyped
   def self.exp_default: () -> untyped
@@ -83,6 +85,7 @@ class LCF::Array2D
   def initialize: (untyped, untyped, ?untyped) -> untyped
   def load_lazy: () -> untyped
   def peek: (untyped) -> untyped
+  def read_row_slice: (untyped) -> untyped
   def row_bytes: (untyped) -> untyped
   def same_schema?: (untyped) -> untyped
   def self.blank_table: (untyped) -> untyped
