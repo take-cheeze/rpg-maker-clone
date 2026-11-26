@@ -3529,6 +3529,7 @@ class RPG2k::Window
   def visible: () -> untyped
   def pause: () -> untyped
   def active=: (untyped) -> untyped
+  def allocate_layers: () -> untyped
   def close_animation: (untyped) -> untyped
   def contents=: (untyped) -> untyped
   def cursor_rect=: (untyped) -> untyped
