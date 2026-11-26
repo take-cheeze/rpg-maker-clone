@@ -21,15 +21,22 @@ class_results:
     - 8161a2a0c9d93eb3c5f0bb4ef7b21dc19da47607589feaf0fb2f74d29a1122c7
     # The fork's ROM rows (Fiber, Module#attr, mruby-stringio) and lazily made class tables move registrations and
     # add a guard to a module test; no audited native's result class or arguments change.
+    # MRB_ROM_CLASS_GRAPH (take-cheeze/mruby#41) reads method tables through a slot, refuses changes to a ROM class's
+    # structure (FrozenError from freeze, include, prepend) and tests table sharing in kind_of? by slot; the natives
+    # return what they did.
     3rd/mruby/src/class.c:
     - c61bc1d54bb309a4dfd1d5e7f2fe2780f19c9b03d3d5a3fc08a934906c1059ce
     - c9298d9551852caec11af3dc4603e3b73506e88a873261cfdd47ccad0b705d6f
     - beba45332b7281e66ec153af80d1ae83642810b5907b7cba33d428e158c80d20
     - 4488bbd4e809f11d0f5f0962604bedea205dc0a6c9218f919749106c5bc6838d
     - 4680284f5245c6ae310933a189fd6780abea6dbbcb271fc6cca0c7a867f1bbea
+    - 2ec7c8eb9d394e01ffc8068ecc73016214203c3aa6c54699bbf184cc5f3ad41b
     3rd/mruby/src/object.c:
     - c7523f7c3c07021e4765aae3a1ed2d840ac6c6340a084091d38b0a9a69a2738c
     - e0972dbc1b64055ccddc8945814dba24a218bc39f079ffe06b15924a8b21f865
+    - 3b25d213b5e7e71bbdfed8b75a4adc0ce2ff45fcc88c8310dd6a07e061504ec4
+    3rd/mruby/src/kernel.c:
+    - 0acc19f3c8f84d6a1712ee65a7f0c3da30ec2df8d81e67e6168dee2a63ef0e8a
     3rd/mruby/mrbgems/mruby-fiber/src/fiber.c:
     - 5b8aa22575a772a0fb0a194c1720233307f7034a0704e362a315bd30fb44512f
     - 5fdd61e9e5dff20a75941a10f9e939d340239597401a83bd6f0674f8951af634
