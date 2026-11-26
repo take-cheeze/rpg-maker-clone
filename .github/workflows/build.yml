@@ -927,8 +927,12 @@ jobs:
           BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
         run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify"
 
+      # ROM_GRAPH: this host runs on the class graph its boot leaves, linked back in as const data (as the Wio
+      # firmware can, scripts/wio/rom_graph.bash); the build fails unless a boot on it leaves the same graph.
       - name: Play the verify build's scenarios and every map
         timeout-minutes: 15
+        env:
+          BC2CPP_HOST_ROM_GRAPH: '1'
         run: env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-verify"
 
       # Informational: why the entries the lists keep stay in the table, and which they are (the lists are no longer in a diff).

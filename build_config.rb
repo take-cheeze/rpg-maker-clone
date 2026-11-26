@@ -136,6 +136,11 @@ end
 
 # Wio's integer model, 32-bit mrb_int and no mruby-bigint (see rpg_maker_gems): wio unless WIO_BIGINT=1, and the
 # closed host build with BC2CPP_CLOSED_WIO_INT=1 (the host sweep of that model, scripts/bc2cpp/host_sweep.bash).
+# ROM_CLASS_GRAPH=0: no MRB_ROM_CLASS_GRAPH in the wio and closed builds, so no class can come from a ROM class graph.
+def rom_class_graph?
+  ENV['ROM_CLASS_GRAPH'] != '0'
+end
+
 def wio_integer_model?(conf)
   (conf.name == 'wio' && ENV['WIO_BIGINT'] != '1') || (conf.name == 'closed' && ENV['BC2CPP_CLOSED_WIO_INT'] == '1')
 end
@@ -1146,6 +1151,9 @@ if wio
       # A nested class keeps its outer class instead of a path String (148 of them at the title, about 8 KB); the
       # path is made when something asks for it.
       t.defines << 'MRB_NO_CLASS_PATH_CACHE'
+      # The boot's classes can come from a ROM class graph the firmware links (scripts/wio/rom_graph.bash): const in
+      # flash, with their changing parts in RAM. Without one linked, every class is on the heap as before.
+      t.defines << 'MRB_ROM_CLASS_GRAPH' if rom_class_graph?
       # mrbc's own `-g` is stripped (Ruby-level
       # line-number/local-variable debug tables baked into compiled
       # bytecode); enable_debug's `-g3` on this same cc/cxx loop is its
@@ -1396,6 +1404,8 @@ if closed
     [conf.cc, conf.cxx].each { |t| t.defines << 'MRB_INT32' } if wio_integer_model?(conf)
     # As the wio build: the host sweep plays the class paths that build makes on demand.
     [conf.cc, conf.cxx].each { |t| t.defines << 'MRB_NO_CLASS_PATH_CACHE' }
+    # As the wio build: the classes a linked ROM class graph holds (trace_host.bash BC2CPP_HOST_ROM_GRAPH=1).
+    [conf.cc, conf.cxx].each { |t| t.defines << 'MRB_ROM_CLASS_GRAPH' } if rom_class_graph?
     bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
     conf.gem core: 'mruby-bigint' unless wio_integer_model?(conf)

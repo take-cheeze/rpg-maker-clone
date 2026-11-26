@@ -17,6 +17,10 @@
 //   eager_ce=0|1    common events as before LAZY_COMMON_EVENTS
 //                   (RPG2K_EAGER_COMMON_EVENTS)
 //   gc_step=N       mrb->gc.step_ratio (default WIO_GC_STEP_RATIO, as env:wio)
+//   rom_graph=1     write the class graph the boot leaves as C
+//   (mrb_rom_graph_dump) and stop: renode_game.bash
+//                   --rom-graph FILE saves it (scripts/wio/rom_graph.bash links
+//                   it back in)
 // The constants are the ones scripts/bc2cpp/trace_host.cxx sets, so a run
 // here and a host run of the same config play the same frames.
 //
@@ -35,6 +39,7 @@
 #include <mruby/class.h>
 #include <mruby/error.h>
 #include <mruby/gc.h>
+#include <mruby/rom_graph.h>
 #include <mruby/string.h>
 #include <mruby/variable.h>
 
@@ -46,6 +51,7 @@
 #define BC2CPP_ENTRY_BY_NAME
 #include "bc2cpp_entry.hxx"
 #include "rgss_rom_bitmaps.h"
+#include "rom_graph_ram_classes.h"
 #include "wio.hxx"
 #include "wio_game_rom.h"
 #include "wio_image_cache.h"
@@ -64,6 +70,12 @@ extern "C" void wio_heapwalk_begin(mrb_state*) __attribute__((weak));
 extern "C" void wio_heapwalk_probe(const char*, long) __attribute__((weak));
 extern "C" void wio_heapwalk_frame(long) __attribute__((weak));
 
+// ROM_GRAPH: renode_game.bash --rom-graph hooks this to save [kRomGraphBase,
+// +len).
+extern "C" __attribute__((noinline, used)) void rom_graph_flush(size_t len) {
+  __asm__ volatile("" : : "r"(len) : "memory");
+}
+
 namespace {
 
 // Read by scripts/wio/renode_game.bash.
@@ -79,6 +91,25 @@ constexpr uint32_t kFailOom = 0x6A6EBAD5;
 
 // Halts the core for good once the run is over, so the rest of Renode's time
 // budget passes without emulating a spin.
+// ROM_GRAPH (rom_graph=1): the dump's text goes to a Renode-only window
+// (app/wio/renode/rom_graph.repl), which renode_game.bash --rom-graph saves
+// when rom_graph_flush runs.
+constexpr uintptr_t kRomGraphBase = 0x0C000000;
+constexpr size_t kRomGraphSize = 0x00400000;
+size_t g_rom_graph_len = 0;
+bool g_rom_graph_full = false;
+void rom_graph_line(void*, const char* line) {
+  const size_t n = std::strlen(line);
+  if (g_rom_graph_len + n + 1 > kRomGraphSize) {
+    g_rom_graph_full = true;
+    return;
+  }
+  char* const out = reinterpret_cast<char*>(kRomGraphBase) + g_rom_graph_len;
+  std::memcpy(out, line, n);
+  out[n] = '\n';
+  g_rom_graph_len += n + 1;
+}
+
 [[noreturn]] void halt() {
   __disable_irq();
   SysTick->CTRL = 0;
@@ -374,6 +405,17 @@ void setup(void) {
   }
   mrb_full_gc(g_mrb);
   probe("init");
+  if (config_long("rom_graph", 0) != 0) {
+    static const char* const ram_classes[] = {ROM_GRAPH_RAM_CLASSES, nullptr};
+    mrb_rom_graph_dump(g_mrb, rom_graph_line, nullptr, ram_classes);
+    wio_diag_printf(
+        "ROM_GRAPH %u bytes (%s)%s\n", static_cast<unsigned>(g_rom_graph_len),
+        mrb_rom_graph_active(g_mrb) ? "on the graph" : "heap classes",
+        g_rom_graph_full ? " TRUNCATED" : "");
+    rom_graph_flush(g_rom_graph_full ? 0 : g_rom_graph_len);
+    g_result = g_rom_graph_full ? kFailBoot : kDone;
+    return;
+  }
 
   rgss_set_display(g_mrb, disp);
   // What the boot leaves in the GC arena is kept by a constant or by the game,

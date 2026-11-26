@@ -25,6 +25,23 @@ WIO_UNIALGO_LIB_DIR=<uni-algo lib dir> \
 `scripts/wio/build.bash` runs all of it from a bare checkout (in `nix develop .#bc2cpp`), as CI's
 `wio` job does.
 
+## Classes in flash (ROM class graph)
+
+`WIO_ROM_GRAPH=GRAPH.c scripts/wio/build.bash` links the class graph the boot leaves as const data, so the classes,
+modules, singleton classes and their constant tables are in internal flash instead of the heap. The graph is made
+under Renode from the same libmruby (`RENODE_BIN`, see `renode/README.md`):
+
+```sh
+scripts/wio/build.bash                                   # libmruby, a firmware with no graph
+scripts/wio/rom_graph.bash dump build-wio GAME_DIR graph.c
+WIO_ROM_GRAPH=graph.c scripts/wio/build.bash             # the firmware on the graph
+scripts/wio/rom_graph.bash check build-wio GAME_DIR graph.c   # a boot on it leaves the same graph
+```
+
+A graph from another libmruby fails to compile or to boot; rebuild it after a change to the engine. Without
+`WIO_ROM_GRAPH` every class is on the heap. A class's structure is fixed once it is in the graph (mruby's
+`doc/guides/rom-class-graph.md`); its constants and class variables still change, in a heap copy.
+
 ## The QSPI flash image
 
 The engine is too big for the board's 496 KB of internal flash, so the cold part of it runs in place from the

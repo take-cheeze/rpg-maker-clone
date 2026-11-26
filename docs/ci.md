@@ -63,7 +63,9 @@ The desktop `host` build loads Ruby at runtime and never carries the compiled ge
 `scripts/bc2cpp/host_sweep.bash`: Nepheshel's New Game, a battle, the menu, saving and loading, and
 every map for 150 frames. It then builds the closed world again with `BC2CPP_UNREGISTERED_VERIFY=1`,
 which replaces every registration the closed list leaves out with a stub that fails loudly when
-reached, and plays that build the same way. A run that exits non-zero, or that prints a verify stub,
+reached, and plays that build the same way, on its ROM class graph (`BC2CPP_HOST_ROM_GRAPH=1`: the
+classes its boot leaves, linked back in as const data; the host build fails unless a boot on them
+leaves the same graph). A run that exits non-zero, or that prints a verify stub,
 a violated proof, a run stubbed mrblib body or a `NoMethodError`, fails the job. The host is built
 once per build and called directly afterwards, and maps run in parallel: one play takes about a
 minute, and the whole job (two closed builds of about three minutes each) stays shorter than
