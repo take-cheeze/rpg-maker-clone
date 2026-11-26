@@ -1522,7 +1522,6 @@ module Game::CommonEvent
   def self.eager?: () -> untyped
   def self.eager_load: (untyped) -> untyped
   def self.eligible: (untyped, untyped) -> untyped
-  def self.index: (untyped, untyped) -> untyped
   def self.load: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
@@ -1920,7 +1919,6 @@ class Game::Interpreter::ShopRequest
 end
 # bc2cpp-native: base_rpg
 module Game::LegacyLsd
-  def self.apply: (untyped, untyped) -> untyped
   def self.ext_double_at: (untyped) -> untyped
   def self.ext_ints: (untyped) -> untyped
   def self.ext_records: (untyped) -> untyped
