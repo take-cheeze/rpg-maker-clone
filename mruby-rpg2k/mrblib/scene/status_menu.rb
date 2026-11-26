@@ -216,7 +216,7 @@ class RPG2k
       end
 
       def new_contents(win)
-        c = Bitmap.new(win.width - Window::BORDER * 2, win.height - Window::BORDER * 2)
+        c = contents_bitmap(win.width - Window::BORDER * 2, win.height - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         c
       end

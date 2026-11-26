@@ -3014,11 +3014,12 @@ mrb_value bmp_copy_blt(mrb_state* M, V self) {
 }
 
 // DEFERRED_BITMAP: Bitmap#_defer turns a canvas into a list of the draws made
-// on it (clear, fill_rect, blt, blt_quads, copy_blt), evaluated a few rows at a
-// time when a sprite shows it (see DRAW_TIME_SPRITE) instead of being held as
-// pixels. Each recorded draw runs later through the very function the
-// immediate draw uses (blt_pixels, copy_pixels, fill_pixels) on a window of
-// rows, so a row comes out byte for byte as the canvas would have held it.
+// on it (clear, fill_rect, blt, blt_quads, copy_blt, stretch_blt, and the
+// shinonome draw_text and blend_text), evaluated a few rows at a time when a
+// sprite shows it (see DRAW_TIME_SPRITE) instead of being held as pixels. Each
+// recorded draw runs later through the very function the immediate draw uses
+// (blt_pixels, copy_pixels, fill_pixels, text_stamp) on a window of rows, so a
+// row comes out byte for byte as the canvas would have held it.
 // Anything else that touches the bitmap materializes it first: DataType::get,
 // bmp_require and promote_to_direct all do, and only bmp_raw sees the list.
 // Sources stay as they were when drawn: a decoded image is held (nothing draws
@@ -3046,6 +3047,7 @@ enum : uint8_t {
   kDeferredCopy,
   kDeferredFill,
   kDeferredStretch,
+  kDeferredText,
   kDeferredDead
 };
 
@@ -3053,7 +3055,8 @@ enum : uint8_t {
 struct DeferredOp {
   int16_t dx, dy;
   // A fill keeps its R, G, B, A bytes in sx and sy, a stretch the index of its
-  // rects in sx; both keep the rows and columns they reach in dx, dy, w, h.
+  // rects in sx and a text run that of its glyphs in sx; all keep the rows and
+  // columns they reach in dx, dy, w, h.
   uint16_t sx, sy, w, h;
   uint16_t src;
   uint8_t opacity, kind;
@@ -3072,11 +3075,28 @@ constexpr int kDeferredBand = 16;
 // A list that still holds this many draws after compaction is materialized.
 constexpr size_t kDeferredMaxOps = 8192;
 
+// A shinonome text run (see text_layout): the pixels its glyphs set, one bit
+// each over its op's rect, and the B, G, R, A bytes each row of the 12px glyph
+// cell stores.
+struct DeferredText {
+  std::vector<uint8_t> mask;  // (w + 7) / 8 bytes a row
+  std::array<uint8_t, shinonome::HEIGHT * 4> rows;
+  int16_t top;  // the cell's top row
+};
+
+static void text_stamp(Bitmap& win,
+                       int y0,
+                       const DeferredOp& o,
+                       const DeferredText& t,
+                       int a,
+                       int e);
+
 struct DeferredList {
   std::vector<DeferredOp> ops;
   std::vector<DeferredSrc> srcs;
   std::vector<std::vector<uint16_t>> bands;       // op indices, ascending
   std::vector<std::array<int32_t, 8>> stretches;  // destination, source rects
+  std::vector<DeferredText> texts;
   size_t dead = 0;
 };
 
@@ -3172,6 +3192,10 @@ static void deferred_rows(const DeferredList& L,
           static_cast<double>(o.sx >> 8), static_cast<double>(o.sx & 0xff),
           static_cast<double>(o.sy >> 8), static_cast<double>(o.sy & 0xff)};
       fill_put(win, o.dx, a - y0, o.w, e - a, c);
+      continue;
+    }
+    if (o.kind == kDeferredText) {
+      text_stamp(win, y0, o, L.texts[o.sx], a, e);
       continue;
     }
     const DeferredSrc& s = L.srcs[o.src];
@@ -3273,7 +3297,7 @@ static void deferred_cover(DeferredList& L,
                            bool opaque,
                            int height) {
   if (L.bands.empty() || o.kind == kDeferredStretch ||
-      (o.kind == kDeferredBlt && o.opacity < 255))
+      o.kind == kDeferredText || (o.kind == kDeferredBlt && o.opacity < 255))
     return;
   for (int b = o.dy / kDeferredBand; b <= (o.dy + o.h - 1) / kDeferredBand;
        ++b) {
@@ -3298,6 +3322,7 @@ static void deferred_compact(DeferredList& L, int height, bool full = false) {
   std::vector<int> remap(L.srcs.size(), -1);
   std::vector<DeferredSrc> srcs;
   std::vector<std::array<int32_t, 8>> stretches;
+  std::vector<DeferredText> texts;
   for (DeferredOp e : L.ops) {
     if (e.kind == kDeferredDead)
       continue;
@@ -3305,7 +3330,11 @@ static void deferred_compact(DeferredList& L, int height, bool full = false) {
       stretches.push_back(L.stretches[e.sx]);
       e.sx = static_cast<uint16_t>(stretches.size() - 1);
     }
-    if (e.kind != kDeferredFill) {
+    if (e.kind == kDeferredText) {
+      texts.push_back(std::move(L.texts[e.sx]));
+      e.sx = static_cast<uint16_t>(texts.size() - 1);
+    }
+    if (e.kind != kDeferredFill && e.kind != kDeferredText) {
       if (remap[e.src] < 0) {
         remap[e.src] = static_cast<int>(srcs.size());
         srcs.push_back(L.srcs[e.src]);
@@ -3317,6 +3346,7 @@ static void deferred_compact(DeferredList& L, int height, bool full = false) {
   L.ops.swap(live);
   L.srcs.swap(srcs);
   L.stretches.swap(stretches);
+  L.texts.swap(texts);
   L.dead = 0;
   L.bands.clear();
   for (size_t i = 0; i < L.ops.size(); ++i)
@@ -4451,6 +4481,123 @@ mrb_int shinonome_text_top(mrb_int y, mrb_int h) {
   return y + (h - static_cast<mrb_int>(shinonome::HEIGHT)) / 2;
 }
 
+// Every pixel the shinonome glyphs of `sv` set when laid out from (x, y), as
+// put(px, py).
+template <class Put>
+void shinonome_pixels(std::string_view sv, mrb_int x, mrb_int y, Put&& put) {
+  auto draw = [&x, y, &put](const auto& c) {
+    for (unsigned i = 0; i < c.HEIGHT; ++i) {
+      for (unsigned j = 0; j < c.WIDTH; ++j) {
+        const unsigned idx = i * c.WIDTH + j;
+        if (c.data[idx / 32] & (1 << (idx % 32)))
+          put(x + j, y + i);
+      }
+    }
+    x += c.WIDTH;
+  };
+  for (const char32_t c : sv | una::views::utf8) {
+    auto f = find_gothic_char(c);
+    if (f) {
+      draw(*f);
+      continue;
+    }
+    auto hh = find_char(c, shinonome::LATIN1, shinonome::LATIN1_LEN);
+    if (hh) {
+      draw(*hh);
+      continue;
+    }
+    hh = find_char(c, shinonome::HANKAKU, shinonome::HANKAKU_LEN);
+    if (hh) {
+      draw(*hh);
+      continue;
+    }
+  }
+}
+
+// The text run `sv`, `tw` pixels wide with its glyph cell's top-left at
+// (x, y), as an op over its part inside `b` and the glyph pixels there; false
+// when none of it is inside.
+static bool text_layout(const Bitmap& b,
+                        std::string_view sv,
+                        mrb_int x,
+                        mrb_int y,
+                        int tw,
+                        DeferredOp& o,
+                        DeferredText& t) {
+  const mrb_int x0 = std::max<mrb_int>(x, 0), y0 = std::max<mrb_int>(y, 0);
+  const mrb_int x1 = std::min<mrb_int>(x + tw, b.width);
+  const mrb_int y1 =
+      std::min<mrb_int>(y + static_cast<mrb_int>(shinonome::HEIGHT), b.height);
+  if (x0 >= x1 || y0 >= y1)
+    return false;
+  o = DeferredOp{static_cast<int16_t>(x0),
+                 static_cast<int16_t>(y0),
+                 0,
+                 0,
+                 static_cast<uint16_t>(x1 - x0),
+                 static_cast<uint16_t>(y1 - y0),
+                 0,
+                 255,
+                 kDeferredText};
+  const size_t stride = (o.w + 7) / 8;
+  t.top = static_cast<int16_t>(y);
+  t.mask.assign(stride * o.h, 0);
+  shinonome_pixels(sv, x, y, [&](mrb_int px, mrb_int py) {
+    if (px < x0 || py < y0 || px >= x1 || py >= y1)
+      return;
+    const size_t i = static_cast<size_t>(px - x0);
+    t.mask[static_cast<size_t>(py - y0) * stride + i / 8] |=
+        static_cast<uint8_t>(1u << (i % 8));
+  });
+  return true;
+}
+
+// Store a text run's rows [a, e) of the bitmap into `win`, which holds its
+// rows from y0.
+static void text_stamp(Bitmap& win,
+                       int y0,
+                       const DeferredOp& o,
+                       const DeferredText& t,
+                       int a,
+                       int e) {
+  const unsigned bpp = lv_color_format_get_size(win.format);
+  const size_t stride = (o.w + 7) / 8;
+  for (int py = a; py < e; ++py) {
+    const uint8_t* m = t.mask.data() + static_cast<size_t>(py - o.dy) * stride;
+    const uint8_t* c = t.rows.data() + static_cast<size_t>(py - t.top) * 4;
+    uint8_t* d = win.buffer.data() +
+                 (static_cast<size_t>(py - y0) * win.width + o.dx) * bpp;
+    for (int i = 0; i < o.w; ++i)
+      if (m[i / 8] & (1u << (i % 8)))
+        std::memcpy(d + static_cast<size_t>(i) * bpp, c, bpp);
+  }
+}
+
+// Draw (or, into a deferred `b`, record) the text run `sv`, `tw` pixels wide,
+// its glyph cell's top-left at (x, y), each cell row i storing rows[i * 4..].
+static void text_draw(Bitmap& b,
+                      std::string_view sv,
+                      mrb_int x,
+                      mrb_int y,
+                      int tw,
+                      const std::array<uint8_t, shinonome::HEIGHT * 4>& rows) {
+  DeferredOp o;
+  DeferredText t;
+  if (!text_layout(b, sv, x, y, tw, o, t))
+    return;
+  if (!b.deferred)
+    promote_to_direct(b);
+  t.rows = rows;
+  if (!b.deferred) {
+    text_stamp(b, 0, o, t, o.dy, o.dy + o.h);
+    return;
+  }
+  DeferredList& L = deferred_edit(b);
+  L.texts.push_back(std::move(t));
+  o.sx = static_cast<uint16_t>(L.texts.size() - 1);
+  deferred_push(b, o, false);
+}
+
 mrb_value bmp_draw_text_body(mrb_state* M,
                              mrb_value self,
                              mrb_int x,
@@ -4506,8 +4653,8 @@ mrb_value bmp_draw_text_body(mrb_state* M,
                              mrb_int h,
                              mrb_value text_obj,
                              mrb_int align) {
-  auto& bmp = bmp_self(M, self);
-  promote_to_direct(bmp);
+  // Not materialized: a deferred bitmap records the run (see text_draw).
+  Bitmap& bmp = bmp_raw(M, self);
   if (!mrb_string_p(text_obj)) {
     text_obj = mrb_obj_as_string(M, text_obj);
   }
@@ -4519,6 +4666,8 @@ mrb_value bmp_draw_text_body(mrb_state* M,
   const FontAttr fa = read_font(M, self);
 #if !defined(WIO_TERMINAL)
   if (fa.ttf && fa.ttf->ok) {
+    settle_for_access(bmp);
+    promote_to_direct(bmp);
     draw_text_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align));
     return self;
   }
@@ -4538,40 +4687,10 @@ mrb_value bmp_draw_text_body(mrb_state* M,
     x += w - tw;
   y = shinonome_text_top(y, h);
 
-  const unsigned col_len = lv_color_format_get_size(bmp.format);
-  auto draw = [&x, y, &bmp, &col, col_len](const auto& c) {
-    for (unsigned i = 0; i < c.HEIGHT; ++i) {
-      for (unsigned j = 0; j < c.WIDTH; ++j) {
-        const unsigned idx = i * c.WIDTH + j;
-        const mrb_int px = x + j;
-        const mrb_int py = y + i;
-        if (px < 0 || py < 0 || px >= bmp.width || py >= bmp.height)
-          continue;
-        if (c.data[idx / 32] & (1 << (idx % 32)))
-          std::memcpy(bmp.buffer.data() + (py * bmp.width + px) * col_len, col,
-                      col_len);
-      }
-    }
-    x += c.WIDTH;
-  };
-
-  for (const char32_t c : sv | una::views::utf8) {
-    auto f = find_gothic_char(c);
-    if (f) {
-      draw(*f);
-      continue;
-    }
-    auto hh = find_char(c, shinonome::LATIN1, shinonome::LATIN1_LEN);
-    if (hh) {
-      draw(*hh);
-      continue;
-    }
-    hh = find_char(c, shinonome::HANKAKU, shinonome::HANKAKU_LEN);
-    if (hh) {
-      draw(*hh);
-      continue;
-    }
-  }
+  std::array<uint8_t, shinonome::HEIGHT * 4> rows;
+  for (unsigned i = 0; i < shinonome::HEIGHT; ++i)
+    std::memcpy(rows.data() + i * 4, col, 4);
+  text_draw(bmp, sv, x, y, tw, rows);
 
   bmp.dirty = true;
   return self;
@@ -4585,7 +4704,8 @@ mrb_value bmp_draw_text_body(mrb_state* M,
 // font (what RPG2000 games use), sampling the swatch by vertical position for a
 // top-to-bottom gradient.
 mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
-  auto& bmp = bmp_self(M, self);
+  // Not materialized: a deferred bitmap records the run (see text_draw).
+  auto& bmp = bmp_raw(M, self);
 
   mrb_int x, y, w, h, len, sx, sy, sw, sh;
   mrb_int align = 0;
@@ -4599,6 +4719,7 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
   [[maybe_unused]] const FontAttr fa = read_font(M, self);
 #if !defined(WIO_TERMINAL)
   if (fa.ttf && fa.ttf->ok) {
+    settle_for_access(bmp);
     draw_text_tex_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align),
                       src_bmp, static_cast<int>(sx), static_cast<int>(sy),
                       static_cast<int>(sw), static_cast<int>(sh));
@@ -4615,51 +4736,28 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
     x += w - tw;
   y = shinonome_text_top(y, h);
 
+  // Each glyph row's colour: the swatch row its height maps to, so a shaded
+  // swatch gradients down the text; a flat swatch reads as a single colour.
   const int scol = static_cast<int>(sx + sw / 2);
-  auto draw = [&x, y, &bmp, &src_bmp, scol, sy, sh](const auto& c) {
-    for (unsigned i = 0; i < c.HEIGHT; ++i) {
-      // Sample the swatch row for this glyph row so a shaded swatch gradients
-      // down the text; a flat swatch reads as a single colour.
-      int srow = static_cast<int>(sy);
-      if (sh > 1 && c.HEIGHT > 1)
-        srow = static_cast<int>(sy) +
-               std::clamp(static_cast<int>(::lround(static_cast<double>(i) *
-                                                    (sh - 1) / (c.HEIGHT - 1))),
-                          0, static_cast<int>(sh) - 1);
-      int sr = 255, sg = 255, sb = 255, sa = 255;
-      if (scol >= 0 && srow >= 0 && scol < src_bmp.width &&
-          srow < src_bmp.height)
-        bmp_read(src_bmp, scol, srow, sr, sg, sb, sa);
-      for (unsigned j = 0; j < c.WIDTH; ++j) {
-        const unsigned idx = i * c.WIDTH + j;
-        const mrb_int px = x + j;
-        const mrb_int py = y + i;
-        if (px < 0 || py < 0 || px >= bmp.width || py >= bmp.height)
-          continue;
-        if (c.data[idx / 32] & (1 << (idx % 32)))
-          bmp_put(bmp, px, py, sr, sg, sb, sa);
-      }
-    }
-    x += c.WIDTH;
-  };
-
-  for (const char32_t c : sv | una::views::utf8) {
-    auto f = find_gothic_char(c);
-    if (f) {
-      draw(*f);
-      continue;
-    }
-    auto hh = find_char(c, shinonome::LATIN1, shinonome::LATIN1_LEN);
-    if (hh) {
-      draw(*hh);
-      continue;
-    }
-    hh = find_char(c, shinonome::HANKAKU, shinonome::HANKAKU_LEN);
-    if (hh) {
-      draw(*hh);
-      continue;
-    }
+  constexpr unsigned kCell = shinonome::HEIGHT;
+  std::array<uint8_t, kCell * 4> rows;
+  for (unsigned i = 0; i < kCell; ++i) {
+    int srow = static_cast<int>(sy);
+    if (sh > 1 && kCell > 1)
+      srow = static_cast<int>(sy) +
+             std::clamp(static_cast<int>(::lround(static_cast<double>(i) *
+                                                  (sh - 1) / (kCell - 1))),
+                        0, static_cast<int>(sh) - 1);
+    int sr = 255, sg = 255, sb = 255, sa = 255;
+    if (scol >= 0 && srow >= 0 && scol < src_bmp.width && srow < src_bmp.height)
+      bmp_read(src_bmp, scol, srow, sr, sg, sb, sa);
+    // bmp_put's byte order.
+    rows[i * 4] = static_cast<uint8_t>(sb);
+    rows[i * 4 + 1] = static_cast<uint8_t>(sg);
+    rows[i * 4 + 2] = static_cast<uint8_t>(sr);
+    rows[i * 4 + 3] = static_cast<uint8_t>(sa);
   }
+  text_draw(bmp, sv, x, y, tw, rows);
 
   bmp.dirty = true;
   return self;

@@ -660,7 +660,7 @@ class RPG2k
                                       SCREEN_W, h + Window::BORDER * 2)
         @teleport_window.z = 450
         @teleport_window.windowskin = @skin
-        c = Bitmap.new(inner_w, h)
+        c = contents_bitmap(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         if rows.empty?
           c.draw_text 0, 0, inner_w, LINE_H, "No destinations"
@@ -817,7 +817,7 @@ class RPG2k
         @desc_window = Window.new(0, 0, w, DESC_H)
         @desc_window.z = 400
         @desc_window.windowskin = @skin
-        @desc_contents = Bitmap.new(inner_w, LINE_H)
+        @desc_contents = contents_bitmap(inner_w, LINE_H)
         @desc_window.contents = @desc_contents
         refresh_desc
       end
@@ -874,7 +874,7 @@ class RPG2k
         @item_window = Window.new(0, DESC_H, SCREEN_W, LIST_H)
         @item_window.z = 400
         @item_window.windowskin = @skin
-        c = Bitmap.new(inner_w, h)
+        c = contents_bitmap(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         col_w = item_col_w
         first = @item_top * COLUMN_MAX
@@ -961,7 +961,7 @@ class RPG2k
         @item_window = Window.new(0, DESC_H, w, DESC_H)
         @item_window.z = 400
         @item_window.windowskin = @skin
-        c = Bitmap.new(inner_w, LINE_H)
+        c = contents_bitmap(inner_w, LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, LINE_H, term(:possessed_items)
         count = @pending_item ? @state.party.item_count(@pending_item) : 0
@@ -1096,7 +1096,7 @@ class RPG2k
         @target_window = Window.new(SCREEN_W - TARGET_W, 0, TARGET_W, SCREEN_H)
         @target_window.z = 450
         @target_window.windowskin = @skin
-        c = Bitmap.new(inner_w, SCREEN_H - Window::BORDER * 2)
+        c = contents_bitmap(inner_w, SCREEN_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         party.each_with_index do |a, i|
           y = i * TARGET_ROW_PITCH
