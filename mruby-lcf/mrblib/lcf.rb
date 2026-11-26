@@ -47,6 +47,26 @@ module LCF
     append_ber(String.new, n)
   end
 
+  # SHARED_STR: one frozen String per byte value, and one empty one, stand for every 1-byte or empty chunk and
+  # command string (most chunks of an event page are one byte). Frozen, so a caller that mutates one raises instead
+  # of changing them all. Each freeze is of a String literal: bc2cpp's closed world then knows no class object is
+  # frozen (`b.chr.freeze` would turn its constant-definition elision off for the whole world).
+  def self.byte_str b
+    return nil if b.nil? # getbyte at the end of the stream: the caller's truncation check raises
+
+    strs = (@byte_strs ||= [])
+    str = strs[b]
+    return str if str
+
+    str = "\0"
+    str.setbyte(0, b)
+    strs[b] = str.freeze
+  end
+
+  def self.empty_str
+    @empty_str ||= ''.freeze
+  end
+
   class Tree
     def initialize(selected_id, maps)
       @selected_id = selected_id
@@ -85,7 +105,7 @@ module LCF
       code = read_ber s
       indent = read_ber s
       slen = read_ber s
-      str = slen > 0 ? cp932_to_utf8(s.read(slen)) : ''
+      str = slen > 0 ? cp932_to_utf8(s.read(slen)) : empty_str
       pcount = read_ber s
       params = []
       (0...pcount).each { params.push read_ber s }
@@ -147,18 +167,18 @@ module LCF
     cmds = []
     until s.eof?
       id = read_ber s
-      str = ''
+      str = empty_str
       a = b = c = 0
       case id
       when MOVE_SWITCH_ON, MOVE_SWITCH_OFF
         a = read_ber s
       when MOVE_CHANGE_GRAPHIC
         slen = read_ber s
-        str = slen > 0 ? cp932_to_utf8(s.read(slen)) : ''
+        str = slen > 0 ? cp932_to_utf8(s.read(slen)) : empty_str
         a = read_ber s
       when MOVE_PLAY_SOUND
         slen = read_ber s
-        str = slen > 0 ? cp932_to_utf8(s.read(slen)) : ''
+        str = slen > 0 ? cp932_to_utf8(s.read(slen)) : empty_str
         a = read_ber s
         b = read_ber s
         c = read_ber s
@@ -570,7 +590,10 @@ module LCF
           # A chunk that runs past the end of the stream is a truncated file, not
           # a shorter chunk: reading it short would load the file with that
           # field silently garbled or missing.
-          d = len > 0 ? s.read(len) : ''
+          d = if len == 1 then LCF.byte_str(s.getbyte)
+              elsif len > 0 then s.read(len)
+              else LCF.empty_str
+              end
           raise "truncated chunk #{idx}: #{len} bytes declared" if len < 0 || d.nil? || d.bytesize != len
           @data[idx] = d
         end
@@ -937,6 +960,23 @@ module LCF
       end
     end
 
+    # A row of an in-memory table: the span read_row_bytes builds, as a slice of the table's bytes (it shares their
+    # buffer, which the record holding the table keeps anyway) instead of a copy.
+    def read_row_slice s
+      start = s.pos
+      size = s.size
+      until s.eof?
+        idx = LCF.read_ber s
+        break if idx == 0
+
+        len = LCF.read_ber s
+        raise "truncated chunk #{idx}: #{len} bytes declared" if len < 0 || s.pos + len > size
+
+        s.seek(s.pos + len)
+      end
+      s.string.byteslice(start, s.pos - start)
+    end
+
     def row_bytes at
       @io.seek at
       read_row_bytes(@io)
@@ -968,6 +1008,8 @@ module LCF
     # stream (StringIO has no such buffer, so a local, String-only check
     # missed it entirely -- confirmed by CI's real-game boot check).
     def read_row_bytes s
+      return read_row_slice(s) if s.is_a?(StringIO)
+
       out = String.new
       # Every chunk is read into this one buffer before it is appended.
       buf = String.new
