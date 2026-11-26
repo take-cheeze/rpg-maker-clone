@@ -216,6 +216,10 @@ void setup(void) {
   // LVGL's own allocations now draw from too.
   run_step(M, full_gc);
   record_exc(M, "mrb_full_gc");
+#ifdef MRB_CLASS_SHRINK
+  // Every class is defined: their tables give their doubling's spare room back.
+  mrb_class_shrink(M);
+#endif
 
   g_result = kResultPass;
   build_ui("mruby+RGSS+LVGL: OK");
