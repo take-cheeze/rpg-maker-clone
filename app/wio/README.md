@@ -42,6 +42,10 @@ A graph from another libmruby fails to compile or to boot; rebuild it after a ch
 `WIO_ROM_GRAPH` every class is on the heap. A class's structure is fixed once it is in the graph (mruby's
 `doc/guides/rom-class-graph.md`); its constants and class variables still change, in a heap copy.
 
+CI's `wio` job runs these four steps on every build, so the `wio` and `wio_renode_game` firmware it uploads are on a
+graph of their own libmruby; it fails if the check does or the image overflows internal flash. The dump stops before
+a game loads, so the game it boots (`scripts/gen/wio-sd-game.rb`) does not change the graph.
+
 ## The QSPI flash image
 
 The engine is too big for the board's 496 KB of internal flash, so the cold part of it runs in place from the

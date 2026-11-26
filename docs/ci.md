@@ -283,11 +283,11 @@ request rarely touches a device, so a device regression shows up in the merge qu
 To check a branch earlier, use `workflow_dispatch` on it. The smoke jobs need their build job, so
 they are skipped with it. `wasm` still runs on every pull request.
 
-`wio` (with `wio-renode`) runs only on a push to `master` and on `workflow_dispatch`, not in the
-merge queue. The game image is about three times the board's 496 KB of flash, so it links with
-`--noinhibit-exec` (`scripts/wio/build.bash`): the size report shows the overflow, and only an
-undefined reference or a failed vector-table check fails the job. Renode boots it on a 2 MB-flash
-board description.
+`wio` (with `wio-renode`) runs on a push to `master`, on `workflow_dispatch` and on a pull request
+that touches `app/wio/`, not in the merge queue. `wio` dumps the ROM class graph of its own build
+under Renode (no cache, so a graph never outlives its libmruby), fails unless a boot on it leaves
+the same graph, and links it into the `wio` and `wio_renode_game` firmware it uploads
+(`app/wio/README.md`); the link fails if internal flash overflows.
 
 `nano7-qemu` keeps its filter: on a pull request it runs only when its own files changed.
 
