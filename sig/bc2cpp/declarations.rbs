@@ -7951,8 +7951,8 @@ end
 # checked against every writer in mruby-rpg2k/mrblib.
 class RPG2k
   class Window
-    # #initialize stores a `Bitmap.new` in each before its first call on self; the one other writer, #allocate_skin
-    # (#width= / #height=), stores a fresh `Bitmap.new` too. #dispose leaves both set.
+    # The one writer, #allocate_layers, stores a `Bitmap.new` in each: #initialize calls it before its first call on
+    # self, #allocate_skin (#width= / #height=) again. #dispose leaves both set.
     @skin_bmp: RGSS::Bitmap
     @cursor_bmp: RGSS::Bitmap
   end

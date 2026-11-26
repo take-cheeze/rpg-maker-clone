@@ -5171,8 +5171,14 @@ struct SpriteView {
 
 // Marks a SpriteView's header; its data pointer also points back at the view.
 constexpr uint16_t kSpriteViewFlag = LV_IMAGE_FLAGS_USER8;
-// Rows are expanded at most this many bytes at a time (at least one row).
+// Rows are expanded at most this many bytes at a time (at least one row). A
+// deferred bitmap's draw holds two such buffers, the rows and their
+// composition; on the Wio they are what is left of the heap at the title.
+#if defined(WIO_TERMINAL)
+constexpr uint32_t kSpriteViewChunkBytes = 1024;
+#else
 constexpr uint32_t kSpriteViewChunkBytes = 4096;
+#endif
 
 const SpriteView* sprite_view_of(const void* src) {
   const auto* img = static_cast<const lv_image_dsc_t*>(src);

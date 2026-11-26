@@ -120,8 +120,7 @@ class RPG2k
       @arrow_sprite.bitmap = @arrow_bmp
 
       # Created before the first call on self, so no method ever reads either one unset (nil).
-      @skin_bmp = Bitmap.new([width, 1].max, [height, 1].max)
-      @cursor_bmp = Bitmap.new([width, 1].max, [height, 1].max)
+      allocate_layers
       install_skin
     end
 
@@ -316,9 +315,19 @@ class RPG2k
     # (Re)create the skin and cursor bitmaps whenever the window is resized,
     # then redraw both layers and re-centre the (fixed-size) arrow sprite.
     def allocate_skin
-      @skin_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
-      @cursor_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
+      allocate_layers
       install_skin
+    end
+
+    # Both layers keep their draws rather than window-sized ARGB pixels
+    # (Bitmap#_defer, DEFERRED_BITMAP in mruby-rgss/src/lib.cxx): they are only
+    # blits of the windowskin and fills, and a window's pair is most of the
+    # title screen's pixel heap on the Wio.
+    def allocate_layers
+      @skin_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
+      @skin_bmp._defer
+      @cursor_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
+      @cursor_bmp._defer
     end
 
     def install_skin

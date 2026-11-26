@@ -277,9 +277,8 @@ the `wio_renode_game` firmware on the 192 KB board (`--board big` with the
 stderr and one `P <phase>` line per phase (heap extent, bytes in use, stack
 depth, and a live-object census), and exits non-zero unless the run finished
 and every `--expect` regex matched. The firmware has no LCD output (no DMA
-model) and no audio. On the 192 KB board a game does not reach its title
-screen yet: the boot and the database leave too little heap for the title's
-window bitmaps.
+model) and no audio. On the 192 KB board a game reaches and runs its title
+screen (`new_game=0`), but New Game does not reach a map yet.
 
 The image carries palette graphics already decoded (`game_rom.rb --bitmaps`,
 `--no-bitmaps`), which the firmware reads in place from the window instead of
