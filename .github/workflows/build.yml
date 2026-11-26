@@ -775,6 +775,11 @@ jobs:
           ruby scripts/bc2cpp-rpg/static_dispatch_scan_check.rb
           ruby scripts/bc2cpp-rpg/type_check_run_check.rb
 
+      # The engine's own type check (docs/bc2cpp-type-check.md): an RBS contract the code no longer meets (TC1007) or a
+      # constant ratchet regression (TC1017) fails here instead of going unseen.
+      - name: Type check
+        run: ruby scripts/bc2cpp/type_check.rb --no-sends
+
       # Facts for the binding-split check: libclang extraction of every RGSS
       # native binding, cached across runs. Entries are keyed on everything the
       # extractor reads (Nix pin, mruby headers, RGSS sources and repo headers,
