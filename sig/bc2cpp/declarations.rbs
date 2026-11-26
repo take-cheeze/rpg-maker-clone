@@ -77,6 +77,7 @@ class LCF::Array1D
   def []: (untyped) -> untyped
   def []=: (untyped, untyped) -> untyped
   def chunk_bytes: (untyped) -> untyped
+  def chunk_value_bytes: (untyped) -> untyped
   def delete: (untyped) -> untyped
   def field?: (untyped) -> untyped
   def key?: (untyped) -> untyped
@@ -8450,6 +8451,9 @@ end
 class LCF
   %a{bc2cpp:hint}
   def self.binstr: (untyped) -> String
+  # STR_POOL: the argument, the frozen empty String, a pool entry equal to it, or `-s`.
+  %a{bc2cpp:hint}
+  def self.pool_str: (String) -> String
   def self.elements_of: (untyped) -> untyped
   def self.encode_event_commands: (untyped) -> untyped
   def self.pack_int16: (untyped) -> untyped
