@@ -94,6 +94,78 @@ module LCF
     def param(i); @parameters[i] || 0; end
   end
 
+  # EVENT_LIST: an event command list as its LCF bytes and the native index of
+  # each command's offset (LCF.event_index, src/lcf.cxx); the :event_packed
+  # schema type. A list nobody runs holds no command objects: #[] builds a new
+  # LCF::EventCommand on every read, and #command (the interpreter's read) keeps
+  # what it built. Read-only: a writer stores a new list.
+  class EventList
+    # An EventList as is; an Array of EventCommand (or nil) encoded into one.
+    def self.of list
+      return list if list.is_a?(EventList)
+
+      EventList.new(LCF.encode_event_commands(list || []))
+    end
+
+    def self.empty
+      @empty ||= EventList.new(LCF.empty_str)
+    end
+
+    def initialize bytes
+      @bytes = bytes
+      @starts = LCF.event_index(bytes)
+    end
+
+    def size; LCF.event_count(@bytes, @starts) end
+
+    def empty?; size == 0 end
+
+    # Command +i+ as Array#[] indexes: negative from the end, nil outside.
+    def [] i
+      n = size
+      i += n if i < 0
+      return nil if i < 0 || i >= n
+
+      EventCommand.new(LCF.event_code(@bytes, @starts, i), LCF.event_indent(@bytes, @starts, i),
+                       LCF.event_string(@bytes, @starts, i) || LCF.empty_str, LCF.event_params(@bytes, @starts, i))
+    end
+
+    # Command +i+ as #[] reads it, built on its first read and kept, so a list
+    # that runs again (a parallel process restarts every frame) builds nothing.
+    def command i
+      cmds = (@cmds ||= [])
+      cmd = cmds[i]
+      return cmd if cmd
+
+      cmd = self[i]
+      cmds[i] = cmd if cmd
+      cmd
+    end
+
+    # The code / indent of command +i+ (0...size) without building it.
+    def code_at i; LCF.event_code(@bytes, @starts, i) end
+
+    def indent_at i; LCF.event_indent(@bytes, @starts, i) end
+
+    def each
+      i = 0
+      n = size
+      while i < n
+        yield self[i]
+        i += 1
+      end
+      self
+    end
+
+    def to_a
+      out = []
+      each { |c| out.push c }
+      out
+    end
+
+    def to_lcf; @bytes end
+  end
+
   # Decode a packed event command list (the `:event` schema type, used by event
   # pages, common events and move routes). Each command is: code, indent, string
   # (length-prefixed, cp932), then a count-prefixed list of integer parameters.
@@ -151,6 +223,8 @@ module LCF
   # blob #parse_event_commands reads. Its exact inverse: a list parsed then
   # re-encoded without edits reproduces the original bytes.
   def self.encode_event_commands(cmds)
+    return cmds.to_lcf if cmds.is_a?(EventList)
+
     out = String.new
     cmds.each do |c|
       code = c.respond_to?(:code) ? c.code : c[:code]
@@ -325,6 +399,7 @@ module LCF
     when :int32_array ; return unpack_int32(d)
     when :double ; return double_decode(d)
     when :event ; return parse_event_commands(d)
+    when :event_packed ; return EventList.new(d)
     when :move_commands ; return parse_move_commands(d)
     when :string ; return LCF.cp932_to_utf8 d
     when :Tree
@@ -496,7 +571,7 @@ module LCF
     when :int16_packed ; value.is_a?(ShortArray) ? value.to_lcf : pack_int16(value)
     when :int32_array ; pack_int32 value
     when :string ; utf8_to_cp932 value
-    when :event ; encode_event_commands value
+    when :event, :event_packed ; encode_event_commands value
     when :move_commands ; encode_move_commands value
     when :Array1D, :Array2D
       return binstr(value) if value.is_a? String
@@ -662,7 +737,7 @@ module LCF
               else
                 LCF.to_rb chunk_bytes(d), elem
               end
-      if value.is_a?(Array1D) || value.is_a?(Array2D) ||
+      if value.is_a?(Array1D) || value.is_a?(Array2D) || value.is_a?(EventList) ||
          LCF.sget(elem, :type) == :event || LCF.sget(elem, :type) == :move_commands
         @decoded ||= {}
         @decoded[idx] = value

@@ -48,7 +48,7 @@ module LCF
         name: :event_size, type: :int
       },
       22 => {
-        name: :event, type: :event
+        name: :event, type: :event_packed
       },
     }
 
@@ -355,7 +355,7 @@ module LCF
                   }
                 },
                 11 => { name: :event_size, type: :int, default: 4 },
-                12 => { name: :event, type: :event },
+                12 => { name: :event, type: :event_packed },
               }
             },
           } }
@@ -1092,7 +1092,7 @@ module LCF
       # list (per cycles #137-139/#176/#178/#180/#181's own discipline) must
       # do the same.
       51 => { name: :event_command_size, type: :int, default: 0 },
-      52 => { name: :event_commands, type: :event },
+      52 => { name: :event_commands, type: :event_packed },
     }
 
     MAP_EVENT = {
