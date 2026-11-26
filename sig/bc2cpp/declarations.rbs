@@ -13933,3 +13933,22 @@ class Game::MoveRoute
   def do_move: (Game::Character character, untyped, untyped) -> untyped
   def land_jump: (Game::Character character, untyped, untyped, untyped, untyped) -> untyped
 end
+
+# ---- singleton parameters: a `def self.x` parameter read several times, from every caller (checked on entry,
+# DECLARED_PARAM_GUARD).
+module Game::BattlePage
+  # Scene::Battle#run_battle_events passes `ui.battle` (Battle.new_ui's `Game::Battle.new`) through .select_all.
+  def self.active?: (untyped, untyped, untyped, Game::Battle ctx, ?untyped) -> untyped
+end
+module Game::EventPage
+  # Scene::Map passes `@state.party` through .select (Game::State's @party).
+  def self.active?: (untyped, untyped, untyped, Game::Party? party, ?untyped, ?untyped) -> untyped
+end
+module Game::LegacyLsd
+  # The one caller, Game::State.from_lsd, passes its `Game::State.new`.
+  def self.apply: (Game::State state, untyped) -> untyped
+end
+module Game::CommonEvent
+  # Scene::Map#build_resolver passes its @common, a .load result.
+  def self.index: (untyped, Array[Game::CommonEvent::CommonEventRecord] list) -> untyped
+end
