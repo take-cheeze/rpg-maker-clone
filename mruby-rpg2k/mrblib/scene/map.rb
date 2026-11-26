@@ -4325,22 +4325,7 @@ class RPG2k
         build_events(restore_route_index: false)
         @events.each do |e|
           old = placed[e.id]
-          next unless old
-          e.char.x = old.char.x
-          e.char.y = old.char.y
-          e.char.direction = old.char.direction
-          e.char.through = old.char.through
-          e.char.facing_locked = old.char.facing_locked
-          e.char.animation_stopped = old.char.animation_stopped
-          e.char.transparency = old.char.transparency
-          if old.page.equal?(e.page)
-            e.char.set_graphic(old.char.graphic_name, old.char.graphic_index)
-          end
-          next unless e.move_type == Game::MoveType::CUSTOM &&
-                      old.move_type == Game::MoveType::CUSTOM
-          if Game::MoveRoute.same_route?(page_move_route(old.page), page_move_route(e.page))
-            e.route = old.route
-          end
+          carry_event_state(old, e) if old
         end
         rebuild_event_tiles
         # This is an in-place page reselection, not a map change -- a map
@@ -4351,6 +4336,24 @@ class RPG2k
         # The event the foreground interpreter is running may have just been
         # rebuilt; re-point it so "this event" still reaches the live character.
         @active_event = @events.find { |e| e.id == @active_event.id } if @active_event
+      end
+
+      # #rebuild_events_preserving_positions for one event: what +e+, rebuilt for the same id, keeps of +old+.
+      def carry_event_state(old, e)
+        oc = old.char
+        ec = e.char
+        ec.x = oc.x
+        ec.y = oc.y
+        ec.direction = oc.direction
+        ec.through = oc.through
+        ec.facing_locked = oc.facing_locked
+        ec.animation_stopped = oc.animation_stopped
+        ec.transparency = oc.transparency
+        ec.set_graphic(oc.graphic_name, oc.graphic_index) if old.page.equal?(e.page)
+        return unless e.move_type == Game::MoveType::CUSTOM &&
+                      old.move_type == Game::MoveType::CUSTOM
+
+        e.route = old.route if Game::MoveRoute.same_route?(page_move_route(old.page), page_move_route(e.page))
       end
 
       # -- Halt All Movement --------------------------------------------------
@@ -11275,11 +11278,16 @@ class RPG2k
         sig.clear
         return sig if pics.empty?
         sig.push(cam_x, cam_y, @state.screen.shake_offset)
-        pics.keys.sort!.each do |id|
+        # A loop, not a block: `pics[id]` on the parameter itself takes its declared element class (an upvar does not).
+        ids = pics.keys.sort!
+        i = 0
+        while i < ids.size
+          id = ids[i]
           p = pics[id]
           sig.push(id, p.name, p.use_transparent_color, p.x, p.y, p.zoom,
                    p.opacity, p.red, p.green, p.blue, p.saturation,
                    p.fixed_to_map)
+          i += 1
         end
         sig
       end
