@@ -814,7 +814,7 @@ REWRITES = {
         expect_lines: 3, digest: 'debc7ea905c6321e' },
       { first: '      def build_possessed_window',
         last: '      end', # def build_possessed_window's own `end`
-        expect_lines: 13, digest: 'a697c70bf189700b' },
+        expect_lines: 13, digest: '4fcd1a529f42949b' },
     ],
     substitutions: [
       { old: '        invalidate_items',
@@ -829,7 +829,7 @@ REWRITES = {
 ' }, # leader_target_index
       { old: '          build_possessed_window
 ',
-        new: '          (w = left_panel_w; inner_w = w - Window::BORDER * 2; @item_window = Window.new(0, DESC_H, w, DESC_H); @item_window.z = 400; @item_window.windowskin = @skin; c = Bitmap.new(inner_w, LINE_H); c.font.color = Color.new(255, 255, 255, 255); c.draw_text 0, 0, inner_w, LINE_H, term(:possessed_items); count = @pending_item ? @state.party.item_count(@pending_item) : 0; c.draw_text 0, 0, inner_w, LINE_H, count.to_s, 2; @item_window.contents = c)
+        new: '          (w = left_panel_w; inner_w = w - Window::BORDER * 2; @item_window = Window.new(0, DESC_H, w, DESC_H); @item_window.z = 400; @item_window.windowskin = @skin; c = contents_bitmap(inner_w, LINE_H); c.font.color = Color.new(255, 255, 255, 255); c.draw_text 0, 0, inner_w, LINE_H, term(:possessed_items); count = @pending_item ? @state.party.item_count(@pending_item) : 0; c.draw_text 0, 0, inner_w, LINE_H, count.to_s, 2; @item_window.contents = c)
 ' }, # build_possessed_window
     ],
   },
@@ -1069,7 +1069,7 @@ REWRITES = {
         expect_lines: 25, digest: '0479fa75a0e45813' },
       { first: '      def build_mp_cost_window',
         last: '      end', # def build_mp_cost_window's own `end`
-        expect_lines: 14, digest: '4be47a0ab5b1af3a' },
+        expect_lines: 14, digest: '6b6805531a93e16e' },
       { first: '      def total_rows',
         last: '      end', # def total_rows's own `end`
         expect_lines: 3, digest: 'b799f905211fa542' },
@@ -1108,7 +1108,7 @@ REWRITES = {
 ' }, # leave_target
       { old: '          build_mp_cost_window
 ',
-        new: '          (w = left_panel_w; inner_w = w - Window::BORDER * 2; @skill_window = Window.new(0, DESC_H, w, DESC_H); @skill_window.z = 400; @skill_window.windowskin = @skin; c = Bitmap.new(inner_w, LINE_H); c.font.color = Color.new(255, 255, 255, 255); c.draw_text 0, 0, inner_w, LINE_H, term(:mp_cost); sk = @pending_skill ? @state.party.db_skill(@pending_skill) : nil; cost = sk ? @state.party.skill_cost(sk, caster) : 0; c.draw_text 0, 0, inner_w, LINE_H, cost.to_s, 2; @skill_window.contents = c)
+        new: '          (w = left_panel_w; inner_w = w - Window::BORDER * 2; @skill_window = Window.new(0, DESC_H, w, DESC_H); @skill_window.z = 400; @skill_window.windowskin = @skin; c = contents_bitmap(inner_w, LINE_H); c.font.color = Color.new(255, 255, 255, 255); c.draw_text 0, 0, inner_w, LINE_H, term(:mp_cost); sk = @pending_skill ? @state.party.db_skill(@pending_skill) : nil; cost = sk ? @state.party.skill_cost(sk, caster) : 0; c.draw_text 0, 0, inner_w, LINE_H, cost.to_s, 2; @skill_window.contents = c)
 ' }, # build_mp_cost_window
       { old: '        @down_arrow.visible = !!(showing && @top_row + VISIBLE_ROWS < total_rows)
 ',

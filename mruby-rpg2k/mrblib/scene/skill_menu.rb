@@ -651,7 +651,7 @@ class RPG2k
         @desc_window = Window.new(0, 0, w, DESC_H)
         @desc_window.z = 400
         @desc_window.windowskin = @skin
-        @desc_contents = Bitmap.new(inner_w, LINE_H)
+        @desc_contents = contents_bitmap(inner_w, LINE_H)
         @desc_window.contents = @desc_contents
         refresh_desc
       end
@@ -694,7 +694,7 @@ class RPG2k
         @status_window = Window.new(0, DESC_H, SCREEN_W, STATUS_H)
         @status_window.z = 400
         @status_window.windowskin = @skin
-        c = Bitmap.new(inner_w, LINE_H)
+        c = contents_bitmap(inner_w, LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         a = caster
         draw_system_text c, 0, 0, STATUS_LEVEL_X, LINE_H, a.name.to_s, @skin
@@ -740,7 +740,7 @@ class RPG2k
         @skill_window = Window.new(0, LIST_Y, SCREEN_W, LIST_H)
         @skill_window.z = 400
         @skill_window.windowskin = @skin
-        @skill_contents = Bitmap.new(inner_w, VISIBLE_ROWS * LINE_H)
+        @skill_contents = contents_bitmap(inner_w, VISIBLE_ROWS * LINE_H)
         @skill_contents.font.color = Color.new(255, 255, 255, 255)
         @skill_window.contents = @skill_contents
         # #refresh_skill_cursor clamps @top_row for the current cursor row
@@ -829,7 +829,7 @@ class RPG2k
         @skill_window = Window.new(0, DESC_H, w, DESC_H)
         @skill_window.z = 400
         @skill_window.windowskin = @skin
-        c = Bitmap.new(inner_w, LINE_H)
+        c = contents_bitmap(inner_w, LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, LINE_H, term(:mp_cost)
         sk = @pending_skill ? @state.party.db_skill(@pending_skill) : nil
@@ -936,7 +936,7 @@ class RPG2k
         @target_window = Window.new(SCREEN_W - TARGET_W, 0, TARGET_W, SCREEN_H)
         @target_window.z = 450
         @target_window.windowskin = @skin
-        c = Bitmap.new(inner_w, SCREEN_H - Window::BORDER * 2)
+        c = contents_bitmap(inner_w, SCREEN_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         # Row text formats measured on this screen's own genuine RPG_RT.exe
         # frame under wine (cycle #241, the leader at Lv 5 with 56/60 HP and
@@ -1050,7 +1050,7 @@ class RPG2k
                                       SCREEN_W, h + Window::BORDER * 2)
         @teleport_window.z = 450
         @teleport_window.windowskin = @skin
-        c = Bitmap.new(inner_w, h)
+        c = contents_bitmap(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         if rows.empty?
           c.draw_text 0, 0, inner_w, LINE_H, "No destinations"

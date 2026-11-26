@@ -2613,6 +2613,7 @@ class RPG2k::Scene::Base
   def parent: () -> untyped
   def db: () -> untyped
   def map_tree: () -> untyped
+  def contents_bitmap: (untyped, untyped) -> untyped
   def dispose: () -> untyped
   def draw_list_arrow_fallback: (untyped, untyped) -> untyped
   def draw_stat_segment: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped

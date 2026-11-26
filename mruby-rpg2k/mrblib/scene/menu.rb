@@ -396,7 +396,7 @@ class RPG2k
         @command = Window.new(0, 0, cw, @commands.size * LINE_H + Window::BORDER * 2)
         @command.z = 400
         @command.windowskin = @skin
-        cc = Bitmap.new(cw - Window::BORDER * 2, @commands.size * LINE_H)
+        cc = contents_bitmap(cw - Window::BORDER * 2, @commands.size * LINE_H)
         draw_command_labels(cc)
         @command.contents = cc
         refresh_cursor
@@ -404,7 +404,7 @@ class RPG2k
         @status = Window.new(cw, 0, SCREEN_W - cw, SCREEN_H)
         @status.z = 400
         @status.windowskin = @skin
-        sc = Bitmap.new(SCREEN_W - cw - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
+        sc = contents_bitmap(SCREEN_W - cw - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
         sc.font.color = Color.new(255, 255, 255, 255)
         @state.party.actors.each_with_index do |a, i|
           y = i * STATUS_ROW_H
@@ -451,7 +451,7 @@ class RPG2k
       # to be one flat-white `draw_text` run left-aligned at x 0.
       def draw_gold_window
         inner_w = GOLD_WINDOW_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, LINE_H)
+        c = contents_bitmap(inner_w, LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         unit = term(:gold)
         unit_w = c.text_size(unit).width
@@ -883,7 +883,7 @@ class RPG2k
         @confirm_help = Window.new(help_x, help_y, help_w, help_h)
         @confirm_help.z = 500
         @confirm_help.windowskin = @skin
-        hc = Bitmap.new(help_w - Window::BORDER * 2, LINE_H)
+        hc = contents_bitmap(help_w - Window::BORDER * 2, LINE_H)
         hc.font.color = Color.new(255, 255, 255, 255)
         draw_system_text hc, 0, 0, hc.width, LINE_H, text, @skin
         @confirm_help.contents = hc
@@ -893,7 +893,7 @@ class RPG2k
         @confirm_command = Window.new(cmd_x, cmd_y, cmd_w, cmd_h)
         @confirm_command.z = 500
         @confirm_command.windowskin = @skin
-        cc = Bitmap.new(cmd_w - Window::BORDER * 2, cmd_h - Window::BORDER * 2)
+        cc = contents_bitmap(cmd_w - Window::BORDER * 2, cmd_h - Window::BORDER * 2)
         cc.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |l, i|
           draw_system_text cc, 0, i * LINE_H, cc.width, LINE_H, l, @skin
@@ -955,7 +955,7 @@ class RPG2k
         win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
         win.z = 500
         win.windowskin = @skin
-        c = Bitmap.new(w - Window::BORDER * 2, 14)
+        c = contents_bitmap(w - Window::BORDER * 2, 14)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, 14, text
         win.contents = c
