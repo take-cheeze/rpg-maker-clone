@@ -11,6 +11,12 @@ module LCF
   def self.ber_shift: (Numeric, Numeric) -> Integer
   def self.ber_value: (String) -> Integer
   def self.cp932_to_utf8: (String) -> String
+  def self.event_code: (untyped, untyped, untyped) -> Integer
+  def self.event_count: (String, String) -> Integer
+  def self.event_indent: (untyped, untyped, untyped) -> Integer
+  def self.event_index: (String) -> String
+  def self.event_params: (String, String, Numeric) -> Array
+  def self.event_string: (String, String, Numeric) -> String?
   def self.pack_double: (Numeric) -> String
   def self.pack_int32: (Array) -> String
   def self.rom_get: (untyped, untyped) -> untyped
@@ -109,6 +115,21 @@ class LCF::EventCommand
   def string: () -> untyped
   def parameters: () -> untyped
   def initialize: (untyped, untyped, untyped, untyped) -> untyped
+end
+# bc2cpp-native: base_lcf
+class LCF::EventList
+  def []: (untyped) -> untyped
+  def code_at: (untyped) -> untyped
+  def command: (untyped) -> untyped
+  def each: () -> untyped
+  def empty?: () -> untyped
+  def indent_at: (untyped) -> untyped
+  def initialize: (untyped) -> untyped
+  def size: () -> untyped
+  def to_a: () -> untyped
+  def to_lcf: () -> untyped
+  def self.empty: () -> untyped
+  def self.of: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::File
@@ -7254,7 +7275,7 @@ class RPG2k::Scene::Map
   def page_charset_index: (untyped) -> Integer
   def page_charset_name: (untyped) -> untyped
   %a{bc2cpp:hint}
-  def page_commands: (untyped) -> Array
+  def page_commands: (untyped) -> LCF::EventList
   def page_condition_ids: (untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def page_direction: (untyped) -> Integer
@@ -13872,9 +13893,9 @@ class Game::State
   @timers: Array[Game::Timer]
 end
 class Game::Interpreter
-  # #start / #enter_called_list / #return_from_call store an event's, common event's or saved frame's command list:
-  # LCF.parse_event_commands' `EventCommand.new` values (and a synthesized LCF::EventCommand), `[]` when absent.
-  @list: Array[LCF::EventCommand]
+  # #initialize stores LCF::EventList.empty; #start / #enter_called_list / #restore_call_stack store
+  # LCF::EventList.of's result, and #return_from_call a popped list behind its `is_a?(LCF::EventList)` raise.
+  @list: LCF::EventList
   # Every writer stores 0, `@list.size`, a scanned position (`j`, `j + 1`, a find_*_option result behind `if target`),
   # `+= 1`/`-= 1`, or a saved frame's `current_command` behind `>= 0`, so `@list[@index]` is an element read.
   @index: Integer

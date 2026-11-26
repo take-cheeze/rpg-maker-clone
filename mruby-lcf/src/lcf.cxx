@@ -22,11 +22,7 @@
 
 namespace {
 
-mrb_value cp932_to_utf8(mrb_state* M, mrb_value self) {
-  const uint8_t* p;
-  mrb_int l;
-  mrb_get_args(M, "s", &p, &l);
-
+mrb_value cp932_str_to_utf8(mrb_state* M, const uint8_t* p, mrb_int l) {
   std::u32string str;
   for (const uint8_t* i = p; i < p + l; ++i) {
     const uint8_t b[2] = {i[0],
@@ -61,6 +57,13 @@ mrb_value cp932_to_utf8(mrb_state* M, mrb_value self) {
   std::string ret = una::utf32to8(str);
 
   return mrb_str_new(M, ret.data(), ret.size());
+}
+
+mrb_value cp932_to_utf8(mrb_state* M, mrb_value self) {
+  const uint8_t* p;
+  mrb_int l;
+  mrb_get_args(M, "s", &p, &l);
+  return cp932_str_to_utf8(M, p, l);
 }
 
 // Inverse of cp932_to_utf8. The tables live in flash, never on the heap
@@ -183,6 +186,152 @@ mrb_value row_end(mrb_state* M, mrb_value) {
     pos += len;
   }
   return mrb_int_value(M, pos);
+}
+
+// EVENT_LIST: an :event_packed command list (LCF::EventList) is its LCF bytes
+// plus an index String of each command's start offset, little-endian, 2 bytes
+// an entry when every offset fits in 16 bits and 4 otherwise. A command is
+// code, indent, string length + cp932 bytes, parameter count + parameters, each
+// a BER integer, as LCF.parse_event_commands reads it.
+mrb_int event_index_width(mrb_int bytes_len) {
+  return bytes_len <= 0xffff ? 2 : 4;
+}
+
+// Moves pos past the command that starts there; a command cut short raises.
+void event_skip(mrb_state* M, const uint8_t* p, mrb_int l, mrb_int& pos) {
+  ber_read(M, p, l, pos);  // code
+  ber_read(M, p, l, pos);  // indent
+  const mrb_int slen = static_cast<int32_t>(ber_read(M, p, l, pos));
+  if (slen > 0) {
+    if (slen > l - pos)
+      truncated_ber(M);
+    pos += slen;
+  }
+  const mrb_int pcount = static_cast<int32_t>(ber_read(M, p, l, pos));
+  for (mrb_int i = 0; i < pcount; ++i)
+    ber_read(M, p, l, pos);
+}
+
+// LCF.event_index(bytes): the index of bytes, which is checked whole first (a
+// command cut short raises, as parse_event_commands does), so the String is
+// allocated at its exact size.
+mrb_value event_index(mrb_state* M, mrb_value) {
+  const uint8_t* p;
+  mrb_int l;
+  mrb_get_args(M, "s", &p, &l);
+  mrb_int count = 0;
+  for (mrb_int pos = 0; pos < l; ++count)
+    event_skip(M, p, l, pos);
+  const mrb_int width = event_index_width(l);
+  mrb_value out = mrb_str_new_capa(M, count * width);
+  for (mrb_int pos = 0; pos < l;) {
+    char b[4];
+    for (mrb_int i = 0; i < width; ++i)
+      b[i] = static_cast<char>((static_cast<uint32_t>(pos) >> (8 * i)) & 0xff);
+    mrb_str_cat(M, out, b, width);
+    event_skip(M, p, l, pos);
+  }
+  return out;
+}
+
+mrb_int event_count_of(mrb_int bytes_len, mrb_value index) {
+  return RSTRING_LEN(index) / event_index_width(bytes_len);
+}
+
+// The start offset of command i (IndexError outside the list).
+mrb_int event_start(mrb_state* M,
+                    mrb_int bytes_len,
+                    mrb_value index,
+                    mrb_int i) {
+  const mrb_int width = event_index_width(bytes_len);
+  if (i < 0 || i >= event_count_of(bytes_len, index))
+    mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(IndexError)),
+               "event command %i outside the list", i);
+  const uint8_t* e =
+      reinterpret_cast<const uint8_t*>(RSTRING_PTR(index)) + i * width;
+  uint32_t at = 0;
+  for (mrb_int k = width - 1; k >= 0; --k)
+    at = (at << 8) | e[k];
+  return static_cast<mrb_int>(at);
+}
+
+// LCF.event_count(bytes, index): the number of commands.
+mrb_value event_count(mrb_state* M, mrb_value) {
+  mrb_value bytes, index;
+  mrb_get_args(M, "SS", &bytes, &index);
+  return mrb_int_value(M, event_count_of(RSTRING_LEN(bytes), index));
+}
+
+// The position of field +field+ (0 code, 1 indent, 2 string length, 3
+// parameter count) of command i.
+mrb_int event_field(mrb_state* M,
+                    mrb_value bytes,
+                    mrb_value index,
+                    mrb_int i,
+                    int field) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(RSTRING_PTR(bytes));
+  const mrb_int l = RSTRING_LEN(bytes);
+  mrb_int pos = event_start(M, l, index, i);
+  for (int f = 0; f < field; ++f) {
+    const mrb_int v = static_cast<int32_t>(ber_read(M, p, l, pos));
+    if (f == 2 && v > 0)
+      pos += v;
+  }
+  return pos;
+}
+
+mrb_value event_ber_field(mrb_state* M, int field) {
+  mrb_value bytes, index;
+  mrb_int i;
+  mrb_get_args(M, "SSi", &bytes, &index, &i);
+  mrb_int pos = event_field(M, bytes, index, i, field);
+  return int32_value(
+      M, ber_read(M, reinterpret_cast<const uint8_t*>(RSTRING_PTR(bytes)),
+                  RSTRING_LEN(bytes), pos));
+}
+
+// LCF.event_code(bytes, index, i) / LCF.event_indent(bytes, index, i).
+mrb_value event_code(mrb_state* M, mrb_value) {
+  return event_ber_field(M, 0);
+}
+
+mrb_value event_indent(mrb_state* M, mrb_value) {
+  return event_ber_field(M, 1);
+}
+
+// LCF.event_string(bytes, index, i): command i's string as UTF-8, nil when it
+// is empty (the caller hands out LCF.empty_str, as parse_event_commands does).
+mrb_value event_string(mrb_state* M, mrb_value) {
+  mrb_value bytes, index;
+  mrb_int i;
+  mrb_get_args(M, "SSi", &bytes, &index, &i);
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(RSTRING_PTR(bytes));
+  const mrb_int l = RSTRING_LEN(bytes);
+  mrb_int pos = event_field(M, bytes, index, i, 2);
+  const mrb_int slen = static_cast<int32_t>(ber_read(M, p, l, pos));
+  if (slen <= 0)
+    return mrb_nil_value();
+  if (slen > l - pos)
+    truncated_ber(M);
+  return cp932_str_to_utf8(M, p + pos, slen);
+}
+
+// LCF.event_params(bytes, index, i): command i's parameters, a new Array.
+mrb_value event_params(mrb_state* M, mrb_value) {
+  mrb_value bytes, index;
+  mrb_int i;
+  mrb_get_args(M, "SSi", &bytes, &index, &i);
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(RSTRING_PTR(bytes));
+  const mrb_int l = RSTRING_LEN(bytes);
+  mrb_int pos = event_field(M, bytes, index, i, 3);
+  const mrb_int pcount = static_cast<int32_t>(ber_read(M, p, l, pos));
+  mrb_value out = mrb_ary_new_capa(M, pcount > 0 ? pcount : 0);
+  for (mrb_int k = 0; k < pcount; ++k) {
+    const int ai = mrb_gc_arena_save(M);
+    mrb_ary_push(M, out, int32_value(M, ber_read(M, p, l, pos)));
+    mrb_gc_arena_restore(M, ai);
+  }
+  return out;
 }
 
 // LCF.ber_shift(ret, b): read_ber's step from its fifth byte on, where the
@@ -532,6 +681,12 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(ber_at, MRB_SYM(ber_at), MRB_ARGS_REQ(2))              //
       MRB_MT_ENTRY(ber_next, MRB_SYM(ber_next), MRB_ARGS_REQ(2))          //
       MRB_MT_ENTRY(row_end, MRB_SYM(row_end), MRB_ARGS_REQ(2))            //
+      MRB_MT_ENTRY(event_index, MRB_SYM(event_index), MRB_ARGS_REQ(1))    //
+      MRB_MT_ENTRY(event_count, MRB_SYM(event_count), MRB_ARGS_REQ(2))    //
+      MRB_MT_ENTRY(event_code, MRB_SYM(event_code), MRB_ARGS_REQ(3))      //
+      MRB_MT_ENTRY(event_indent, MRB_SYM(event_indent), MRB_ARGS_REQ(3))  //
+      MRB_MT_ENTRY(event_string, MRB_SYM(event_string), MRB_ARGS_REQ(3))  //
+      MRB_MT_ENTRY(event_params, MRB_SYM(event_params), MRB_ARGS_REQ(3))  //
       MRB_MT_ENTRY(append_ber, MRB_SYM(append_ber), MRB_ARGS_REQ(2))      //
       MRB_MT_ENTRY(unpack_int32, MRB_SYM(unpack_int32), MRB_ARGS_REQ(1))  //
       MRB_MT_ENTRY(pack_int32, MRB_SYM(pack_int32), MRB_ARGS_REQ(1))      //
