@@ -3117,8 +3117,43 @@ static void text_stamp(Bitmap& win,
                        int a,
                        int e);
 
+// A list's draws in blocks of kDeferredChunk rather than one array, so a
+// layer of thousands of draws never needs one large block, nor the old and the
+// new array at once while it grows. The first block grows as a vector does, so
+// a list of a few draws stays small.
+constexpr size_t kDeferredChunk = 256;
+class DeferredOps {
+ public:
+  size_t size() const { return size_; }
+  bool empty() const { return size_ == 0; }
+  DeferredOp& operator[](size_t i) {
+    return chunks_[i / kDeferredChunk][i % kDeferredChunk];
+  }
+  const DeferredOp& operator[](size_t i) const {
+    return chunks_[i / kDeferredChunk][i % kDeferredChunk];
+  }
+  void push_back(const DeferredOp& o) {
+    if (chunks_.empty() || chunks_.back().size() == kDeferredChunk)
+      chunks_.emplace_back();
+    std::vector<DeferredOp>& c = chunks_.back();
+    // A later block (or a copied one) takes its whole size at once.
+    if (chunks_.size() > 1 && c.capacity() < kDeferredChunk)
+      c.reserve(kDeferredChunk);
+    c.push_back(o);
+    ++size_;
+  }
+  void swap(DeferredOps& o) {
+    chunks_.swap(o.chunks_);
+    std::swap(size_, o.size_);
+  }
+
+ private:
+  std::vector<std::vector<DeferredOp>> chunks_;
+  size_t size_ = 0;
+};
+
 struct DeferredList {
-  std::vector<DeferredOp> ops;
+  DeferredOps ops;
   std::vector<DeferredSrc> srcs;
   std::vector<std::vector<uint16_t>> bands;       // op indices, ascending
   std::vector<std::array<int32_t, 8>> stretches;  // destination, source rects
@@ -3343,13 +3378,13 @@ static void deferred_cover(DeferredList& L,
 static void deferred_compact(DeferredList& L, int height, bool full = false) {
   if (full ? L.dead == 0 : (L.dead < 8 || L.dead * 2 < L.ops.size()))
     return;
-  std::vector<DeferredOp> live;
-  live.reserve(L.ops.size() - L.dead);
+  DeferredOps live;
   std::vector<int> remap(L.srcs.size(), -1);
   std::vector<DeferredSrc> srcs;
   std::vector<std::array<int32_t, 8>> stretches;
   std::vector<DeferredText> texts;
-  for (DeferredOp e : L.ops) {
+  for (size_t k = 0; k < L.ops.size(); ++k) {
+    DeferredOp e = L.ops[k];
     if (e.kind == kDeferredDead)
       continue;
     if (e.kind == kDeferredStretch) {
