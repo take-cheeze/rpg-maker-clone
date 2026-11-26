@@ -9,7 +9,7 @@ else might hold:
 | Value | Rooted by |
 |---|---|
 | A new object (`[]`, `"..."`, `Klass.new`, ...) | The allocating API puts it in the arena. |
-| A value a call returns | The mruby API, or the `mrb_funcall` contract (`bc2cpp_entry_call`), keeps the result. |
+| A value a call returns | The mruby API, the `mrb_funcall` contract (`bc2cpp_entry_call`), or a direct call's arena exit (CALLEE_ARENA) keeps the result. |
 | A value an API just **unlinked** (`Array#pop`/`shift`, `Hash#delete`) | `GC_KEEP_REMOVED` (`bc2cpp_keep_removed`). |
 | A value a store just **replaced** in a slot (ivar, global, element, upvar) | `GC_KEEP_OVERWRITTEN` (`bc2cpp_keep_old`). |
 
@@ -93,6 +93,24 @@ before the call and uses the local after it holds the only reference, and a coll
   dropped when every name is safe: a clean function, a store helper that roots what it replaces, an audited pure
   name, or a raise-only call outside every handler region. `BC2CPP_ELEMENT_READ_SUMMARY=0` keeps every root.
   A call of a generated name with `$` escapes (`LCF__Array1D_$5b$5d_impl`) is a call too.
+
+## Giving the arena back: CALLEE_ARENA and LOOP_ARENA
+
+The VM drops a call's arena entries when it returns. A direct `_impl` call used to drop none, so every object made
+under a compiled call tree stayed rooted until the outermost VM or host entry returned (a map load kept tens of
+thousands of dead objects in the arena).
+
+- `CALLEE_ARENA` (`tools/bc2cpp/callee_arena.rb`): each `X_impl` returns through `bc2cpp_arena_exit`, which drops the
+  arena to the call's entry index and roots the result. The roots a store took for the value it replaced or removed
+  (the rules above) are recorded, and the exit moves them down instead of dropping them: a caller's register may hold
+  that value. `X_mr` (MULTI_RETURN), resumable bodies and straight-line bodies that call no compiled or by-name code
+  keep their arena (the caller's exit drops the latter's few entries). `BC2CPP_CALLEE_ARENA=0` turns it off.
+- `LOOP_ARENA` (`tools/bc2cpp/loop_arena.rb`): a bytecode loop drops its iteration's entries at each backward jump
+  and roots the registers live past it again. Only for methods where nothing but registers holds values (no handlers,
+  captured registers or placed buffers). `BC2CPP_LOOP_ARENA=0` turns it off.
+
+`gc_root_check.rb` checks that 300 allocating direct calls and a 300-iteration loop leave the arena flat, and that a
+build whose exits keep no records (`BC2CPP_CALLEE_ARENA_KEPT=0`) loses a value its caller still holds.
 
 ## What it does not cover
 
