@@ -394,6 +394,78 @@ assert "LCF.parse_event_commands decodes an event command list" do
   assert_equal 0, cmds[1].param(9) # missing parameters read as 0
 end
 
+assert "LCF::EventList reads each command as parse_event_commands does" do
+  def lcf_command(code, indent, str, params)
+    lcf_ber(code) + lcf_ber(indent) + lcf_ber(str.bytesize) + str +
+      lcf_ber(params.size) + params.map { |p| lcf_ber(p) }.join
+  end
+  blob = lcf_command(10110, 0, "Hi", [1, -2]) + lcf_command(10210, 1, "", [0, 3, 3, 0]) +
+         lcf_command(10, 0, "", []) + lcf_command(12010, 2, "\x82\xa0", [2147483647])
+  list = LCF::EventList.new(blob)
+  ref = LCF.parse_event_commands(blob)
+  assert_equal 4, list.size
+  assert_false list.empty?
+  ref.each_with_index do |c, i|
+    got = list[i]
+    assert_kind_of LCF::EventCommand, got
+    assert_equal [c.code, c.indent, c.string, c.parameters], [got.code, got.indent, got.string, got.parameters]
+    assert_equal c.code, list.code_at(i)
+    assert_equal c.indent, list.indent_at(i)
+  end
+  assert_true list[1].string.equal?(LCF.empty_str)
+  assert_equal 12010, list[-1].code
+  assert_nil list[4]
+  assert_nil list[-5]
+  # Every read builds a new command, so a caller's change to one stays its own.
+  assert_false list[0].equal?(list[0])
+  list[0].parameters.push 9
+  assert_equal [1, -2], list[0].parameters
+  assert_equal [10110, 10210, 10, 12010], list.to_a.map(&:code)
+  codes = []
+  assert_same list, list.each { |c| codes << c.code }
+  assert_equal [10110, 10210, 10, 12010], codes
+  assert_same blob, list.to_lcf
+  assert_same blob, LCF.encode_event_commands(list)
+  assert_raise(IndexError) { list.code_at(4) }
+  # #command keeps what it builds.
+  assert_same list.command(2), list.command(2)
+  assert_equal 10210, list.command(1).code
+  assert_nil list.command(4)
+end
+
+assert "LCF::EventList.of keeps a list and encodes an Array" do
+  cmds = [LCF::EventCommand.new(10110, 0, "Hi", [1, 2]), LCF::EventCommand.new(0, 0, "", [])]
+  list = LCF::EventList.of(cmds)
+  assert_equal LCF.encode_event_commands(cmds), list.to_lcf
+  assert_same list, LCF::EventList.of(list)
+  assert_equal 0, LCF::EventList.of(nil).size
+  assert_true LCF::EventList.empty.empty?
+  assert_same LCF::EventList.empty, LCF::EventList.empty
+end
+
+assert "LCF::EventList checks the whole list when it is built" do
+  ok = lcf_ber(10) + lcf_ber(0) + lcf_ber(2) + "ab" + lcf_ber(1) + lcf_ber(5)
+  assert_equal 1, LCF::EventList.new(ok).size
+  (1...ok.bytesize).each do |n|
+    assert_raise(RuntimeError) { LCF::EventList.new(ok[0, n]) }
+  end
+  # A negative string length or parameter count reads as none, as parse_event_commands reads it.
+  neg = lcf_ber(10) + lcf_ber(0) + lcf_ber(-1) + lcf_ber(-3)
+  list = LCF::EventList.new(neg)
+  assert_equal '', list[0].string
+  assert_equal [], list[0].parameters
+end
+
+assert "LCF::EventList indexes a list past 64 KB with 4-byte offsets" do
+  cmd = lcf_ber(10110) + lcf_ber(1) + lcf_ber(40) + ("x" * 40) + lcf_ber(2) + lcf_ber(7) + lcf_ber(300)
+  n = 0x10000 / cmd.bytesize + 10
+  list = LCF::EventList.new(cmd * n)
+  assert_equal n, list.size
+  assert_equal [7, 300], list[n - 1].parameters
+  assert_equal 1, list.indent_at(n - 1)
+  assert_equal "x" * 40, list[n - 2].string
+end
+
 assert "LCF.parse_move_commands decodes bare and parameterised commands" do
   # face_down (bare), switch_on + id, change_graphic + name/index,
   # play_sound + name/volume/tempo/balance, move_forward (bare).
@@ -513,6 +585,11 @@ assert "LCF::MapUnit parses layers, nested events and event commands" do
   assert_equal 4, page1[:direction]
   assert_equal 10110, page1[:event_commands][0].code
   assert_equal "Hi", page1[:event_commands][0].string
+  # :event_packed: an LCF::EventList, decoded once and kept, like a nested table.
+  assert_kind_of LCF::EventList, page1[:event_commands]
+  assert_same page1[:event_commands], page1[:event_commands]
+  page1[:event_commands] = [LCF::EventCommand.new(10110, 0, "Bye", [])]
+  assert_equal "Bye", page1[:event_commands][0].string
 
   collected = []
   lmu[:events].each { |id, ev| collected << [id, ev[:name]] }
@@ -806,6 +883,39 @@ assert 'Array2D rows of an in-memory table are slices of its bytes' do
   assert_equal e1, t[1].to_lcf
   assert_equal e3, t[3].to_lcf
   assert_raise(RuntimeError) { LCF::Array2D.new(lcf_ber(1) + lcf_ber(1) + lcf_ber(31) + lcf_ber(9), nil) }
+end
+
+assert 'LCF.ber_at / ber_next / row_end read a String through a position' do
+  d = "\x05\x82\x2c\x8f\xff\xff\xff\x7f"
+  assert_equal 5, LCF.ber_at(d, 0)
+  assert_equal 1, LCF.ber_next(d, 0)
+  assert_equal 300, LCF.ber_at(d, 1)
+  assert_equal 3, LCF.ber_next(d, 1)
+  assert_equal(-1, LCF.ber_at(d, 3))
+  assert_equal 8, LCF.ber_next(d, 3)
+  assert_raise(RuntimeError) { LCF.ber_at(d, 8) }
+  assert_raise(RuntimeError) { LCF.ber_next("\x81", 0) }
+  assert_raise(ArgumentError) { LCF.ber_at(d, -1) }
+  row = lcf_array1d([lcf_int_field(12, 5), lcf_field(13, "ab")])
+  assert_equal row.bytesize, LCF.row_end(row + "\x09", 0)
+  # A row without its terminator runs to the end; a chunk past the end raises.
+  assert_equal 3, LCF.row_end(row[0, 3], 0)
+  assert_raise(RuntimeError) { LCF.row_end(row[0, 6], 0) }
+  assert_raise(RuntimeError) { LCF.row_end(lcf_ber(1) + lcf_ber(-1), 0) }
+end
+
+assert 'Array1D and Array2D read a String as they read the same bytes from a stream' do
+  e1 = lcf_array1d([lcf_int_field(31, 1), lcf_field(32, "x" * 40), lcf_field(33, "\x07"), lcf_field(34, '')])
+  body = lcf_array2d([[1, e1], [4, lcf_array1d([lcf_int_field(31, 5)])]])
+  from_str = LCF::Array2D.new(body, nil)
+  from_io = LCF::Array2D.new(StringIO.new(body), nil)
+  assert_equal from_io.to_lcf, from_str.to_lcf
+  assert_equal from_io[1].to_lcf, from_str[1].to_lcf
+  assert_equal LCF::Array1D.new(StringIO.new(e1), nil).to_lcf, LCF::Array1D.new(e1, nil).to_lcf
+  # The truncation checks are the stream reader's.
+  assert_raise(RuntimeError) { LCF::Array1D.new(lcf_ber(1) + lcf_ber(5) + 'ab', nil) }
+  assert_raise(RuntimeError) { LCF::Array1D.new(lcf_ber(70_000) + lcf_ber(0), nil) }
+  assert_raise(RuntimeError) { LCF::Array2D.new(lcf_ber(2) + lcf_ber(1) + lcf_ber(0), nil) }
 end
 
 assert 'Array1D#[]= re-encodes int and string fields through the schema' do

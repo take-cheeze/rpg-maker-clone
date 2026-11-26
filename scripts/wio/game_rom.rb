@@ -21,17 +21,15 @@
 # for a host run (RGSS_ROM_BITMAPS_IMAGE). --limit is the window's size (the
 # real board's chip holds 4 MB).
 
-require 'open3'
 require 'optparse'
-require 'tmpdir'
+require_relative 'bitmap_section'
 
 BITMAPS_PATH = '/rgss/bitmaps'
 config = 'frames=600'
 adds = []
 exclude = %w[Music Sound Movie]
 max_file = nil
-# What the boot draws (the windowskin and the title) first, then the map frame's own material.
-bitmap_dirs = %w[System Title ChipSet FaceSet CharSet GameOver Battle Monster Backdrop Picture Panorama]
+bitmap_dirs = BitmapSection::DIRS
 bitmaps_out = nil
 limit = 0x0100_0000
 OptionParser.new do |o|
@@ -60,61 +58,6 @@ adds.each { |local, card| files << [card, local] }
 
 def align(n, a) = (n + a - 1) / a * a
 
-Decoded = Struct.new(:rel, :w, :h, :bpp, :pal, :idx)
-
-# The palette images among +rels+ (paths under +game+), decoded.
-def decode_bitmaps(game, rels)
-  root = File.expand_path('../..', __dir__)
-  Dir.mktmpdir('rom_bitmaps') do |dir|
-    tool = File.join(dir, 'rom_bitmaps')
-    system(ENV.fetch('CXX', 'c++'), '-std=c++17', '-O2', "-I#{root}/3rd/stb", "-I#{root}/include",
-           "#{root}/scripts/wio/rom_bitmaps.cxx", '-o', tool, exception: true)
-    input = rels.map { |r| "#{File.join(game, r)}\n" }.join
-    stdout, status = Open3.capture2(tool, stdin_data: input, binmode: true)
-    abort 'game_rom: rom_bitmaps failed' unless status.success?
-    pos = 0
-    rels.filter_map do |rel|
-      ok = stdout.getbyte(pos)
-      pos += 1
-      next if ok.zero?
-
-      w, h = stdout.unpack("@#{pos}V2")
-      bpp = [stdout.getbyte(pos + 8), stdout.getbyte(pos + 9)]
-      pal = [stdout.byteslice(pos + 10, 1024), stdout.byteslice(pos + 1034, 1024)]
-      pos += 2058
-      idx = stdout.byteslice(pos, w * h)
-      pos += w * h
-      Decoded.new(rel, w, h, bpp, pal, idx)
-    end
-  end
-end
-
-# The ROM_BITMAP section: header, entries sorted by path, the paths, then the
-# pixel and palette blobs, each 16-aligned (the SAMD51 cache's line) and an
-# identical palette stored once.
-def bitmap_section(entries)
-  entries = entries.sort_by(&:rel)
-  names = entries.map { |e| "#{e.rel}\0".b }
-  head = 16 + (entries.size * 32)
-  at = head
-  path_offs = names.map { |n| at.tap { at += n.bytesize } }
-  blobs = +''.b
-  blobs_at = head + names.sum(&:bytesize)
-  placed = {}
-  place = lambda do |bytes|
-    placed[bytes] ||= begin
-      blobs << ("\0" * ((-(blobs_at + blobs.bytesize)) % 16))
-      at = blobs_at + blobs.bytesize
-      blobs << bytes
-      at
-    end
-  end
-  table = entries.each_with_index.map do |e, i|
-    [path_offs[i], place.call(e.idx), e.w, e.h, place.call(e.pal[0]), place.call(e.pal[1]), *e.bpp].pack('V8')
-  end
-  "RGSSRB01".b + [entries.size, 0].pack('V2') + table.join + names.join + blobs
-end
-
 candidates = bitmap_dirs.flat_map do |want|
   files.filter_map do |card, _|
     rel = card.delete_prefix('/rom/')
@@ -128,7 +71,7 @@ unless candidates.empty?
   # possibly new pair of palettes.
   used = files.sum { |card, local| 12 + card.bytesize + 1 + align(File.size(local), 4) }
   room = limit - 20 - used - config.bytesize - 1 - (12 + BITMAPS_PATH.bytesize + 1 + 16 + 16)
-  decode_bitmaps(game, candidates).each do |e|
+  BitmapSection.decode(game, candidates).each do |e|
     file = 12 + "/rom/#{e.rel}".bytesize + 1 + align(File.size(File.join(game, e.rel)), 4)
     cost = 32 + e.rel.bytesize + 1 + align(e.w * e.h, 16) + 2048 + 32 - file
     next if cost > room
@@ -138,7 +81,7 @@ unless candidates.empty?
   end
 end
 unless packed.empty?
-  section = bitmap_section(packed)
+  section = BitmapSection.build(packed)
   gone = packed.to_h { |e| ["/rom/#{e.rel}", true] }
   files.reject! { |card, _| gone[card] }
   files << [BITMAPS_PATH, section]

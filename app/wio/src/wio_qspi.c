@@ -142,6 +142,40 @@ void wio_cmcc_enable(void) {
   CMCC->CTRL.reg = CMCC_CTRL_CEN;
 }
 
+// Closed for one command at a time, so interrupts wait at most one sector
+// erase; the caller's own code (the SD driver) runs from QSPI in between.
+static uint32_t window_close(void) {
+  const uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  return primask;
+}
+
+static void window_open(uint32_t primask) {
+  wio_qspi_enter_xip();
+  wio_cmcc_enable();
+  __set_PRIMASK(primask);
+}
+
+void wio_qspi_xip_erase_sector(uint32_t addr) {
+  const uint32_t primask = window_close();
+  wio_qspi_erase_sector(addr);
+  window_open(primask);
+}
+
+void wio_qspi_xip_program(uint32_t addr, const uint8_t* data, uint32_t len) {
+  while (len) {
+    uint32_t n = 256u - (addr & 255u);
+    if (n > len)
+      n = len;
+    const uint32_t primask = window_close();
+    wio_qspi_program_page(addr, data, n);
+    window_open(primask);
+    addr += n;
+    data += n;
+    len -= n;
+  }
+}
+
 uint32_t wio_crc32(uint32_t crc, const volatile uint8_t* p, uint32_t len) {
   // Four bits at a time: a 64-byte table instead of 1 KB of internal flash.
   static const uint32_t kNibble[16] = {

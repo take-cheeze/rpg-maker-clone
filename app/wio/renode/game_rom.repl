@@ -10,3 +10,8 @@ diag: Memory.MappedMemory @ sysbus 0x06000000
 // The 5-way switch's port. wio_terminal.repl leaves it out, and an unmapped
 // port reads every pin low: pressed, as the buttons are active low.
 portd: GPIOPort.SAMD21_GPIO @ sysbus 0x41008180
+
+// The QSPI controller and the flash's command set (peripherals/SPI/SAMD51_QSPI.cs), which the IMAGE_CACHE writes go
+// through (app/wio/src/wio_image_cache.h): the real board's 4 MB chip.
+qspi: SPI.SAMD51_QSPI @ sysbus 0x42003400
+    size: 0x400000

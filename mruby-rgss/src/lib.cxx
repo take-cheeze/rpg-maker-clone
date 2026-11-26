@@ -25,6 +25,7 @@
 #include "profiler.hxx"
 #include "rgss_construct.hxx"
 #include "rgss_number.hxx"
+#include "rgss_rom_bitmaps.h"
 #include "shinonome.hxx"
 
 #include <algorithm>
@@ -399,6 +400,10 @@ struct Bitmap {
   // in for an empty `buffer` / `palette`. Readers go through px() and pal().
   const uint8_t* rom_px = nullptr;
   const uint8_t* rom_pal = nullptr;
+  // ROM_BITMAP_SOURCE: the source whose entry `rom_index` this bitmap pins
+  // while rom_px points into it; release_rom drops the pin.
+  const rgss_rom_bitmap_source* rom_src = nullptr;
+  uint32_t rom_index = 0;
   // The draws recorded since Bitmap#_defer, which stand in for `buffer` (then
   // empty); null for an ordinary bitmap. See DEFERRED_BITMAP.
   std::shared_ptr<DeferredList> deferred;
@@ -439,7 +444,16 @@ struct Bitmap {
         lazy(w > 0 && h > 0),
         decoded_from_source(false) {}
 
-  ~Bitmap() { counter() -= bytes(); }
+  ~Bitmap() {
+    counter() -= bytes();
+    release_rom();
+  }
+
+  void release_rom() {
+    if (rom_src)
+      rom_src->release(rom_src->ctx, rom_index);
+    rom_src = nullptr;
+  }
 
   bool indexed() const { return format == LV_COLOR_FORMAT_I8; }
   const uint8_t* px() const { return rom_px ? rom_px : buffer.data(); }
@@ -471,8 +485,10 @@ struct Bitmap {
     direct_format = other.direct_format;
     buffer.swap(px);
     palette = other.palette;
+    release_rom();
     rom_px = other.rom_px;
     rom_pal = other.rom_pal;
+    retain_rom(other);
     deferred = other.deferred;
     lazy = other.lazy;
     dirty = other.dirty;
@@ -481,6 +497,31 @@ struct Bitmap {
   }
 
   Bitmap(const Bitmap&) = delete;
+
+ private:
+  // A copy of a sourced bitmap pins the entry again. The entry is pinned by
+  // `other`, so it is mapped; should the source refuse anyway, the copy takes
+  // the pixels into the heap instead.
+  void retain_rom(const Bitmap& other) {
+    if (!other.rom_src)
+      return;
+    rgss_rom_bitmap_view v;
+    if (other.rom_src->fetch(other.rom_src->ctx, other.rom_index, &v) ==
+        RGSS_ROM_FETCH_OK) {
+      rom_src = other.rom_src;
+      rom_index = other.rom_index;
+      return;
+    }
+    std::fprintf(stderr,
+                 "[RGSS] ROM bitmaps: entry %u is pinned but not mapped; "
+                 "copying it into the heap\n",
+                 static_cast<unsigned>(other.rom_index));
+    const size_t n = static_cast<size_t>(width) * height;
+    pixel_alloc(n, [&] { buffer.assign(rom_px, rom_px + n); });
+    if (rom_pal)
+      palette.assign(rom_pal, rom_pal + 256 * 4);
+    rom_px = rom_pal = nullptr;
+  }
 };
 
 // The RPG2k/RPGXP/RPGVX asset loaders below (bmp_decode_into) are the only
@@ -572,6 +613,7 @@ void promote_to_direct(Bitmap& b, bool keep = true) {
   b.buffer.swap(out);
   std::vector<uint8_t>().swap(b.palette);
   b.rom_px = b.rom_pal = nullptr;
+  b.release_rom();
   b.format = b.direct_format;
   b.counter() += b.bytes();
 }
@@ -1701,6 +1743,10 @@ static bool bmp_decode_into(mrb_state* M,
 // offset (256 B, G, R, A entries) and the direct decode's bytes per pixel.
 // RGSS_ROM_BITMAPS=0 (environment or build define) copies an entry into the
 // heap instead, as the decoder would have.
+//
+// ROM_BITMAP_SOURCE (include/rgss_rom_bitmaps.h): only the directory is
+// mapped, and a source maps each entry's blobs on demand, pinned while a
+// bitmap points into them (Bitmap::rom_src).
 #ifndef RGSS_ROM_BITMAPS
 #define RGSS_ROM_BITMAPS 1
 #endif
@@ -1725,6 +1771,7 @@ struct RomBitmaps {
   const uint8_t* base = nullptr;
   uint32_t count = 0;
   std::string root;
+  const rgss_rom_bitmap_source* src = nullptr;
   const RomBitmapEntry* entries() const {
     return reinterpret_cast<const RomBitmapEntry*>(base + 16);
   }
@@ -1741,19 +1788,21 @@ static uint32_t rom_u32(const uint8_t* p) {
   return p[0] | (p[1] << 8) | (p[2] << 16) | (uint32_t(p[3]) << 24);
 }
 
-// Checks every offset once here, so a lookup can trust the section.
-static bool rom_bitmaps_valid(const uint8_t* base, size_t size) {
-  if (size < 16 || std::memcmp(base, "RGSSRB01", 8) != 0)
+// Checks every offset once here, so a lookup can trust the section: the
+// table and paths within the `mapped` bytes at `base`, the blobs within the
+// section's `size`.
+static bool rom_bitmaps_valid(const uint8_t* base, size_t mapped, size_t size) {
+  if (mapped < 16 || mapped > size || std::memcmp(base, "RGSSRB01", 8) != 0)
     return false;
   const uint32_t n = rom_u32(base + 8);
   if (reinterpret_cast<uintptr_t>(base) % alignof(RomBitmapEntry) != 0 ||
-      n > (size - 16) / sizeof(RomBitmapEntry))
+      n > (mapped - 16) / sizeof(RomBitmapEntry))
     return false;
   const RomBitmapEntry* e = reinterpret_cast<const RomBitmapEntry*>(base + 16);
   const char* prev = nullptr;
   for (uint32_t i = 0; i < n; ++i) {
-    if (e[i].path_off >= size ||
-        !std::memchr(base + e[i].path_off, 0, size - e[i].path_off) ||
+    if (e[i].path_off >= mapped ||
+        !std::memchr(base + e[i].path_off, 0, mapped - e[i].path_off) ||
         e[i].w == 0 || e[i].h == 0 || e[i].w > (1u << 15) ||
         e[i].h > (1u << 15) || e[i].px_off > size ||
         uint64_t(e[i].w) * e[i].h > size - e[i].px_off)
@@ -1770,28 +1819,43 @@ static bool rom_bitmaps_valid(const uint8_t* base, size_t size) {
   return true;
 }
 
-// Installs (or, with a null section, removes) the ROM bitmaps, whose paths
-// are relative to `root`, the game directory as the loader spells it. The
-// section must stay mapped for as long as any bitmap may point into it.
-extern "C" bool rgss_set_rom_bitmaps(const void* section,
-                                     size_t size,
-                                     const char* root) {
+static bool rom_bitmaps_install(const void* section,
+                                size_t mapped,
+                                size_t size,
+                                const char* root,
+                                const rgss_rom_bitmap_source* src) {
   g_rom_bitmaps = RomBitmaps{};
   g_rom_bitmaps_set = true;
   if (!section)
     return true;
   const uint8_t* base = static_cast<const uint8_t*>(section);
-  if (!rom_bitmaps_valid(base, size)) {
+  if (!rom_bitmaps_valid(base, mapped, size)) {
     std::fprintf(stderr,
-                 "[RGSS] ROM bitmaps: a malformed %zu-byte section; decoding "
+                 "[RGSS] ROM bitmaps: a malformed %lu-byte section; decoding "
                  "every image instead\n",
-                 size);
+                 static_cast<unsigned long>(size));
     return false;
   }
   g_rom_bitmaps.base = base;
   g_rom_bitmaps.count = rom_u32(base + 8);
   g_rom_bitmaps.root = root ? root : "";
+  g_rom_bitmaps.src = src;
   return true;
+}
+
+// See include/rgss_rom_bitmaps.h.
+extern "C" bool rgss_set_rom_bitmaps(const void* section,
+                                     size_t size,
+                                     const char* root) {
+  return rom_bitmaps_install(section, size, size, root, nullptr);
+}
+
+extern "C" bool rgss_set_rom_bitmap_source(const void* directory,
+                                           size_t dir_size,
+                                           size_t section_size,
+                                           const char* root,
+                                           const rgss_rom_bitmap_source* src) {
+  return rom_bitmaps_install(directory, dir_size, section_size, root, src);
 }
 
 #if !defined(WIO_TERMINAL)
@@ -1855,7 +1919,35 @@ static bool bmp_init_rom(mrb_state* M,
   const RomBitmapEntry* e = rom_bitmap_find(f);
   if (!e)
     return false;
-  const uint8_t* base = g_rom_bitmaps.base;
+  const uint8_t* px;
+  const uint8_t* pal;
+  // Holds the source's pin until the bitmap takes it, so a raise in between
+  // (alloc_obj's) does not leave the entry pinned for good.
+  struct Pin {
+    const rgss_rom_bitmap_source* src;
+    uint32_t index;
+    ~Pin() {
+      if (src)
+        src->release(src->ctx, index);
+    }
+  } pin{nullptr, static_cast<uint32_t>(e - g_rom_bitmaps.entries())};
+  if (const rgss_rom_bitmap_source* src = g_rom_bitmaps.src) {
+    rgss_rom_bitmap_view v;
+    rgss_rom_fetch_result got = src->fetch(src->ctx, pin.index, &v);
+    if (got == RGSS_ROM_FETCH_FULL) {
+      // The pins of bitmaps nothing holds any more go with their collection.
+      mrb_full_gc(M);
+      got = src->fetch(src->ctx, pin.index, &v);
+    }
+    if (got != RGSS_ROM_FETCH_OK)
+      return false;
+    pin.src = src;
+    px = v.px;
+    pal = v.pal[trans];
+  } else {
+    px = g_rom_bitmaps.base + e->px_off;
+    pal = g_rom_bitmaps.base + e->pal_off[trans];
+  }
   // Built empty: an I8 buffer of the full size would be the very copy this
   // avoids.
   Bitmap& bmp = DataType<Bitmap>::alloc_obj(M, self, 0, 0, LV_COLOR_FORMAT_I8,
@@ -1864,11 +1956,12 @@ static bool bmp_init_rom(mrb_state* M,
   bmp.height = static_cast<int32_t>(e->h);
   bmp.direct_format =
       e->bpp[trans] == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888;
-  const uint8_t* px = base + e->px_off;
-  const uint8_t* pal = base + e->pal_off[trans];
   if (rom_bitmaps_enabled()) {
     bmp.rom_px = px;
     bmp.rom_pal = pal;
+    bmp.rom_src = pin.src;
+    bmp.rom_index = pin.index;
+    pin.src = nullptr;
   } else {
     bmp.counter() -= bmp.bytes();
     bmp.buffer.assign(px, px + size_t(e->w) * e->h);
@@ -1906,6 +1999,88 @@ mrb_value bmp_s_rom_bitmaps(mrb_state* M, V self) {
       std::make_unique<std::vector<uint8_t>>(p, p + RSTRING_LEN(sec)));
   const std::vector<uint8_t>& v = *g_rom_bitmaps_ruby.back();
   return mrb_bool_value(rgss_set_rom_bitmaps(v.data(), v.size(), root));
+}
+
+// The tests' ROM_BITMAP_SOURCE: maps entries out of a whole section in memory,
+// counting pins, and answers FULL once `limit` entries are pinned (FAILED for
+// every entry when `limit` is 0).
+struct TestRomSource {
+  rgss_rom_bitmap_source api;
+  std::vector<uint8_t> section;
+  std::vector<uint32_t> pins;
+  uint32_t limit;
+};
+static std::vector<std::unique_ptr<TestRomSource>> g_rom_sources_ruby;
+
+static rgss_rom_fetch_result test_rom_fetch(void* ctx,
+                                            uint32_t index,
+                                            rgss_rom_bitmap_view* out) {
+  TestRomSource& t = *static_cast<TestRomSource*>(ctx);
+  if (t.limit == 0 || index >= t.pins.size())
+    return RGSS_ROM_FETCH_FAILED;
+  if (!t.pins[index] && std::count_if(t.pins.begin(), t.pins.end(),
+                                      [](uint32_t n) { return n != 0; }) >=
+                            static_cast<long>(t.limit))
+    return RGSS_ROM_FETCH_FULL;
+  const RomBitmapEntry& e =
+      reinterpret_cast<const RomBitmapEntry*>(t.section.data() + 16)[index];
+  out->px = t.section.data() + e.px_off;
+  out->pal[0] = t.section.data() + e.pal_off[0];
+  out->pal[1] = t.section.data() + e.pal_off[1];
+  ++t.pins[index];
+  return RGSS_ROM_FETCH_OK;
+}
+
+static void test_rom_release(void* ctx, uint32_t index) {
+  TestRomSource& t = *static_cast<TestRomSource*>(ctx);
+  if (index >= t.pins.size() || t.pins[index] == 0) {
+    std::fprintf(stderr, "[RGSS] ROM bitmaps: entry %u released unpinned\n",
+                 static_cast<unsigned>(index));
+    std::abort();
+  }
+  --t.pins[index];
+}
+
+// Ruby: Bitmap._rom_bitmap_source(section, root, limit) -> whether it was
+// taken. The directory is the section's bytes before its first blob.
+mrb_value bmp_s_rom_bitmap_source(mrb_state* M, V self) {
+  (void)self;
+  mrb_value sec;
+  const char* root;
+  mrb_int limit;
+  mrb_get_args(M, "Szi", &sec, &root, &limit);
+  auto t = std::make_unique<TestRomSource>();
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(RSTRING_PTR(sec));
+  t->section.assign(p, p + RSTRING_LEN(sec));
+  t->limit = static_cast<uint32_t>(limit);
+  size_t dir = t->section.size();
+  const uint32_t n = t->section.size() >= 16 ? rom_u32(p + 8) : 0;
+  if (n <= (t->section.size() - std::min<size_t>(t->section.size(), 16)) /
+               sizeof(RomBitmapEntry)) {
+    const RomBitmapEntry* e = reinterpret_cast<const RomBitmapEntry*>(p + 16);
+    for (uint32_t i = 0; i < n; ++i)
+      dir = std::min<size_t>(
+          dir, std::min({e[i].px_off, e[i].pal_off[0], e[i].pal_off[1]}));
+  }
+  t->pins.assign(n, 0);
+  t->api = {test_rom_fetch, test_rom_release, t.get()};
+  const bool ok = rgss_set_rom_bitmap_source(t->section.data(), dir,
+                                             t->section.size(), root, &t->api);
+  g_rom_sources_ruby.push_back(std::move(t));
+  return mrb_bool_value(ok);
+}
+
+// Ruby: Bitmap._rom_bitmap_pins -> the pins every test source holds. A test
+// hook: kept out of the direct-call table (binding_split.rb) by checking its
+// arguments after the first statement, as the other hooks here do.
+mrb_value bmp_s_rom_bitmap_pins(mrb_state* M, V self) {
+  (void)self;
+  mrb_get_args(M, "");
+  mrb_int n = 0;
+  for (const auto& t : g_rom_sources_ruby)
+    for (uint32_t c : t->pins)
+      n += c;
+  return mrb_int_value(M, n);
 }
 #endif
 
@@ -2914,6 +3089,7 @@ bool deferred_begin(Bitmap& b) {
   std::vector<uint8_t>().swap(b.buffer);
   std::vector<uint8_t>().swap(b.palette);
   b.rom_px = b.rom_pal = nullptr;
+  b.release_rom();
   b.lazy = false;
   b.format = b.direct_format = LV_COLOR_FORMAT_ARGB8888;
   b.counter() += b.bytes();
@@ -10339,6 +10515,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                    MRB_ARGS_NONE())  //
       MRB_MT_ENTRY(bmp_s_rom_bitmaps, MRB_SYM(_rom_bitmaps),
                    MRB_ARGS_REQ(2))  //
+      MRB_MT_ENTRY(bmp_s_rom_bitmap_source, MRB_SYM(_rom_bitmap_source),
+                   MRB_ARGS_REQ(3))  //
+      MRB_MT_ENTRY(bmp_s_rom_bitmap_pins, MRB_SYM(_rom_bitmap_pins),
+                   MRB_ARGS_NONE())  //
 #endif
   };
 #undef MRB_MT_CLASS

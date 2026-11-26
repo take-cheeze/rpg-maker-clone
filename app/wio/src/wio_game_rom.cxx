@@ -111,6 +111,18 @@ bool wio_game_rom_present() {
   return header() != nullptr;
 }
 
+size_t wio_game_rom_size() {
+  const RomHeader* h = header();
+  if (!h)
+    return 0;
+  size_t end = h->config_off + h->config_len;
+  const RomEntry* e = reinterpret_cast<const RomEntry*>(h + 1);
+  for (uint32_t i = 0; i < h->count; ++i)
+    if (e[i].data_off + e[i].len > end)
+      end = e[i].data_off + e[i].len;
+  return end;
+}
+
 const char* wio_game_files_begin() {
   static char line[64];
   if (line[0])

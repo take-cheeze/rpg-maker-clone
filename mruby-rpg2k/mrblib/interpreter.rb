@@ -357,7 +357,7 @@ module Game
 
     def initialize(state)
       @state = state
-      @list = []
+      @list = LCF::EventList.empty
       @index = 0
       @running = false
       @call_stack = []
@@ -503,11 +503,15 @@ module Game
     # whichever list @list currently holds, all the way back up.
     attr_reader :call_frame_event_id
 
+    # +commands+ is an LCF::EventList, or an Array of LCF::EventCommand (a saved frame, a built list), which is
+    # encoded into one, so @list is always an EventList.
     def start(commands)
       list = commands || []
-      raise TypeError, "event command list is #{list.class}, not Array" unless list.is_a?(Array)
+      unless list.is_a?(Array) || list.is_a?(LCF::EventList)
+        raise TypeError, "event command list is #{list.class}, not an LCF::EventList or Array"
+      end
 
-      @list = list
+      @list = LCF::EventList.of(list)
       @index = 0
       @running = true
       # REUSE_QUEUES: a looping parallel event restarts every frame, so the run's
@@ -747,7 +751,7 @@ module Game
         # frame (another cascaded event, or a same-frame resume) must not
         # sneak in "just one more" command on top of it.
         break if @frame_steps >= MAX_STEPS
-        cmd = @list[@index]
+        cmd = @list.command(@index)
         @index += 1
         # A hard error naming the bad entry, not a NoMethodError deep inside a `do_*` handler. It is also the
         # checked fact bc2cpp's RBS_CHECKED_PARAMS proves `execute(LCF::EventCommand)` from.
@@ -818,7 +822,7 @@ module Game
     def return_from_call
       return false if @call_stack.empty?
       list, @index, @call_frame_event_id = @call_stack.pop
-      raise TypeError, "call stack list is #{list.class}, not Array" unless list.is_a?(Array)
+      raise TypeError, "call stack list is #{list.class}, not LCF::EventList" unless list.is_a?(LCF::EventList)
 
       @list = list
       true
@@ -1033,7 +1037,7 @@ module Game
       # Pushed into a literal so @call_stack is provably an Array (a `map` result on an untyped receiver is not).
       @call_stack = []
       frames[0...-1].each do |f|
-        @call_stack << [f.commands || [], f.current_command || 0, f.event_id || 0]
+        @call_stack << [LCF::EventList.of(f.commands), f.current_command || 0, f.event_id || 0]
       end
       outer = frames.first
       @event_id = outer.event_id if outer.event_id && outer.event_id != 0
@@ -1157,10 +1161,11 @@ module Game
       want = stay ? Cmd::INN_STAY : Cmd::INN_NO_STAY
       i = @index
       while i < @list.size
-        c = @list[i]
-        return i + 1 if c.indent == @inn_indent && c.code == want
-        return i if c.indent == @inn_indent && c.code == Cmd::INN_END
-        return nil if c.indent < @inn_indent
+        indent = @list.indent_at(i)
+        code = @list.code_at(i)
+        return i + 1 if indent == @inn_indent && code == want
+        return i if indent == @inn_indent && code == Cmd::INN_END
+        return nil if indent < @inn_indent
         i += 1
       end
       nil
@@ -1187,10 +1192,11 @@ module Game
       want = transacted ? Cmd::SHOP_TRANSACTION : Cmd::SHOP_NO_TRANSACTION
       i = @index
       while i < @list.size
-        c = @list[i]
-        return i + 1 if c.indent == @shop_indent && c.code == want
-        return i if c.indent == @shop_indent && c.code == Cmd::SHOP_END
-        return nil if c.indent < @shop_indent
+        indent = @list.indent_at(i)
+        code = @list.code_at(i)
+        return i + 1 if indent == @shop_indent && code == want
+        return i if indent == @shop_indent && code == Cmd::SHOP_END
+        return nil if indent < @shop_indent
         i += 1
       end
       nil
@@ -1234,10 +1240,11 @@ module Game
       want = BATTLE_HANDLERS[result]
       i = @index
       while i < @list.size
-        c = @list[i]
-        return i + 1 if c.indent == @battle_indent && c.code == want
-        return i if c.indent == @battle_indent && c.code == Cmd::END_BATTLE
-        return nil if c.indent < @battle_indent
+        indent = @list.indent_at(i)
+        code = @list.code_at(i)
+        return i + 1 if indent == @battle_indent && code == want
+        return i if indent == @battle_indent && code == Cmd::END_BATTLE
+        return nil if indent < @battle_indent
         i += 1
       end
       nil
@@ -1474,12 +1481,14 @@ module Game
     end
 
     # Push the running list (with +frame_event_id+ as its frame's identity) and continue at the top of +cmds+.
-    # The Array check sits here, outside #do_call_common_event's `rescue`, so bc2cpp proves @list an Array from it.
+    # The type check sits here, outside #do_call_common_event's `rescue`.
     def enter_called_list(cmds, frame_event_id)
-      raise TypeError, "called command list is #{cmds.class}, not Array" unless cmds.is_a?(Array)
+      unless cmds.is_a?(Array) || cmds.is_a?(LCF::EventList)
+        raise TypeError, "called command list is #{cmds.class}, not an LCF::EventList or Array"
+      end
 
       @call_stack.push [@list, @index, frame_event_id]
-      @list = cmds
+      @list = LCF::EventList.of(cmds)
       @index = 0
     end
 
@@ -1547,8 +1556,7 @@ module Game
 
     def skip_to(codes, indent)
       while @index < @list.size
-        c = @list[@index]
-        break if c.indent == indent && codes.include?(c.code)
+        break if @list.indent_at(@index) == indent && codes.include?(@list.code_at(@index))
         @index += 1
       end
     end
@@ -1561,11 +1569,13 @@ module Game
     # Jump to the (first) label command with the given id.
     def do_jump_label(cmd)
       target = cmd.param(0)
-      @list.each_with_index do |c, j|
-        if c.code == Cmd::LABEL && c.param(0) == target
+      j = 0
+      while j < @list.size
+        if @list.code_at(j) == Cmd::LABEL && @list.command(j).param(0) == target
           @index = j
           return
         end
+        j += 1
       end
     end
 
@@ -1573,8 +1583,7 @@ module Game
     def do_end_loop(cmd)
       j = @index - 2 # scan back from before this End Loop
       while j >= 0
-        c = @list[j]
-        if c.indent == cmd.indent && c.code == Cmd::LOOP
+        if @list.indent_at(j) == cmd.indent && @list.code_at(j) == Cmd::LOOP
           @index = j + 1
           return
         end
@@ -1598,7 +1607,7 @@ module Game
     def do_break_loop(_cmd)
       j = @index
       while j < @list.size
-        if @list[j].code == Cmd::END_LOOP
+        if @list.code_at(j) == Cmd::END_LOOP
           @index = j + 1
           return
         end
@@ -1610,8 +1619,8 @@ module Game
 
     def do_show_message(cmd)
       lines = [cmd.string]
-      while @index < @list.size && @list[@index].code == Cmd::MESSAGE_2
-        lines.push @list[@index].string
+      while @index < @list.size && @list.code_at(@index) == Cmd::MESSAGE_2
+        lines.push @list.command(@index).string
         @index += 1
       end
       @message_lines = lines
@@ -1621,7 +1630,7 @@ module Game
       # appear below them, instead of the window closing and a new one
       # opening. Peek at the next command now, before it runs, so the scene
       # knows at reveal-completion time whether to keep the window.
-      next_cmd = @list[@index]
+      next_cmd = @list.command(@index)
       @message_followup =
         if next_cmd && next_cmd.indent == cmd.indent && next_cmd.code == Cmd::SHOW_CHOICES
           :choice
@@ -1688,11 +1697,12 @@ module Game
       labels = []
       i = @index
       while i < @list.size
-        c = @list[i]
-        break if c.indent == cmd.indent && c.code == Cmd::CHOICE_END
-        if c.indent == cmd.indent && c.code == Cmd::CHOICE_OPTION &&
-           c.param(0) < MAX_CHOICES
-          labels[c.param(0)] = c.string
+        same_indent = @list.indent_at(i) == cmd.indent
+        code = @list.code_at(i)
+        break if same_indent && code == Cmd::CHOICE_END
+        if same_indent && code == Cmd::CHOICE_OPTION
+          c = @list.command(i)
+          labels[c.param(0)] = c.string if c.param(0) < MAX_CHOICES
         end
         i += 1
       end
@@ -1707,9 +1717,10 @@ module Game
     def find_choice_option(index)
       i = @index
       while i < @list.size
-        c = @list[i]
-        return i + 1 if c.indent == @choice_indent && c.code == Cmd::CHOICE_OPTION && c.param(0) == index
-        return i if c.indent == @choice_indent && c.code == Cmd::CHOICE_END
+        same_indent = @list.indent_at(i) == @choice_indent
+        code = @list.code_at(i)
+        return i + 1 if same_indent && code == Cmd::CHOICE_OPTION && @list.command(i).param(0) == index
+        return i if same_indent && code == Cmd::CHOICE_END
         i += 1
       end
       nil
@@ -1862,7 +1873,7 @@ module Game
       @inn_indent = cmd.indent
       # Handler branches, when present, open with an INN_STAY marker immediately
       # after the command (as a Show Choices block opens with CHOICE_OPTION).
-      nxt = @list[@index]
+      nxt = @list.command(@index)
       @inn_has_handlers =
         !nxt.nil? && nxt.code == Cmd::INN_STAY && nxt.indent == cmd.indent
       req = InnRequest.new
@@ -1886,7 +1897,7 @@ module Game
     def do_open_shop(cmd)
       mode = cmd.param(0)
       @shop_indent = cmd.indent
-      nxt = @list[@index]
+      nxt = @list.command(@index)
       @shop_has_handlers =
         !nxt.nil? && nxt.code == Cmd::SHOP_TRANSACTION && nxt.indent == cmd.indent
       req = ShopRequest.new
@@ -1932,7 +1943,7 @@ module Game
       troop_id = cmd.param(0) == 0 ? cmd.param(1) : variables[cmd.param(1)]
       @battle_indent = cmd.indent
       @battle_escape_aborts = escape_mode == 1
-      nxt = @list[@index]
+      nxt = @list.command(@index)
       @battle_has_handlers =
         !nxt.nil? && nxt.code == Cmd::VICTORY_HANDLER && nxt.indent == cmd.indent
       return skip_invalid_troop(troop_id) unless party.db_enemy_group(troop_id)
@@ -2047,7 +2058,7 @@ module Game
       cmds = []
       event_id = party.death_handler_event
       ev_cmds = event_id > 0 ? common_event_commands(event_id) : nil
-      cmds.concat(ev_cmds) if ev_cmds
+      cmds.concat(ev_cmds.to_a) if ev_cmds
       tp = party.death_handler_teleport
       cmds << LCF::EventCommand.new(Cmd::TELEPORT, 0, '', tp) if tp
       return if cmds.empty?
