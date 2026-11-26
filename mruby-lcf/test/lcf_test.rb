@@ -779,6 +779,35 @@ assert 'LCF loops preserve terminator, EOF, and StopIteration result behavior' d
   assert_equal '', LCF::Array2D.allocate.__send__(:read_row_bytes, stream)
 end
 
+assert 'LCF shares one frozen String per byte value and one empty String' do
+  assert_equal "\x07", LCF.byte_str(7)
+  assert_true LCF.byte_str(7).frozen?
+  assert_true LCF.byte_str(7).equal?(LCF.byte_str(7))
+  assert_equal "\xff", LCF.byte_str(255)
+  assert_nil LCF.byte_str(nil)
+  assert_equal '', LCF.empty_str
+  assert_true LCF.empty_str.frozen?
+  assert_true LCF.empty_str.equal?(LCF.empty_str)
+  body = lcf_array1d([lcf_field(1, "\x07"), lcf_field(2, ''), lcf_field(3, "ab")])
+  assert_equal body, LCF::Array1D.new(body, nil).to_lcf
+  cmds = LCF.parse_event_commands(lcf_ber(10) + lcf_ber(0) + lcf_ber(0) + lcf_ber(0))
+  assert_true cmds[0].string.equal?(LCF.empty_str)
+  assert_raise(FrozenError) { cmds[0].string << 'x' }
+  # A 1-byte chunk cut short is still a truncated file.
+  assert_raise(RuntimeError) { LCF::Array1D.new(lcf_ber(1) + lcf_ber(1), nil) }
+end
+
+assert 'Array2D rows of an in-memory table are slices of its bytes' do
+  e1 = lcf_array1d([lcf_int_field(31, 1), lcf_field(32, "x" * 40)])
+  e3 = lcf_array1d([lcf_int_field(31, 5)])
+  body = lcf_array2d([[1, e1], [3, e3]])
+  t = LCF::Array2D.new(body, nil)
+  assert_equal body, t.to_lcf
+  assert_equal e1, t[1].to_lcf
+  assert_equal e3, t[3].to_lcf
+  assert_raise(RuntimeError) { LCF::Array2D.new(lcf_ber(1) + lcf_ber(1) + lcf_ber(31) + lcf_ber(9), nil) }
+end
+
 assert 'Array1D#[]= re-encodes int and string fields through the schema' do
   schema = { elements: LCF::Schema::SAVE_MOVABLE }
   a = LCF::Array1D.new(lcf_array1d([lcf_int_field(12, 5), lcf_int_field(13, 7),
