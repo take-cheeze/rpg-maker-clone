@@ -64,7 +64,14 @@ The firmware takes the game's files from the microSD card when it has a `/rpg2k`
 contents (`/rpg2k/RPG_RT.ldb`, `/rpg2k/Title/...`); otherwise from the game image in the QSPI flash. The card must be
 FAT12/16/32: exFAT (how SDXC cards of 64 GB and up come) is not read. Japanese file names work. The boot screen and
 the `[Wio]` log lines say where the files come from, or why the card was not used. `WIO_SD=0` at build time leaves
-the card driver out. `wio` itself does not play the game yet; `wio_renode_game` does, under Renode.
+the card driver out.
+
+A card game's palette images can come already decoded: `scripts/wio/sd_bitmaps.rb GAME_DIR` writes
+`GAME_DIR/wio_bitmaps.bin`, which goes on the card as `/rpg2k/wio_bitmaps.bin` (rebuild it whenever the images
+change). The firmware then copies each image into the QSPI flash after the code and game images the first time it is
+drawn (about 45 ms per 4 KB erased, plus the card read) and draws it from there instead of decoding its PNG into RAM;
+later boots keep what was copied, and the oldest copies make room for new ones. Without the file, or for an image that
+cannot be copied, the PNG is decoded as before, and a `[Wio] image cache:` line says why. `wio` itself does not play the game yet; `wio_renode_game` does, under Renode.
 
 ## Renode: `wio_sim`
 
