@@ -1025,7 +1025,10 @@ class RPG2k
 
         @player_sprite = Sprite.new(@map_viewport)
         @player_sprite.z = 100
+        # The hero's and the vehicles' cells record their draws too, so a frame
+        # is read from the CharSet sheet rather than copied out of it.
         @player_bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+        @player_bmp._defer
         @player_sprite.bitmap = @player_bmp
 
         # One sprite per vehicle (drawn just under the hero, so a boarded party
@@ -1038,6 +1041,7 @@ class RPG2k
           spr.z = 99
           spr.visible = false
           bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+          bmp._defer
           spr.bitmap = bmp
           @vehicle_sprites[type] = spr
           @vehicle_bmps[type] = bmp
@@ -1048,6 +1052,7 @@ class RPG2k
         @airship_shadow.z = 98 # under the vehicles, over the ground / events
         @airship_shadow.visible = false
         shadow = Bitmap.new(TILE, TILE)
+        shadow._defer
         shadow.fill_rect 3, TILE - 8, TILE - 6, 5, Color.new(0, 0, 0, 96)
         @airship_shadow.bitmap = shadow
 
@@ -11250,6 +11255,7 @@ class RPG2k
         return if pics.empty? && @picture_bmp.nil?
         unless @picture_bmp
           @picture_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+          @picture_bmp._defer
           @picture_sprite.bitmap = @picture_bmp
         end
         @picture_bmp.clear
