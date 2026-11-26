@@ -6,6 +6,8 @@ module LCF
   def rom_keys: (untyped) -> untyped
   def utf8_to_cp932: (String) -> String
   def self.append_ber: (String, Numeric) -> untyped
+  def self.ber_at: (String, Numeric) -> Integer
+  def self.ber_next: (String, Numeric) -> Integer
   def self.ber_shift: (Numeric, Numeric) -> Integer
   def self.ber_value: (String) -> Integer
   def self.cp932_to_utf8: (String) -> String
@@ -13,6 +15,7 @@ module LCF
   def self.pack_int32: (Array) -> String
   def self.rom_get: (untyped, untyped) -> untyped
   def self.rom_keys: (untyped) -> untyped
+  def self.row_end: (String, Numeric) -> Integer
   def self.unpack_double: (untyped) -> Float?
   def self.unpack_int32: (String) -> Array
   def self.utf8_to_cp932: (String) -> String
@@ -72,6 +75,7 @@ class LCF::Array1D
   def field?: (untyped) -> untyped
   def key?: (untyped) -> untyped
   def load_lazy: () -> untyped
+  def read_chunks: (untyped) -> untyped
   def self.blank_record: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
@@ -86,6 +90,7 @@ class LCF::Array2D
   def load_lazy: () -> untyped
   def peek: (untyped) -> untyped
   def read_row_slice: (untyped) -> untyped
+  def read_rows: (untyped) -> untyped
   def row_bytes: (untyped) -> untyped
   def same_schema?: (untyped) -> untyped
   def self.blank_table: (untyped) -> untyped
