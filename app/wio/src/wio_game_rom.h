@@ -33,6 +33,8 @@ constexpr size_t kDiagSize = 0x10000;
 
 // Whether the image's header is there.
 bool wio_game_rom_present();
+// The image's bytes from game_rom_base(), 0 without one.
+size_t wio_game_rom_size();
 // Mounts the card (wio_sd_begin) and picks where the game's files come from:
 // a one-line summary for the screen, also logged with a [Wio] tag.
 const char* wio_game_files_begin();

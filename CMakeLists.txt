@@ -938,6 +938,18 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
     walk_core_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk)
   add_test(NAME walk_core COMMAND walk_core_test)
 
+  # The Wio Terminal's QSPI image cache core (app/wio/src/wio_image_cache.cxx,
+  # IMAGE_CACHE): plain C++ over a flash and a card-file interface, run here
+  # against a NOR-like flash in memory.
+  add_executable(
+    wio_image_cache_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/wio/src/wio_image_cache.cxx
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/wio/test/image_cache_test.cxx)
+  target_include_directories(
+    wio_image_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app/wio/src
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  add_test(NAME wio_image_cache COMMAND wio_image_cache_test)
+
   # A host-side implementation of the hb_raw_surface/hb_sdk subset the iPod nano
   # 7G app calls, linking app/nano7/rpg2k_walk/rpg2k_walk.c itself unmodified --
   # unlike walk_core above, this exercises the app's real entry points

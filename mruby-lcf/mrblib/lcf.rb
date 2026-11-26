@@ -94,21 +94,102 @@ module LCF
     def param(i); @parameters[i] || 0; end
   end
 
+  # EVENT_LIST: an event command list as its LCF bytes and the native index of
+  # each command's offset (LCF.event_index, src/lcf.cxx); the :event_packed
+  # schema type. A list nobody runs holds no command objects: #[] builds a new
+  # LCF::EventCommand on every read, and #command (the interpreter's read) keeps
+  # what it built. Read-only: a writer stores a new list.
+  class EventList
+    # An EventList as is; an Array of EventCommand (or nil) encoded into one.
+    def self.of list
+      return list if list.is_a?(EventList)
+
+      EventList.new(LCF.encode_event_commands(list || []))
+    end
+
+    def self.empty
+      @empty ||= EventList.new(LCF.empty_str)
+    end
+
+    def initialize bytes
+      @bytes = bytes
+      @starts = LCF.event_index(bytes)
+    end
+
+    def size; LCF.event_count(@bytes, @starts) end
+
+    def empty?; size == 0 end
+
+    # Command +i+ as Array#[] indexes: negative from the end, nil outside.
+    def [] i
+      n = size
+      i += n if i < 0
+      return nil if i < 0 || i >= n
+
+      EventCommand.new(LCF.event_code(@bytes, @starts, i), LCF.event_indent(@bytes, @starts, i),
+                       LCF.event_string(@bytes, @starts, i) || LCF.empty_str, LCF.event_params(@bytes, @starts, i))
+    end
+
+    # Command +i+ as #[] reads it, built on its first read and kept, so a list
+    # that runs again (a parallel process restarts every frame) builds nothing.
+    def command i
+      cmds = (@cmds ||= [])
+      cmd = cmds[i]
+      return cmd if cmd
+
+      cmd = self[i]
+      cmds[i] = cmd if cmd
+      cmd
+    end
+
+    # The code / indent of command +i+ (0...size) without building it.
+    def code_at i; LCF.event_code(@bytes, @starts, i) end
+
+    def indent_at i; LCF.event_indent(@bytes, @starts, i) end
+
+    def each
+      i = 0
+      n = size
+      while i < n
+        yield self[i]
+        i += 1
+      end
+      self
+    end
+
+    def to_a
+      out = []
+      each { |c| out.push c }
+      out
+    end
+
+    def to_lcf; @bytes end
+  end
+
   # Decode a packed event command list (the `:event` schema type, used by event
   # pages, common events and move routes). Each command is: code, indent, string
   # (length-prefixed, cp932), then a count-prefixed list of integer parameters.
   # The list runs to the end of the blob.
   def self.parse_event_commands d
-    s = StringIO.new d
     cmds = []
-    until s.eof?
-      code = read_ber s
-      indent = read_ber s
-      slen = read_ber s
-      str = slen > 0 ? cp932_to_utf8(s.read(slen)) : empty_str
-      pcount = read_ber s
+    pos = 0
+    size = d.bytesize
+    while pos < size
+      code = ber_at d, pos
+      pos = ber_next d, pos
+      indent = ber_at d, pos
+      pos = ber_next d, pos
+      slen = ber_at d, pos
+      pos = ber_next d, pos
+      str = slen > 0 ? cp932_to_utf8(d.byteslice(pos, slen)) : empty_str
+      pos += slen if slen > 0
+      pcount = ber_at d, pos
+      pos = ber_next d, pos
       params = []
-      (0...pcount).each { params.push read_ber s }
+      (0...pcount).each do
+        params.push ber_at(d, pos)
+        pos = ber_next d, pos
+      end
       cmds.push EventCommand.new(code, indent, str, params)
     end
     cmds
@@ -142,6 +223,8 @@ module LCF
   # blob #parse_event_commands reads. Its exact inverse: a list parsed then
   # re-encoded without edits reproduces the original bytes.
   def self.encode_event_commands(cmds)
+    return cmds.to_lcf if cmds.is_a?(EventList)
+
     out = String.new
     cmds.each do |c|
       code = c.respond_to?(:code) ? c.code : c[:code]
@@ -163,25 +246,33 @@ module LCF
   # and/or a few BER integer parameters, selected by the id. The list runs to
   # the end of the blob (its length is also stored separately as `command_size`).
   def self.parse_move_commands d
-    s = StringIO.new d
     cmds = []
-    until s.eof?
-      id = read_ber s
+    pos = 0
+    size = d.bytesize
+    while pos < size
+      id = ber_at d, pos
+      pos = ber_next d, pos
       str = empty_str
       a = b = c = 0
       case id
       when MOVE_SWITCH_ON, MOVE_SWITCH_OFF
-        a = read_ber s
-      when MOVE_CHANGE_GRAPHIC
-        slen = read_ber s
-        str = slen > 0 ? cp932_to_utf8(s.read(slen)) : empty_str
-        a = read_ber s
-      when MOVE_PLAY_SOUND
-        slen = read_ber s
-        str = slen > 0 ? cp932_to_utf8(s.read(slen)) : empty_str
-        a = read_ber s
-        b = read_ber s
-        c = read_ber s
+        a = ber_at d, pos
+        pos = ber_next d, pos
+      when MOVE_CHANGE_GRAPHIC, MOVE_PLAY_SOUND
+        slen = ber_at d, pos
+        pos = ber_next d, pos
+        if slen > 0
+          str = cp932_to_utf8(d.byteslice(pos, slen))
+          pos += slen
+        end
+        a = ber_at d, pos
+        pos = ber_next d, pos
+        if id == MOVE_PLAY_SOUND
+          b = ber_at d, pos
+          pos = ber_next d, pos
+          c = ber_at d, pos
+          pos = ber_next d, pos
+        end
       end
       cmds.push MoveCommand.new(id, str, a, b, c)
     end
@@ -308,15 +399,19 @@ module LCF
     when :int32_array ; return unpack_int32(d)
     when :double ; return double_decode(d)
     when :event ; return parse_event_commands(d)
+    when :event_packed ; return EventList.new(d)
     when :move_commands ; return parse_move_commands(d)
     when :string ; return LCF.cp932_to_utf8 d
     when :Tree
-      s = StringIO.new(d)
-      map_count = read_ber s
+      pos = 0
+      map_count = ber_at d, pos
+      pos = ber_next d, pos
       maps = []
-      (0...map_count).each { maps.push read_ber s }
-      selected_id = read_ber s
-      return Tree.new(selected_id, maps)
+      (0...map_count).each do
+        maps.push ber_at(d, pos)
+        pos = ber_next d, pos
+      end
+      return Tree.new(ber_at(d, pos), maps)
     end
 
     raise "Unsupported type: #{sget(s, :type)}"
@@ -476,7 +571,7 @@ module LCF
     when :int16_packed ; value.is_a?(ShortArray) ? value.to_lcf : pack_int16(value)
     when :int32_array ; pack_int32 value
     when :string ; utf8_to_cp932 value
-    when :event ; encode_event_commands value
+    when :event, :event_packed ; encode_event_commands value
     when :move_commands ; encode_move_commands value
     when :Array1D, :Array2D
       return binstr(value) if value.is_a? String
@@ -566,11 +661,13 @@ module LCF
     # @data holds the file offset of its length, and #chunk_bytes, or a lazy
     # Array2D for a table chunk, reads it when it is used.
     def initialize s, schema, io = nil
-      s = StringIO.new s if s.is_a? String
-
       @data = []
       @schema = schema
       @io = io
+      if s.is_a? String
+        read_chunks s
+        return
+      end
       size = io ? io.size : 0
 
       begin
@@ -640,7 +737,7 @@ module LCF
               else
                 LCF.to_rb chunk_bytes(d), elem
               end
-      if value.is_a?(Array1D) || value.is_a?(Array2D) ||
+      if value.is_a?(Array1D) || value.is_a?(Array2D) || value.is_a?(EventList) ||
          LCF.sget(elem, :type) == :event || LCF.sget(elem, :type) == :move_commands
         @decoded ||= {}
         @decoded[idx] = value
@@ -751,6 +848,29 @@ module LCF
 
     private
 
+    # CURSOR: the chunks of a record in memory, read through a position in +s+ (LCF.ber_at), each kept as a slice
+    # that shares s's buffer. The same checks as #initialize's stream loop.
+    def read_chunks s
+      pos = 0
+      size = s.bytesize
+      while pos < size
+        idx = LCF.ber_at s, pos
+        pos = LCF.ber_next s, pos
+        break if idx == 0
+        raise "chunk id #{idx} out of range" if idx < 0 || idx > MAX_CHUNK_ID
+
+        len = LCF.ber_at s, pos
+        pos = LCF.ber_next s, pos
+        raise "truncated chunk #{idx}: #{len} bytes declared" if len < 0 || len > size - pos
+
+        @data[idx] = if len == 1 then LCF.byte_str(s.getbyte(pos))
+                     elsif len > 0 then s.byteslice(pos, len)
+                     else LCF.empty_str
+                     end
+        pos += len
+      end
+    end
+
     # The bytes of the chunk whose length is at file offset +at+.
     def chunk_bytes at
       @io.seek at
@@ -816,11 +936,13 @@ module LCF
     # the offset of the chunk's length (Array1D#initialize): only each row's
     # file offset is kept, and #[] reads the row from the file.
     def initialize s, schema, at = nil
-      s = StringIO.new s if s.is_a? String
-
       @data = []
       @schema = schema
       return index_rows(s, at) if at
+      if s.is_a? String
+        read_rows s
+        return
+      end
 
       # An empty string builds an empty, writable table from scratch (populate
       # via #[]= then #to_lcf); a real chunk starts with a BER entry count.
@@ -926,6 +1048,23 @@ module LCF
     end
 
     private
+
+    # CURSOR: the rows of a table in memory, read through a position in +s+ (LCF.ber_at); each row is a slice that
+    # shares s's buffer (LCF.row_end checks its chunks as #read_row_slice does).
+    def read_rows s
+      return if s.empty?
+
+      pos = LCF.ber_next s, 0
+      (0...LCF.ber_at(s, 0)).each do
+        idx = LCF.ber_at s, pos
+        pos = LCF.ber_next s, pos
+        raise "row id #{idx} out of range" if idx < 0 || idx > MAX_CHUNK_ID
+
+        stop = LCF.row_end s, pos
+        @data[idx] = s.byteslice(pos, stop - pos)
+        pos = stop
+      end
+    end
 
     # The row table of a lazy chunk (see #initialize): a row's chunks are
     # skipped, short ones read into one reused buffer rather than sought past

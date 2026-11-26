@@ -47,6 +47,7 @@ infra_dir="$SRC_DIR/src/Infrastructure"
 peripherals_dir="$infra_dir/src/Emulator/Peripherals/Peripherals"
 cp "$REPO_ROOT/app/wio/renode/peripherals/SPI/SAMD51_SERCOM_SPI.cs" "$peripherals_dir/SPI/"
 cp "$REPO_ROOT/app/wio/renode/peripherals/Video/ILI9341_SPI.cs" "$peripherals_dir/Video/"
+cp "$REPO_ROOT/app/wio/renode/peripherals/SPI/SAMD51_QSPI.cs" "$peripherals_dir/SPI/"
 
 # See app/wio/renode/patches/sdcard-acmd42.patch's own header comment for
 # why this is needed: upstream SD.SDCard, checked directly and used as-is

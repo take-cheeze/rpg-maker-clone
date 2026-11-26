@@ -286,9 +286,12 @@ the heap. They take about seven times their PNG's room, so only some fit: by
 default System and Title, then ChipSet, FaceSet and as many CharSet and other
 images as the 16 MB still holds; the rest load from their files as before.
 
-With an SD card image layered on the board (`--board` with a description that adds the `sdcard:` lines
-`scripts/wio/renode_sdcard.bash` writes), a game in the card's `/rpg2k` is played instead of the image's; the
-image still carries the run's `--config`.
+`--sd pack` (or `nopack`) puts the game on an SD card image's `/rpg2k` instead, with (or without) its
+`wio_bitmaps.bin`; the image then carries the run's `--config` and the font only. `SPI.SAMD51_QSPI`
+(`peripherals/SPI/SAMD51_QSPI.cs`) models the QSPI controller and the flash's erase/program commands with their typical
+busy times, so the image cache's writes run as on the board; `--qspi-out FILE` saves the flash when the run ends and
+`--qspi-in FILE` boots from it again. The SD card needs a Renode built by `scripts/wio/renode_build.bash` (the ACMD42
+patch).
 
 ```sh
 pio run -e wio_renode_game
