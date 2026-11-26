@@ -874,6 +874,50 @@ assert 'LCF shares one frozen String per byte value and one empty String' do
   assert_raise(RuntimeError) { LCF::Array1D.new(lcf_ber(1) + lcf_ber(1), nil) }
 end
 
+assert 'LCF.pool_str shares a short decoded String, frozen' do
+  a = LCF.pool_str(+'ctrl')
+  assert_equal 'ctrl', a
+  assert_true a.frozen?
+  assert_true a.equal?(LCF.pool_str(+'ctrl'))
+  assert_raise(FrozenError) { a << 'x' }
+  assert_true LCF.pool_str(+'').equal?(LCF.empty_str)
+  long = 'x' * 33
+  assert_true LCF.pool_str(long).equal?(long)
+  assert_false long.frozen?
+  # A string field and the strings of event and move commands are interned.
+  schema = { elements: { 1 => { name: :name, type: :string } } }
+  r1 = LCF::Array1D.new(lcf_array1d([lcf_str_field(1, 'ctrl')]), schema)
+  r2 = LCF::Array1D.new(lcf_array1d([lcf_str_field(1, 'ctrl')]), schema)
+  assert_true r1[:name].equal?(r2[:name])
+  assert_true r1[:name].equal?(a)
+  cmd = lcf_ber(10) + lcf_ber(0) + lcf_ber(4) + 'ctrl' + lcf_ber(0)
+  assert_true LCF.parse_event_commands(cmd)[0].string.equal?(a)
+  assert_true LCF::EventList.new(cmd)[0].string.equal?(a)
+  move = lcf_ber(LCF::MOVE_CHANGE_GRAPHIC) + lcf_ber(4) + 'ctrl' + lcf_ber(1)
+  assert_true LCF.parse_move_commands(move)[0].parameter_string.equal?(a)
+end
+
+assert 'A map layer read once stands in for its chunk bytes' do
+  schema = { elements: { 71 => { name: :lower_layer, type: :int16_packed } } }
+  body = lcf_array1d([lcf_shorts_field(71, [1, 2, 0xffff])])
+  r = LCF::Array1D.new(StringIO.new(body), schema)
+  layer = r[:lower_layer]
+  assert_equal [1, 2, -1], layer.to_a
+  assert_true layer.equal?(r[:lower_layer])
+  assert_equal body, r.to_lcf
+  assert_equal [1, 2, -1], r.int16_values(71)
+  layer[0] = 5
+  assert_equal lcf_array1d([lcf_shorts_field(71, [5, 2, 0xffff])]), r.to_lcf
+  assert_equal [5, 2, 0xffff].pack('v*'), r.delete(71)
+  assert_false r.key?(71)
+  # A chunk of an odd length keeps its bytes, so it is written back as read.
+  odd = lcf_array1d([lcf_field(71, "\x01\x00\x02")])
+  o = LCF::Array1D.new(StringIO.new(odd), schema)
+  assert_equal [1], o[:lower_layer].to_a
+  assert_false o[:lower_layer].equal?(o[:lower_layer])
+  assert_equal odd, o.to_lcf
+end
+
 assert 'Array2D rows of an in-memory table are slices of its bytes' do
   e1 = lcf_array1d([lcf_int_field(31, 1), lcf_field(32, "x" * 40)])
   e3 = lcf_array1d([lcf_int_field(31, 5)])

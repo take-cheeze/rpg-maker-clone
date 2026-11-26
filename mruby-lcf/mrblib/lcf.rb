@@ -67,6 +67,21 @@ module LCF
     @empty_str ||= ''.freeze
   end
 
+  # STR_POOL: a decoded LCF string of at most 32 bytes comes back frozen and shared with the last equal one decoded
+  # into its slot of a 64-slot table (a map's events name the same charset, sound or face a hundred times). Frozen
+  # through `-s`, not `freeze` (see SHARED_STR). Callers never mutate these, so a mutation raises FrozenError.
+  def self.pool_str s
+    return empty_str if s.empty?
+    return s if s.bytesize > 32
+
+    pool = (@str_pool ||= Array.new(64))
+    i = s.hash & 63
+    hit = pool[i]
+    return hit if hit == s
+
+    pool[i] = -s
+  end
+
   class Tree
     def initialize(selected_id, maps)
       @selected_id = selected_id
@@ -126,8 +141,9 @@ module LCF
       i += n if i < 0
       return nil if i < 0 || i >= n
 
-      EventCommand.new(LCF.event_code(@bytes, @starts, i), LCF.event_indent(@bytes, @starts, i),
-                       LCF.event_string(@bytes, @starts, i) || LCF.empty_str, LCF.event_params(@bytes, @starts, i))
+      str = LCF.pool_str(LCF.event_string(@bytes, @starts, i) || LCF.empty_str)
+      EventCommand.new(LCF.event_code(@bytes, @starts, i), LCF.event_indent(@bytes, @starts, i), str,
+                       LCF.event_params(@bytes, @starts, i))
     end
 
     # Command +i+ as #[] reads it, built on its first read and kept, so a list
@@ -181,7 +197,7 @@ module LCF
       pos = ber_next d, pos
       slen = ber_at d, pos
       pos = ber_next d, pos
-      str = slen > 0 ? cp932_to_utf8(d.byteslice(pos, slen)) : empty_str
+      str = slen > 0 ? pool_str(cp932_to_utf8(d.byteslice(pos, slen))) : empty_str
       pos += slen if slen > 0
       pcount = ber_at d, pos
       pos = ber_next d, pos
@@ -262,7 +278,7 @@ module LCF
         slen = ber_at d, pos
         pos = ber_next d, pos
         if slen > 0
-          str = cp932_to_utf8(d.byteslice(pos, slen))
+          str = pool_str(cp932_to_utf8(d.byteslice(pos, slen)))
           pos += slen
         end
         a = ber_at d, pos
@@ -401,7 +417,7 @@ module LCF
     when :event ; return parse_event_commands(d)
     when :event_packed ; return EventList.new(d)
     when :move_commands ; return parse_move_commands(d)
-    when :string ; return LCF.cp932_to_utf8 d
+    when :string ; return LCF.pool_str(LCF.cp932_to_utf8(d))
     when :Tree
       pos = 0
       map_count = ber_at d, pos
@@ -728,8 +744,10 @@ module LCF
       idx = sym2idx[idx] if idx.is_a? Symbol
       cached = @decoded && @decoded[idx]
       return cached if cached
-      elem = LCF.sget(LCF.elements_of(@schema), idx)
       d = @data[idx]
+      return d if d.is_a?(ShortArray)
+
+      elem = LCF.sget(LCF.elements_of(@schema), idx)
       value = if !d.is_a?(Integer)
                 LCF.to_rb d, elem
               elsif LCF.sget(elem, :type) == :Array2D
@@ -737,7 +755,11 @@ module LCF
               else
                 LCF.to_rb chunk_bytes(d), elem
               end
-      if value.is_a?(Array1D) || value.is_a?(Array2D) || value.is_a?(EventList) ||
+      # SHORT_LAYER: a map layer's table holds the same 2 bytes a tile its chunk did, so it takes the chunk's place
+      # (#to_lcf writes it back through ShortArray#to_lcf) and every read shares it.
+      if value.is_a?(ShortArray) && d.is_a?(String) && d.bytesize == value.size * 2
+        @data[idx] = value
+      elsif value.is_a?(Array1D) || value.is_a?(Array2D) || value.is_a?(EventList) ||
          LCF.sget(elem, :type) == :event || LCF.sget(elem, :type) == :move_commands
         @decoded ||= {}
         @decoded[idx] = value
@@ -764,8 +786,7 @@ module LCF
     # parameter growth curve, six shorts per level) whose typed `[]` read only
     # surfaces the first row. Returns nil when the chunk is absent.
     def int16_values idx
-      d = @data[idx]
-      d = chunk_bytes(d) if d.is_a?(Integer)
+      d = chunk_value_bytes(@data[idx])
       d && d.unpack(LCF.int16_format(LCF.sget(LCF.elements_of(@schema), idx)))
     end
 
@@ -776,8 +797,7 @@ module LCF
     # zero-command interpreter state behind, where removing the chunk resumes
     # with no event running at all. Returns the removed raw bytes, or nil.
     def delete idx
-      was = @data[idx]
-      was = chunk_bytes(was) if was.is_a?(Integer)
+      was = chunk_value_bytes(@data[idx])
       @data[idx] = nil
       @decoded.delete(idx) if @decoded
       was
@@ -869,6 +889,13 @@ module LCF
                      end
         pos += len
       end
+    end
+
+    # The bytes an @data entry stands for (SHORT_LAYER, LAZY_CHUNKS).
+    def chunk_value_bytes d
+      return d.to_lcf if d.is_a?(ShortArray)
+
+      d.is_a?(Integer) ? chunk_bytes(d) : d
     end
 
     # The bytes of the chunk whose length is at file offset +at+.
