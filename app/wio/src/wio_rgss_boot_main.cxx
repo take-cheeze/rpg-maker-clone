@@ -181,6 +181,10 @@ void setup(void) {
     build_ui("mrb_open_core failed");
     return;
   }
+  // GC_STEP_RATIO: mruby paces an incremental mark step by object allocations,
+  // and a map load stores far more references than it allocates. At the default
+  // a large map's whole load ran inside one unfinished mark and freed nothing.
+  M->gc.step_ratio = WIO_GC_STEP_RATIO;
 
   run_step(M, init_shared_gems);
   if (M->exc) {
