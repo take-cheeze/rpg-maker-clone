@@ -2070,9 +2070,12 @@ mrb_value bmp_s_rom_bitmap_source(mrb_state* M, V self) {
   return mrb_bool_value(ok);
 }
 
-// Ruby: Bitmap._rom_bitmap_pins -> the pins every test source holds.
+// Ruby: Bitmap._rom_bitmap_pins -> the pins every test source holds. A test
+// hook: kept out of the direct-call table (binding_split.rb) by checking its
+// arguments after the first statement, as the other hooks here do.
 mrb_value bmp_s_rom_bitmap_pins(mrb_state* M, V self) {
   (void)self;
+  mrb_get_args(M, "");
   mrb_int n = 0;
   for (const auto& t : g_rom_sources_ruby)
     for (uint32_t c : t->pins)
