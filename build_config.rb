@@ -1143,6 +1143,9 @@ if wio
       # mrb_ro_data_p (mruby-rgss/src/wio.cxx): a String over flash bytes keeps pointing at them instead of copying.
       # mruby's value.h defines mrb_ro_data_p to FALSE unless MRB_LINK_TIME_RO_DATA_P is set too.
       t.defines << 'MRB_USE_CUSTOM_RO_DATA_P' << 'MRB_LINK_TIME_RO_DATA_P'
+      # A nested class keeps its outer class instead of a path String (148 of them at the title, about 8 KB); the
+      # path is made when something asks for it.
+      t.defines << 'MRB_NO_CLASS_PATH_CACHE'
       # mrbc's own `-g` is stripped (Ruby-level
       # line-number/local-variable debug tables baked into compiled
       # bytecode); enable_debug's `-g3` on this same cc/cxx loop is its
@@ -1391,6 +1394,8 @@ if closed
     [conf.cc, conf.cxx].each { |t| t.flags << '-ffunction-sections' << '-fdata-sections' }
 
     [conf.cc, conf.cxx].each { |t| t.defines << 'MRB_INT32' } if wio_integer_model?(conf)
+    # As the wio build: the host sweep plays the class paths that build makes on demand.
+    [conf.cc, conf.cxx].each { |t| t.defines << 'MRB_NO_CLASS_PATH_CACHE' }
     bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
     conf.gem core: 'mruby-bigint' unless wio_integer_model?(conf)

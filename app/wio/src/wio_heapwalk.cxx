@@ -139,33 +139,81 @@ extern "C" __attribute__((noinline, used)) void heapwalk_flush(
 
 namespace {
 
+struct ConstOf {
+  mrb_value c;
+  mrb_sym sym;
+};
+
+int const_of_i(mrb_state*, mrb_sym s, mrb_value v, void* p) {
+  auto* q = static_cast<ConstOf*>(p);
+  if (!mrb_immediate_p(v) && mrb_ptr(v) == mrb_ptr(q->c)) {
+    q->sym = s;
+    return 1;
+  }
+  return 0;
+}
+
+// Writes o's path to [out, end): its __classname__, or
+// (MRB_NO_CLASS_PATH_CACHE) its __outer__'s path and the constant naming o
+// there. The length written, or -1.
+int class_path_in_place(mrb_state* mrb,
+                        RObject* o,
+                        char* out,
+                        char* end,
+                        int depth) {
+  const mrb_sym key = mrb_intern_check_cstr(mrb, "__classname__");
+  const mrb_value v = key ? mrb_obj_iv_get(mrb, o, key) : mrb_nil_value();
+  char buf[MRB_SYM_TMP_LEN];
+  const char* name = nullptr;
+  mrb_int n = 0;
+  int head = 0;
+  if (mrb_string_p(v)) {
+    name = RSTRING_PTR(v);
+    n = RSTRING_LEN(v);
+  } else if (mrb_symbol_p(v)) {
+    name = mrb_sym_name_tmp(mrb, mrb_symbol(v), buf, &n);
+  } else {
+    const mrb_sym okey = mrb_intern_check_cstr(mrb, "__outer__");
+    const mrb_value outer =
+        okey ? mrb_obj_iv_get(mrb, o, okey) : mrb_nil_value();
+    if (depth > 8 || mrb_immediate_p(outer))
+      return -1;
+    ConstOf q{mrb_obj_value(o), 0};
+    mrb_iv_foreach(mrb, outer, const_of_i, &q);
+    if (!q.sym)
+      return -1;
+    head = class_path_in_place(mrb, mrb_obj_ptr(outer), out, end, depth + 1);
+    if (head < 0 || end - out < head + 2)
+      return -1;
+    out[head++] = ':';
+    out[head++] = ':';
+    name = mrb_sym_name_tmp(mrb, q.sym, buf, &n);
+  }
+  if (!name || end - out < head + n)
+    return -1;
+  std::memcpy(out + head, name, n);
+  return head + static_cast<int>(n);
+}
+
 // The name a class keeps, read in place: mrb_class_name dups a String per call,
 // and those copies would sit in the heap this snapshot measures.
 int class_names(mrb_state* mrb, RBasic* o, void* ud) {
   if (o->tt != MRB_TT_CLASS && o->tt != MRB_TT_MODULE)
     return MRB_EACH_OBJ_OK;
   char*& out = *static_cast<char**>(ud);
-  const mrb_sym key = mrb_intern_check_cstr(mrb, "__classname__");
-  if (!key)
+  char* const end = reinterpret_cast<char*>(kOutBase + kOutSize);
+  if (end - out < 16)
     return MRB_EACH_OBJ_BREAK;
-  const mrb_value v = mrb_obj_iv_get(mrb, reinterpret_cast<RObject*>(o), key);
-  char buf[MRB_SYM_TMP_LEN];
-  const char* name = nullptr;
-  mrb_int n = 0;
-  if (mrb_string_p(v)) {
-    name = RSTRING_PTR(v);
-    n = RSTRING_LEN(v);
-  } else if (mrb_symbol_p(v)) {
-    name = mrb_sym_name_tmp(mrb, mrb_symbol(v), buf, &n);
-  }
-  if (!name)
+  const int n = class_path_in_place(mrb, reinterpret_cast<RObject*>(o), out + 9,
+                                    end - 1, 0);
+  if (n < 0)
     return MRB_EACH_OBJ_OK;
-  const size_t room = kOutBase + kOutSize - reinterpret_cast<uintptr_t>(out);
-  if (static_cast<size_t>(n) + 16 > room)
-    return MRB_EACH_OBJ_BREAK;
-  out += std::snprintf(out, room, "%08x %.*s\n",
-                       static_cast<unsigned>(reinterpret_cast<uintptr_t>(o)),
-                       static_cast<int>(n), name);
+  char addr[10];
+  std::snprintf(addr, sizeof(addr), "%08x ",
+                static_cast<unsigned>(reinterpret_cast<uintptr_t>(o)));
+  std::memcpy(out, addr, 9);
+  out[9 + n] = '\n';
+  out += 10 + n;
   return MRB_EACH_OBJ_OK;
 }
 

@@ -416,6 +416,11 @@ void setup(void) {
   }
   mrb_gc_register(g_mrb, g_game);
   mrb_gc_arena_restore(g_mrb, boot_ai);
+#ifdef MRB_CLASS_SHRINK
+  // The boot and RPG2k.new have set the classes' constants: their tables give
+  // their doubling's spare room back.
+  mrb_class_shrink(g_mrb);
+#endif
   probe("new");
 }
 
