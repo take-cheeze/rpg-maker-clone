@@ -11397,7 +11397,7 @@ class Game::Map
   def set_tile: (untyped, untyped, untyped, untyped) -> Integer?
   def set_upper: (untyped, untyped, untyped) -> Integer?
   def substitute_tile: (untyped, untyped, untyped) -> Integer
-  def sync_layers_to_unit: () -> Array
+  def sync_layers_to_unit: () -> LCF::ShortArray
 end
 
 # bc2cpp-native: typed_returns
