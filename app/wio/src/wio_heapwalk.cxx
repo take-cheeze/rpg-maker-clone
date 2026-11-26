@@ -20,6 +20,7 @@
 #include <mruby.h>
 #include <mruby/class.h>
 #include <mruby/gc.h>
+#include <mruby/rom_graph.h>
 #include <mruby/string.h>
 #include <mruby/variable.h>
 
@@ -253,6 +254,8 @@ void snapshot(uint32_t slot, uint32_t kind, const char* name, bool classes) {
   if (classes && g_mrb) {
     const int ai = mrb_gc_arena_save(g_mrb);
     mrb_objspace_each_objects(g_mrb, class_names, &out);
+    // ROM_GRAPH: the classes a linked graph holds are not on the heap.
+    mrb_rom_graph_each(g_mrb, class_names, &out);
     mrb_gc_arena_restore(g_mrb, ai);
   }
   h->n_classes_bytes = out - reinterpret_cast<char*>(r);

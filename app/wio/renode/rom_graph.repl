@@ -1,0 +1,4 @@
+// Layered on game_rom.repl for a rom_graph=1 run of the wio_renode_game firmware (scripts/wio/rom_graph.bash): the
+// window the ROM class graph's C is written to, where the real board has nothing.
+rom_graph_out: Memory.MappedMemory @ sysbus 0x0C000000
+    size: 0x400000

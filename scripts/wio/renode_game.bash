@@ -30,6 +30,7 @@
 #     --qspi-out FILE    save the 4 MB QSPI flash when the run is over
 #     --qspi-in FILE     start from a saved flash (the same ELF and --config):
 #                        a reboot, with the image cache as the last run left it
+#     --rom-graph FILE   ROM_GRAPH: a rom_graph=1 run's class graph C goes to FILE
 # RENODE_BIN is the Renode binary (see app/wio/renode/README.md); RENODE_GAME_RAW
 # names a file to keep Renode's own output in (per-step PC and log length).
 set -euo pipefail
@@ -42,7 +43,7 @@ usage() {
 elf="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 game="$2"
 shift 2
-board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 heapwalk='' sd='' qspi_out='' qspi_in=''
+board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 heapwalk='' sd='' qspi_out='' qspi_in='' rom_graph=''
 expects=()
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -58,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --sd) [[ $2 == pack || $2 == nopack ]] || usage; sd=$2 ;;
     --qspi-out) qspi_out=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") ;;
     --qspi-in) qspi_in=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") ;;
+    --rom-graph) rom_graph=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") ;;
     *) usage ;;
   esac
   shift 2
@@ -113,6 +115,7 @@ step=5
   echo "machine LoadPlatformDescription @$repl"
   echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/game_rom.repl"
   [[ -n "$heapwalk" ]] && echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/heapwalk.repl"
+  [[ -n "$rom_graph" ]] && echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/rom_graph.repl"
   [[ -n "$sd" ]] && echo "machine LoadPlatformDescription @$work/sdcard.repl"
   echo "sysbus LoadELF @$elf"
   echo "sysbus LoadBinary @$work/game.rom $rom_base"
@@ -126,6 +129,10 @@ step=5
   # heapwalk_flush(slot, out_len, heap, heap_len): the output window and the heap, as snapshot `slot`.
   if [[ -n "$heapwalk" ]]; then
     echo "cpu0 AddHook $(addr heapwalk_flush) \"import System; r = [int(cpu.GetRegisterUnsafe(i).RawValue) for i in range(4)]; System.IO.File.WriteAllBytes('$heapwalk/snap-%04d.out' % r[0], machine.SystemBus.ReadBytes(0x0A000000, r[1])); System.IO.File.WriteAllBytes('$heapwalk/snap-%04d.heap' % r[0], machine.SystemBus.ReadBytes(r[2], r[3]))\""
+  fi
+  # rom_graph_flush(len): the graph's C, [0x0C000000, +len).
+  if [[ -n "$rom_graph" ]]; then
+    echo "cpu0 AddHook $(addr rom_graph_flush) \"import System; System.IO.File.WriteAllBytes('$rom_graph', machine.SystemBus.ReadBytes(0x0C000000, int(cpu.GetRegisterUnsafe(0).RawValue)))\""
   fi
   echo "cpu0 AddHook $(addr mrb_raise_nomemory) \"print('=== NOMEMORY'); cpu.RemoveHooksAt(cpu.PC)\""
   echo 'logLevel 3'
