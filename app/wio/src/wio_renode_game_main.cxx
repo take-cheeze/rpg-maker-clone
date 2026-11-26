@@ -431,6 +431,7 @@ void loop(void) {
     probe("end");
     mrb_full_gc(g_mrb);
     probe("end_gc");
+    wio_image_cache_report();
     wio_diag_printf("DONE frames=%ld\n", g_frame);
     g_result = kDone;
     return;
