@@ -1994,23 +1994,33 @@ jobs:
         # A synthetic game (scripts/gen/wio-sd-game.rb) on the simulated card, with its image pack, on the 192 KB
         # board: the first boot copies its images into the QSPI cache, a reboot from that flash finds them there, and a
         # card without the pack decodes System's PNG. That card has no title picture: decoded into the heap, the
-        # 320x240 one does not fit this board. renode_game.bash fails on an OOM, a fault or a missing --expect.
+        # 320x240 one does not fit this board. renode_game.bash fails on an OOM, a fault or a missing --expect. Each run
+        # plays 600 title frames, past where garbage the GC has not reached yet fills the heap (about frame 300), and
+        # `flat` fails when the heap after a full GC grew by more than 2 KB from the title's first frame to the last.
         env:
           RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
           ARM_NM: arm-none-eabi-nm
         run: |
           ruby scripts/gen/wio-sd-game.rb /tmp/wio-sd-game
           elf=firmware/wio_renode_game/firmware.elf
-          cfg='frames=120;new_game=0'
+          cfg='frames=600;new_game=0'
           cp -r /tmp/wio-sd-game /tmp/wio-sd-notitle
           rm /tmp/wio-sd-notitle/Title/wio.png
           refuse() { if grep -E "$2" "$1"; then echo "::error::$1 has /$2/"; exit 1; fi; }
+          gc_inuse() { grep -E "^P $2 " "$1" | grep -oE 'gc_inuse=[0-9]+' | cut -d= -f2; }
+          flat() {
+            local a b
+            a=$(gc_inuse "$1" 'scene:RPG2k::Scene::Title') b=$(gc_inuse "$1" end)
+            echo "$1: heap after a full GC $a -> $b bytes"
+            [[ -n $a && -n $b && $((b - a)) -le 2048 ]] || { echo "::error::$1: the title's heap grew ($a -> $b)"; exit 1; }
+          }
           echo "::group::first boot"
           scripts/wio/renode_game.bash "$elf" /tmp/wio-sd-game --sd pack --config "$cfg" --seconds 30 \
             --qspi-out /tmp/wio-qspi.bin --log /tmp/wio-sd-1.log \
             --expect 'image cache: a new pack \(crc [0-9a-f]+, 2 images\)' \
             --expect 'image cache: copied System/wio' --expect 'image cache: copied Title/wio' \
             --expect 'image cache: [0-9]+ hits, 2 misses' --expect 'Scene::Title'
+          flat /tmp/wio-sd-1.log
           echo "::endgroup::"
           echo "::group::reboot from the saved flash"
           scripts/wio/renode_game.bash "$elf" /tmp/wio-sd-game --sd pack --config "$cfg" --seconds 30 \
@@ -2018,12 +2028,14 @@ jobs:
             --expect '^QSPI erases 0$' --expect 'image cache: 2 images, 2 already cached' \
             --expect 'image cache: [1-9][0-9]* hits, 0 misses' --expect 'Scene::Title'
           refuse /tmp/wio-sd-2.log 'image cache: (copied|a new pack)'
+          flat /tmp/wio-sd-2.log
           echo "::endgroup::"
           echo "::group::no pack"
           scripts/wio/renode_game.bash "$elf" /tmp/wio-sd-notitle --sd nopack --config "$cfg" --seconds 30 \
             --log /tmp/wio-sd-3.log \
             --expect '\[Wio\] image cache: no /rpg2k/wio_bitmaps.bin on the card' --expect 'Scene::Title'
           refuse /tmp/wio-sd-3.log 'image cache: (copied|[0-9]+ hits)'
+          flat /tmp/wio-sd-3.log
           echo "::endgroup::"
 
   # M5Stack Core (ESP32) P1 HAL firmware. It is a standalone PlatformIO project

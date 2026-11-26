@@ -352,6 +352,32 @@ static bool pixel_fits(size_t n) {
 }
 
 // Runs `alloc`, which allocates `n` bytes of pixels (see PIXEL_GC).
+// A sprite's rows are expanded at most this many bytes at a time (at least one
+// row). A deferred bitmap's draw holds two such buffers, the rows and their
+// composition; on the Wio they are what is left of the heap at the title.
+#if defined(WIO_TERMINAL)
+constexpr uint32_t kSpriteViewChunkBytes = 1024;
+#else
+constexpr uint32_t kSpriteViewChunkBytes = 4096;
+#endif
+
+// DRAW_HEADROOM: the frame's draw runs under PixelGcHold and takes its row
+// buffers from operator new, which collects nothing, while the GC paces itself
+// by objects: a dropped Rect holds about 64 bytes of malloc, so the title's
+// garbage filled the 192 KB Wio's heap long before a GC was due. Before the
+// draw, a full GC makes the room when it is not there, unless no object was
+// allocated since the last one (it would free nothing).
+constexpr size_t kDrawHeadroom = 4 * kSpriteViewChunkBytes;
+static size_t g_headroom_gc_live = 0;
+
+static void draw_headroom(mrb_state* M) {
+  if (g_pixel_gc_hold || M->gc.live == g_headroom_gc_live ||
+      pixel_fits(kDrawHeadroom))
+    return;
+  pixel_gc(M);
+  g_headroom_gc_live = M->gc.live;
+}
+
 template <class F>
 void pixel_alloc(size_t n, F&& alloc) {
   mrb_state* const M = g_pixel_gc_hold ? nullptr : g_pixel_mrb;
@@ -5053,6 +5079,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
       }
     }
 
+    draw_headroom(M);
     {
       ProfilerScope _lvscope("gfx.lvgl");
       PixelGcHold hold;
@@ -5445,15 +5472,6 @@ struct SpriteView {
 
 // Marks a SpriteView's header; its data pointer also points back at the view.
 constexpr uint16_t kSpriteViewFlag = LV_IMAGE_FLAGS_USER8;
-// Rows are expanded at most this many bytes at a time (at least one row). A
-// deferred bitmap's draw holds two such buffers, the rows and their
-// composition; on the Wio they are what is left of the heap at the title.
-#if defined(WIO_TERMINAL)
-constexpr uint32_t kSpriteViewChunkBytes = 1024;
-#else
-constexpr uint32_t kSpriteViewChunkBytes = 4096;
-#endif
-
 const SpriteView* sprite_view_of(const void* src) {
   const auto* img = static_cast<const lv_image_dsc_t*>(src);
   if (!(img->header.flags & kSpriteViewFlag) ||
