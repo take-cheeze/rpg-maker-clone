@@ -37,6 +37,10 @@ CONFIG_DEFINES = {
     'emscripten': ['-D__EMSCRIPTEN__'],
 }
 
+# MRB_MT_INIT_ROM's install: mrb_mt_init_rom, or mrb_mt_init_rom_layer with the table's const layer (same
+# class and table arguments).
+ROM_INSTALLS = ('mrb_mt_init_rom', 'mrb_mt_init_rom_layer')
+
 REGISTRATION_APIS = {
     'mrb_define_method': 'method',
     'mrb_define_class_method': 'class_method',
@@ -516,7 +520,7 @@ class Extractor:
                         reg = self.registration(kid, args)
                         reg['enclosing'] = {'name': fn.spelling, 'extent': self.ext(fn)} if fn is not None else None
                         out.append(reg)
-                elif kid.kind == K.CALL_EXPR and kid.spelling == 'mrb_mt_init_rom' and in_source:
+                elif kid.kind == K.CALL_EXPR and kid.spelling in ROM_INSTALLS and in_source:
                     installs.append((kid, fn))
                 elif kid.kind == K.VAR_DECL and 'mrb_mt_entry' in kid.type.spelling and in_source:
                     init = [c for c in kid.get_children() if c.kind == K.INIT_LIST_EXPR]
