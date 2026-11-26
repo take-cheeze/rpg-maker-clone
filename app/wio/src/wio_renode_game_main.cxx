@@ -16,6 +16,7 @@
 //   eager_db=0|1    read RPG_RT.ldb whole (LCF_EAGER_DATABASE, LAZY_CHUNKS off)
 //   eager_ce=0|1    common events as before LAZY_COMMON_EVENTS
 //                   (RPG2K_EAGER_COMMON_EVENTS)
+//   gc_step=N       mrb->gc.step_ratio (default WIO_GC_STEP_RATIO, as env:wio)
 // The constants are the ones scripts/bc2cpp/trace_host.cxx sets, so a run
 // here and a host run of the same config play the same frames.
 //
@@ -358,6 +359,9 @@ void setup(void) {
     g_result = kFailBoot;
     return;
   }
+  // GC_STEP_RATIO: as env:wio sets it (wio_rgss_boot_main.cxx).
+  g_mrb->gc.step_ratio =
+      static_cast<int>(config_long("gc_step", WIO_GC_STEP_RATIO));
   if (wio_heapwalk_begin)
     wio_heapwalk_begin(g_mrb);
   rpg_maker_init_shared_gems(g_mrb);
