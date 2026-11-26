@@ -51,6 +51,13 @@ void wio_qspi_enter_xip(void);
 // The CMCC: the 4 KB cache on the code bus, in front of both the internal
 // flash and the QSPI window.
 void wio_cmcc_enable(void);
+// QSPI_WRITE: an erase or a program while code runs from the window. Each
+// call closes the window with interrupts off, runs the command and waits for
+// it, then reopens the window and drops the CMCC's lines; nothing it reaches
+// may be in QSPI (scripts/wio/qspi_xip_check.rb). `data` must not be in the
+// window either. A program may span pages.
+void wio_qspi_xip_erase_sector(uint32_t addr);
+void wio_qspi_xip_program(uint32_t addr, const uint8_t* data, uint32_t len);
 // zlib's CRC-32 of `len` bytes, continuing from `crc` (0 to start).
 uint32_t wio_crc32(uint32_t crc, const volatile uint8_t* p, uint32_t len);
 

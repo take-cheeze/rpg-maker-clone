@@ -2518,6 +2518,57 @@ assert "RGSS::Bitmap reads a ROM bitmap in place, as its file would decode" do
   end
 end
 
+assert "RGSS::Bitmap pins a sourced ROM bitmap while it points into it" do
+  next true unless RGSS::Bitmap.respond_to?(:_rom_bitmap_source)
+  file = "test-palette-src.png"
+  File.open(file, "wb") { |io| io.write(PAL_PNG_4X2) }
+  pal = [30, 20, 10, 255, 90, 40, 200, 255, 120, 250, 0, 128].pack("C*") + ("\0" * (253 * 4))
+  idx = [0, 1, 2, 1, 2, 1, 0, 0].pack("C*")
+  sec = rom_section([["Pics/a.png", 4, 2, idx, [pal, pal], [4, 4]],
+                     ["Pics/b.png", 4, 2, idx.reverse, [pal, pal], [4, 4]],
+                     ["Pics/c.png", 4, 2, idx, [pal, pal], [4, 4]]])
+  gc = -> { GC.start if Object.const_defined?(:GC) }
+  begin
+    gc.call
+    base = RGSS::Bitmap._rom_bitmap_pins
+    assert_true RGSS::Bitmap._rom_bitmap_source(sec, "srcroot", 2)
+    ref = RGSS::Bitmap.new(file, true)
+    a = RGSS::Bitmap.new("srcroot/Pics/a.png", true)
+    assert_equal pixels_of(ref), pixels_of(a)
+    assert_equal base + 1, RGSS::Bitmap._rom_bitmap_pins
+    c = a.clone
+    assert_equal base + 2, RGSS::Bitmap._rom_bitmap_pins
+    assert_equal pixels_of(ref), pixels_of(c)
+    # A write takes the pixels into the heap and drops the pin.
+    c.set_pixel(0, 0, RGSS::Color.new(9, 9, 9, 9))
+    assert_equal base + 1, RGSS::Bitmap._rom_bitmap_pins
+    b = RGSS::Bitmap.new("srcroot/Pics/b.png", true)
+    assert_equal base + 2, RGSS::Bitmap._rom_bitmap_pins
+    # Two entries pinned of two: the third waits for a collection, which frees
+    # nothing here, so it is decoded from its file -- and there is none.
+    assert_raise(RuntimeError) { RGSS::Bitmap.new("srcroot/Pics/c.png", true) }
+    b.dispose
+    assert_equal base + 1, RGSS::Bitmap._rom_bitmap_pins
+    # An unreferenced bitmap's pin goes with the collection the full source asks for.
+    RGSS::Bitmap.new("srcroot/Pics/b.png", true)
+    assert_equal base + 2, RGSS::Bitmap._rom_bitmap_pins
+    cc = RGSS::Bitmap.new("srcroot/Pics/c.png", true)
+    assert_equal [4, 2], [cc.width, cc.height]
+    assert_equal base + 2, RGSS::Bitmap._rom_bitmap_pins
+    a.dispose
+    cc.dispose
+    assert_equal base, RGSS::Bitmap._rom_bitmap_pins
+
+    # A source that maps nothing leaves the file's own decode.
+    assert_true RGSS::Bitmap._rom_bitmap_source(rom_section([[file, 4, 2, idx, [pal, pal], [4, 4]]]), "", 0)
+    assert_equal pixels_of(ref), pixels_of(RGSS::Bitmap.new(file, true))
+    assert_equal base, RGSS::Bitmap._rom_bitmap_pins
+  ensure
+    RGSS::Bitmap._rom_bitmaps(nil, "")
+    File.delete(file) if File.exist?(file)
+  end
+end
+
 assert "RGSS::Plane API surface" do
   # Plane is now native: Plane.new builds an lv_canvas the size of the viewport
   # and tiles the bitmap into it, so construction needs a live display the
