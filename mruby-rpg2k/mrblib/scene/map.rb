@@ -6281,7 +6281,7 @@ class RPG2k
         win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
         win.z = 300
         win.windowskin = @windowskin
-        contents = Bitmap.new(inner_w, inner_h)
+        contents = contents_bitmap(inner_w, inner_h)
         contents.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
           contents.draw_text 0, i * INN_LINE_H, inner_w, INN_LINE_H, line
@@ -9502,7 +9502,7 @@ class RPG2k
         open_frames = @battle.nil? ? MSG_ANIM_FRAMES : 0
         win.open_animation(open_frames)
 
-        contents = Bitmap.new(inner_w, inner_h)
+        contents = contents_bitmap(inner_w, inner_h)
 
         # A message longer than one screen paginates: inject a synthetic `:page`
         # pause at every page boundary so the typewriter stops at the bottom of
