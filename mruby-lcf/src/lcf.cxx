@@ -130,6 +130,61 @@ mrb_value ber_value(mrb_state* M, mrb_value) {
   return int32_value(M, ret);
 }
 
+// CURSOR: a BER integer read at byte +pos+ of a String, so a record in memory
+// is parsed through a position instead of a StringIO. +pos+ is left just past
+// the integer; running off the end raises as read_ber does.
+uint32_t ber_read(mrb_state* M, const uint8_t* p, mrb_int l, mrb_int& pos) {
+  if (pos < 0)
+    mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(ArgumentError)),
+              "negative LCF position");
+  uint32_t ret = 0;
+  for (;;) {
+    if (pos >= l)
+      truncated_ber(M);
+    const uint8_t b = p[pos++];
+    ret = (ret << 7) | (b & 0x7f);
+    if ((b & 0x80) == 0)
+      return ret;
+  }
+}
+
+// LCF.ber_at(s, pos): the BER integer at byte pos of s, as read_ber reads it.
+mrb_value ber_at(mrb_state* M, mrb_value) {
+  const uint8_t* p;
+  mrb_int l, pos;
+  mrb_get_args(M, "si", &p, &l, &pos);
+  return int32_value(M, ber_read(M, p, l, pos));
+}
+
+// LCF.ber_next(s, pos): the position just past the BER integer at pos.
+mrb_value ber_next(mrb_state* M, mrb_value) {
+  const uint8_t* p;
+  mrb_int l, pos;
+  mrb_get_args(M, "si", &p, &l, &pos);
+  ber_read(M, p, l, pos);
+  return mrb_int_value(M, pos);
+}
+
+// LCF.row_end(s, pos): the end of the table row whose chunks start at pos,
+// just past its id-0 terminator (or the end of s), checking every chunk's
+// length as Array2D#read_row_slice does.
+mrb_value row_end(mrb_state* M, mrb_value) {
+  const uint8_t* p;
+  mrb_int l, pos;
+  mrb_get_args(M, "si", &p, &l, &pos);
+  while (pos < l) {
+    const mrb_int idx = static_cast<int32_t>(ber_read(M, p, l, pos));
+    if (idx == 0)
+      break;
+    const mrb_int len = static_cast<int32_t>(ber_read(M, p, l, pos));
+    if (len < 0 || len > l - pos)
+      mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(RuntimeError)),
+                 "truncated chunk %i: %i bytes declared", idx, len);
+    pos += len;
+  }
+  return mrb_int_value(M, pos);
+}
+
 // LCF.ber_shift(ret, b): read_ber's step from its fifth byte on, where the
 // accumulated value no longer fits 31 bits; ret is the step's own result.
 mrb_value ber_shift(mrb_state* M, mrb_value) {
@@ -474,6 +529,9 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
 #endif
       MRB_MT_ENTRY(ber_value, MRB_SYM(ber_value), MRB_ARGS_REQ(1))        //
       MRB_MT_ENTRY(ber_shift, MRB_SYM(ber_shift), MRB_ARGS_REQ(2))        //
+      MRB_MT_ENTRY(ber_at, MRB_SYM(ber_at), MRB_ARGS_REQ(2))              //
+      MRB_MT_ENTRY(ber_next, MRB_SYM(ber_next), MRB_ARGS_REQ(2))          //
+      MRB_MT_ENTRY(row_end, MRB_SYM(row_end), MRB_ARGS_REQ(2))            //
       MRB_MT_ENTRY(append_ber, MRB_SYM(append_ber), MRB_ARGS_REQ(2))      //
       MRB_MT_ENTRY(unpack_int32, MRB_SYM(unpack_int32), MRB_ARGS_REQ(1))  //
       MRB_MT_ENTRY(pack_int32, MRB_SYM(pack_int32), MRB_ARGS_REQ(1))      //

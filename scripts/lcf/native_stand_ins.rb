@@ -27,6 +27,39 @@ module LCF
     int32(ret)
   end
 
+  # LCF.ber_at / LCF.ber_next / LCF.row_end (CURSOR): a BER integer at a byte position of a String.
+  def self.ber_read(s, pos)
+    raise ArgumentError, 'negative LCF position' if pos.negative?
+
+    ret = 0
+    loop do
+      b = s.getbyte(pos)
+      raise 'truncated BER integer' if b.nil?
+
+      pos += 1
+      ret = ((ret << 7) | (b & 0x7f)) & 0xffff_ffff
+      return [int32(ret), pos] if (b & 0x80).zero?
+    end
+  end
+
+  def self.ber_at(s, pos) = ber_read(s, pos)[0]
+
+  def self.ber_next(s, pos) = ber_read(s, pos)[1]
+
+  def self.row_end(s, pos)
+    size = s.bytesize
+    while pos < size
+      idx, pos = ber_read(s, pos)
+      break if idx.zero?
+
+      len, pos = ber_read(s, pos)
+      raise "truncated chunk #{idx}: #{len} bytes declared" if len.negative? || len > size - pos
+
+      pos += len
+    end
+    pos
+  end
+
   def self.append_ber(out, n)
     n &= 0xffff_ffff
     shift = 0
