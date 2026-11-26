@@ -17,6 +17,8 @@
 #      counted: function pointers the check cannot follow.
 #   5. nothing a QSPI write runs while the window is closed (QSPI_WRITE: wio_qspi_xip_erase_sector,
 #      wio_qspi_xip_program and their direct-call closure, when the firmware has them) is in QSPI or names QSPI data.
+#   6. the heap's growth (STACK_RESERVE: __wrap__sbrk, app/wio/src/wio_sbrk.cxx) is linked, and its direct-call
+#      closure is not in QSPI and names no QSPI data: malloc reaches it from anywhere, an interrupt included.
 #
 # Usage: ruby scripts/wio/qspi_xip_check.rb FIRMWARE.elf [TOOL_PREFIX]
 #   TOOL_PREFIX defaults to PlatformIO's arm-none-eabi- toolchain.
@@ -207,6 +209,14 @@ closed = %w[wio_qspi_xip_erase_sector wio_qspi_xip_program].select { |f| addr_of
 seen.clear
 allowed = QSPI_START
 walk.call(closed, nil)
+closed_reached = seen.size
+closed_indirect = seen.sum { |f| indirect[f] }
+# 6. The heap's growth.
+errors << '__wrap__sbrk is not linked: the heap can grow into the stack (STACK_RESERVE)' unless addr_of['__wrap__sbrk']
+seen.clear
+allowed = nil
+walk.call(['__wrap__sbrk'].select { |f| addr_of[f] }, nil)
+growth_reached = seen.size
 veneers = funcs.values.count { |n| n.end_with?('_veneer') }
 qspi_funcs = funcs.count { |a, _| qspi?(a) }
 puts format('qspi_xip_check: internal flash %d of %d bytes, QSPI image %d bytes (game ROM at 0x%x)',
@@ -214,8 +224,9 @@ puts format('qspi_xip_check: internal flash %d of %d bytes, QSPI image %d bytes 
 puts "  #{qspi_funcs} functions in QSPI, #{veneers} long-branch veneers; #{booting.size} functions run before the " \
      "window opens or while a bad image is reported (#{init.size} constructors), " \
      "#{booting.sum { |f| indirect[f] }} indirect calls among them"
-puts "  #{seen.size} functions run with the window closed for a write (#{seen.sum { |f| indirect[f] }} indirect calls)" \
+puts "  #{closed_reached} functions run with the window closed for a write (#{closed_indirect} indirect calls)" \
   unless closed.empty?
+puts "  #{growth_reached} functions grow the heap"
 if errors.empty?
   puts 'qspi_xip_check: PASS'
 else

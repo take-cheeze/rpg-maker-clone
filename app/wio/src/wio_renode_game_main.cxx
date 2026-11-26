@@ -17,6 +17,8 @@
 //   eager_ce=0|1    common events as before LAZY_COMMON_EVENTS
 //                   (RPG2K_EAGER_COMMON_EVENTS)
 //   gc_step=N       mrb->gc.step_ratio (default WIO_GC_STEP_RATIO, as env:wio)
+//   hog=N           hold N bytes of heap from the start (STACK_RESERVE: a
+//                   low-memory run)
 //   rom_graph=1     write the class graph the boot leaves as C
 //   (mrb_rom_graph_dump) and stop: renode_game.bash
 //                   --rom-graph FILE saves it (scripts/wio/rom_graph.bash links
@@ -28,7 +30,10 @@
 // sbrk is the heap's extent (its high-water mark, newlib never trims below
 // it), inuse the bytes malloc has handed out, sp_gap the room left between
 // the heap top and the stack, stack_max the deepest the stack has been.
-// With census=1, gc_inuse is inuse after the full GC the census runs.
+// With census=1, gc_inuse is inuse after the full GC the census runs. A
+// "[Wio] heap:" line follows a probe whose phase saw a growth refused, and
+// "[Wio] stack:" ends the run with how deep the stack went below the lowest
+// stack pointer the heap was grown from (STACK_RESERVE, wio_sbrk.cxx).
 
 #include <Arduino.h>
 #include <lvgl.h>
@@ -56,6 +61,7 @@
 #include "wio_game_rom.h"
 #include "wio_image_cache.h"
 #include "wio_qspi_xip.h"
+#include "wio_sbrk.h"
 #include "wio_sd.h"
 
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
@@ -223,6 +229,29 @@ char* stack_low(char* top, char* sp) {
   return reinterpret_cast<char*>(p);
 }
 
+void report_refusals() {
+  static uint32_t reported = 0;
+  char line[160];
+  if (wio_sbrk_stats()->refusals != reported &&
+      wio_sbrk_describe(line, sizeof(line)) > 0) {
+    reported = wio_sbrk_stats()->refusals;
+    wio_diag_printf("%s\n", line);
+  }
+}
+
+// After the last probe: the reserve has to cover this.
+void report_stack() {
+  const uintptr_t floor = wio_sbrk_stats()->floor;
+  const uintptr_t low = reinterpret_cast<uintptr_t>(g_stack_low);
+  wio_diag_printf(
+      "[Wio] stack: deepest 0x%lx, %ld bytes below the lowest growth's stack "
+      "pointer 0x%lx (reserve %u)\n",
+      static_cast<unsigned long>(low),
+      static_cast<long>(floor) - static_cast<long>(low),
+      static_cast<unsigned long>(floor),
+      static_cast<unsigned>(WIO_STACK_RESERVE));
+}
+
 void probe(const char* phase) {
   struct mallinfo mi = mallinfo();
   char* sp;
@@ -251,6 +280,7 @@ void probe(const char* phase) {
         wio_diag_printf(" %d:%u", t, static_cast<unsigned>(c.tt[t]));
   }
   wio_diag_write("\n", 1);
+  report_refusals();
   if (wio_heapwalk_probe)
     wio_heapwalk_probe(phase, g_frame);
   __asm__ volatile("mov %0, sp" : "=r"(sp));
@@ -326,6 +356,7 @@ void* operator new(size_t n) {
   if (!p) {
     wio_diag_printf("OOM operator new %u bytes\n", static_cast<unsigned>(n));
     probe("oom");
+    report_stack();
     g_result = kFailOom;
     halt();
   }
@@ -367,6 +398,13 @@ void setup(void) {
   g_census = config_long("census", 1) != 0;
   if (!wio_game_rom_config("keys", g_keys, sizeof(g_keys)))
     g_keys[0] = '\0';
+  if (const long hog = config_long("hog", 0)) {
+    // Held for the whole run; volatile, or the unused block is optimised out.
+    static void* volatile held;
+    held = malloc(static_cast<size_t>(hog));
+    wio_diag_printf("[Wio] hog: %ld bytes %s\n", hog,
+                    held ? "held" : "refused");
+  }
   probe("setup");
   wio_game_files_begin();
   const bool from_sd = wio_sd_state() == WIO_SD_GAME;
@@ -400,6 +438,7 @@ void setup(void) {
   if (g_mrb->exc) {
     report_exc("init");
     probe("failed");
+    report_stack();
     g_result = kFailBoot;
     return;
   }
@@ -453,6 +492,7 @@ void setup(void) {
   if (g_mrb->exc) {
     report_exc("RPG2k.new");
     probe("failed");
+    report_stack();
     g_result = kFailNew;
     return;
   }
@@ -474,6 +514,7 @@ void loop(void) {
     mrb_full_gc(g_mrb);
     probe("end_gc");
     wio_image_cache_report();
+    report_stack();
     wio_diag_printf("DONE frames=%ld\n", g_frame);
     g_result = kDone;
     return;
@@ -493,6 +534,7 @@ void loop(void) {
     if (!clean)
       report_exc("main_loop");
     probe("stop");
+    report_stack();
     wio_diag_printf("STOP frame=%ld reason=%s\n", g_frame,
                     clean ? "exit" : "error");
     g_result = clean ? kDone : kFailFrame;

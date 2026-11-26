@@ -30,6 +30,7 @@
 #include "wio.hxx"
 #include "wio_game_rom.h"
 #include "wio_qspi_xip.h"
+#include "wio_sbrk.h"
 #include "wio_sd.h"
 
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
@@ -78,13 +79,17 @@ mrb_value report_exc(mrb_state* mrb, void* data) {
   return mrb_nil_value();
 }
 
-// Records and logs the exception a boot step left in mrb->exc. Naming it can
+// Records and logs the exception a boot step left in mrb->exc, and the heap
+// growths the stack reserve refused (a NoMemoryError's cause). Naming it can
 // itself raise (an allocation), so that is protected too.
 void record_exc(mrb_state* mrb, const char* step) {
   if (!mrb->exc)
     return;
   ExcReport r = {mrb->exc, step};
   mrb_protect_error(mrb, report_exc, &r, nullptr);
+  char line[160];
+  if (wio_sbrk_describe(line, sizeof(line)) > 0)
+    std::fprintf(stderr, "%s\n", line);
 }
 
 // Runs one boot step; a raise out of it is left in mrb->exc, as
