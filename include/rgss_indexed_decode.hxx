@@ -378,6 +378,10 @@ struct IndexedImage {
 // or the tolerant fallback where stb rejects only the pixel data. Anything
 // else -- a chunk layout stb refuses, an index past the end of the palette --
 // answers false, and the caller's usual chain decodes it as before.
+//
+// ONE_BUFFER: the pixels are inflated, unfiltered and unpacked in the one
+// block that becomes `out.idx`, and a lone IDAT is inflated where it lies, so
+// the decode's only large allocation is the image's own.
 static bool load_png_indexed(const uint8_t* d,
                              size_t sz,
                              bool trans,
@@ -390,7 +394,11 @@ static bool load_png_indexed(const uint8_t* d,
   const uint8_t *plte = nullptr, *trns = nullptr;
   size_t plte_len = 0, trns_len = 0;
   bool iend = false;
-  std::vector<uint8_t> idat;
+  // The compressed stream: the first non-empty IDAT in place, copied into
+  // `joined` only once a second one follows it.
+  const uint8_t* zin = nullptr;
+  size_t zlen = 0;
+  std::vector<uint8_t> joined;
   for (size_t i = 8; i + 12 <= sz;) {
     const uint32_t len = png_tol::be32(d + i);
     const uint8_t* typ = d + i + 4;
@@ -411,19 +419,27 @@ static bool load_png_indexed(const uint8_t* d,
           (1 << 30) / w / 4 < h)
         return false;
     } else if (!std::memcmp(typ, "PLTE", 4)) {
-      if (plte || !idat.empty() || len == 0 || len > 768 || len % 3 != 0)
+      if (plte || zlen || len == 0 || len > 768 || len % 3 != 0)
         return false;
       plte = body;
       plte_len = len / 3;
     } else if (!std::memcmp(typ, "tRNS", 4)) {
-      if (trns || !plte || !idat.empty() || len > plte_len)
+      if (trns || !plte || zlen || len > plte_len)
         return false;
       trns = body;
       trns_len = len;
     } else if (!std::memcmp(typ, "IDAT", 4)) {
       if (!plte)
         return false;
-      idat.insert(idat.end(), body, body + len);
+      if (len && !zlen) {
+        zin = body;
+      } else if (len) {
+        if (joined.empty())
+          joined.assign(zin, zin + zlen);
+        joined.insert(joined.end(), body, body + len);
+        zin = joined.data();
+      }
+      zlen += len;
     } else if (!std::memcmp(typ, "IEND", 4)) {
       iend = true;
       break;
@@ -432,53 +448,96 @@ static bool load_png_indexed(const uint8_t* d,
     }
     i += 12 + len;
   }
-  if (!iend || idat.empty())
+  if (!iend || !zlen)
     return false;
 
   const size_t rowbytes = ((size_t)w * depth + 7) / 8;
   const size_t need = (rowbytes + 1) * (size_t)h;
-  int got = 0;
-  std::unique_ptr<char, void (*)(void*)> z(
-      stbi_zlib_decode_malloc_guesssize_headerflag(
-          reinterpret_cast<const char*>(idat.data()), (int)idat.size(),
-          (int)need, &got, 1),
-      stbi_image_free);
-  bool by_stb = z && (size_t)got >= need;
-  for (int r = 0; by_stb && r < h; ++r)
-    by_stb = (uint8_t)z.get()[(rowbytes + 1) * (size_t)r] <= 4;
-  // Where stb gives up on the pixel data, the tolerant fallback decodes it,
-  // always to ARGB8888 (see load_png_tolerant_mem).
-  std::vector<uint8_t> tol;
-  if (!by_stb) {
-    z.reset();
-    tol.assign(need, 0);
-    if (png_tol::inflate_tolerant(idat.data(), idat.size(), tol) < (long)need)
-      return false;
+  const size_t px = (size_t)w * h;
+  std::vector<uint8_t> buf(need > px ? need : px);
+  const char* zc = reinterpret_cast<const char*>(zin);
+  // stb into the fixed block; a stream it rejects there -- for any reason,
+  // running past `need` included -- gets the growing decode the chain runs,
+  // so by_stb and stb's failure reason stay what they were.
+  int got = stbi_zlib_decode_buffer(reinterpret_cast<char*>(buf.data()),
+                                    (int)need, zc, (int)zlen);
+  if (got < 0) {
+    std::unique_ptr<char, void (*)(void*)> z(
+        stbi_zlib_decode_malloc_guesssize_headerflag(zc, (int)zlen, (int)need,
+                                                     &got, 1),
+        stbi_image_free);
+    if (!z)
+      got = -1;
+    else if ((size_t)got >= need)
+      std::memcpy(buf.data(), z.get(), need);
   }
-  const uint8_t* filt =
-      by_stb ? reinterpret_cast<const uint8_t*>(z.get()) : tol.data();
-  std::vector<uint8_t> raw;
-  png_tol::unfilter(filt, rowbytes, 1, h, raw);
-  z.reset();
-  std::vector<uint8_t>().swap(tol);
+  bool by_stb = got >= 0 && (size_t)got >= need;
+  for (int r = 0; by_stb && r < h; ++r)
+    by_stb = buf[(rowbytes + 1) * (size_t)r] <= 4;
+  // Where stb gives up on the pixel data, the tolerant fallback decodes it,
+  // always to ARGB8888 (see load_png_tolerant_mem). It writes from the start
+  // and reads back only what it wrote, so the block needs no clearing.
+  if (!by_stb && png_tol::inflate_tolerant(zin, zlen, buf) < (long)need)
+    return false;
+  std::vector<uint8_t>().swap(joined);
+
+  // png_tol::unfilter with one byte a pixel, in place: row r's output starts
+  // r + 1 bytes before its filtered bytes, so each read is ahead of the write.
+  for (int r = 0; r < h; ++r) {
+    const uint8_t* srow = &buf[(rowbytes + 1) * (size_t)r];
+    const int ft = srow[0];
+    uint8_t* cur = &buf[rowbytes * (size_t)r];
+    const uint8_t* prev = r ? cur - rowbytes : nullptr;
+    for (size_t x = 0; x < rowbytes; x++) {
+      const int a = x ? cur[x - 1] : 0;
+      const int b = prev ? prev[x] : 0;
+      const int cc = (prev && x) ? prev[x - 1] : 0;
+      int v = srow[1 + x];
+      switch (ft) {
+        case 1:
+          v += a;
+          break;
+        case 2:
+          v += b;
+          break;
+        case 3:
+          v += (a + b) >> 1;
+          break;
+        case 4:
+          v += png_tol::paeth(a, b, cc);
+          break;
+        default:
+          break;
+      }
+      cur[x] = (uint8_t)v;
+    }
+  }
+  // Packed pixels spread out from the end back: index (y, x) lands at or past
+  // the byte that holds it, which nothing has overwritten yet.
+  if (depth == 8) {
+    for (size_t k = 0; k < px; ++k)
+      if (buf[k] >= plte_len)
+        return false;
+  } else {
+    const int per = 8 / depth;
+    const int mask = (1 << depth) - 1;
+    for (int y = h - 1; y >= 0; --y) {
+      const uint8_t* row = &buf[rowbytes * (size_t)y];
+      uint8_t* o = &buf[(size_t)w * y];
+      for (int x = w - 1; x >= 0; --x) {
+        const int v = (row[x / per] >> ((per - 1 - x % per) * depth)) & mask;
+        if ((size_t)v >= plte_len)
+          return false;
+        o[x] = (uint8_t)v;
+      }
+    }
+  }
+  // Shrinking keeps the block: a depth-8 image holds its h filter bytes on.
+  buf.resize(px);
 
   out.w = w;
   out.h = h;
-  out.idx.resize((size_t)w * h);
-  const int per = 8 / depth;
-  const int mask = (1 << depth) - 1;
-  for (int y = 0; y < h; ++y) {
-    const uint8_t* row = &raw[rowbytes * (size_t)y];
-    uint8_t* o = &out.idx[(size_t)w * y];
-    for (int x = 0; x < w; ++x) {
-      const int v =
-          depth == 8 ? row[x]
-                     : (row[x / per] >> ((per - 1 - x % per) * depth)) & mask;
-      if ((size_t)v >= plte_len)
-        return false;
-      o[x] = (uint8_t)v;
-    }
-  }
+  out.idx.swap(buf);
   // stb's palette alpha: opaque, index 0 cleared for a colour-keyed load, then
   // tRNS over the top; and its channel count (see bmp_decode_into's `req`).
   const bool alpha = trans || trns;
@@ -494,26 +553,53 @@ static bool load_png_indexed(const uint8_t* d,
 }
 
 // An XYZ image kept as indices, coloured exactly as load_xyz_mem expands it.
+// ONE_BUFFER: a zlib stream (RPG Maker's own) inflates into the block that
+// becomes `out.idx`; anything else goes through xyz_inflate as before.
 static bool load_xyz_indexed(const uint8_t* d,
                              size_t sz,
                              const char* label,
                              bool trans,
                              IndexedImage& out) {
-  int w = 0, h = 0;
-  std::unique_ptr<char, void (*)(void*)> raw(xyz_inflate(d, sz, label, &w, &h),
-                                             stbi_image_free);
-  if (!raw)
+  if (sz < 8 || std::memcmp(d, "XYZ1", 4) != 0)
     return false;
-  const uint8_t* pal = reinterpret_cast<const uint8_t*>(raw.get());
-  out.w = w;
-  out.h = h;
-  out.idx.assign(pal + 768, pal + 768 + (size_t)w * h);
+  const int w = d[4] | (d[5] << 8);
+  const int h = d[6] | (d[7] << 8);
+  const size_t px = (size_t)w * h;
+  std::vector<uint8_t> buf;
+  if (w > 0 && h > 0) {
+    buf.resize(768 + px);
+    // As xyz_inflate's first decode, in a block of the size it requires: a
+    // shorter or longer stream, or one stb rejects, takes xyz_inflate.
+    if (stbi_zlib_decode_buffer(reinterpret_cast<char*>(buf.data()),
+                                (int)buf.size(),
+                                reinterpret_cast<const char*>(d + 8),
+                                (int)(sz - 8)) != (int)buf.size())
+      std::vector<uint8_t>().swap(buf);
+  }
+  int xw = w, xh = h;
+  std::unique_ptr<char, void (*)(void*)> raw(
+      buf.empty() ? xyz_inflate(d, sz, label, &xw, &xh) : nullptr,
+      stbi_image_free);
+  if (buf.empty() && !raw)
+    return false;
+  const uint8_t* pal =
+      raw ? reinterpret_cast<const uint8_t*>(raw.get()) : buf.data();
   for (int k = 0; k < 256; ++k) {
     uint8_t* e = &out.pal[k * 4];
     e[0] = pal[k * 3 + 2];
     e[1] = pal[k * 3 + 1];
     e[2] = pal[k * 3 + 0];
     e[3] = (trans && k == 0) ? 0 : 255;
+  }
+  out.w = xw;
+  out.h = xh;
+  if (raw) {
+    out.idx.assign(pal + 768, pal + 768 + px);
+  } else {
+    std::memmove(buf.data(), buf.data() + 768, px);
+    // Shrinking keeps the block, 768 bytes past the indices.
+    buf.resize(px);
+    out.idx.swap(buf);
   }
   out.direct_bpp = 4;
   return true;

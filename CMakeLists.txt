@@ -950,6 +950,16 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
                                  ${CMAKE_CURRENT_SOURCE_DIR}/include)
   add_test(NAME wio_image_cache COMMAND wio_image_cache_test)
 
+  # The palette-image decoders (include/rgss_indexed_decode.hxx) that both the
+  # runtime and the ROM bitmap packer run: exact indices, one large block.
+  add_executable(
+    indexed_decode_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/wio/test/indexed_decode_test.cxx)
+  target_include_directories(
+    indexed_decode_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+                                ${CMAKE_CURRENT_SOURCE_DIR}/3rd/stb)
+  add_test(NAME indexed_decode COMMAND indexed_decode_test)
+
   # A host-side implementation of the hb_raw_surface/hb_sdk subset the iPod nano
   # 7G app calls, linking app/nano7/rpg2k_walk/rpg2k_walk.c itself unmodified --
   # unlike walk_core above, this exercises the app's real entry points

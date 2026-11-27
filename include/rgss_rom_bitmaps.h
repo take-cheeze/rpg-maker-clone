@@ -1,5 +1,6 @@
 // ROM_BITMAP (mruby-rgss/src/lib.cxx): palette images decoded ahead of time
-// into an "RGSSRB01" section and read in place instead of from the heap.
+// into an "RGSSRB01" section and read in place instead of from the heap; and
+// MAPPED_FILE, image files read in place.
 #pragma once
 
 #include <stdbool.h>
@@ -50,6 +51,12 @@ bool rgss_set_rom_bitmap_source(const void* directory,
                                 size_t section_size,
                                 const char* root,
                                 const rgss_rom_bitmap_source* source);
+
+// MAPPED_FILE: the bytes of the file at `path` where the platform already
+// holds them (a game image in flash), which an image file is decoded from in
+// place instead of from a heap copy; null to read the file.
+typedef const void* (*rgss_file_map_fn)(const char* path, size_t* len);
+void rgss_set_file_map(rgss_file_map_fn map);
 
 #ifdef __cplusplus
 }
