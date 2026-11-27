@@ -427,9 +427,12 @@ assert "LCF::EventList reads each command as parse_event_commands does" do
   assert_same blob, list.to_lcf
   assert_same blob, LCF.encode_event_commands(list)
   assert_raise(IndexError) { list.code_at(4) }
-  # #command keeps what it builds.
-  assert_same list.command(2), list.command(2)
+  # #command keeps nothing while the list is read straight through, and keeps
+  # what it builds from the first read of an earlier command on.
+  assert_false list.command(2).equal?(list.command(2))
   assert_equal 10210, list.command(1).code
+  assert_same list.command(2), list.command(2)
+  assert_same list.command(1), list.command(1)
   assert_nil list.command(4)
 end
 
