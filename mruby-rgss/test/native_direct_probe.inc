@@ -120,6 +120,11 @@
    (void)a;
    return rgss::gfx_frame_reset_direct(M, self);
  }},
+{"gfx_snap_to_bitmap_direct", 0,
+ [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
+   (void)a;
+   return rgss::gfx_snap_to_bitmap_direct(M, self);
+ }},
 {"input_push_direct", 2,
  [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
    (void)a;

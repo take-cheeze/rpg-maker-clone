@@ -56,8 +56,8 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # ports; PSP's own LVGL pool sized for its ~24 MB -- each file documents
   # its own choices): LVGL's lv_conf_internal.h auto-includes whichever
   # lv_conf.h __has_include finds first on the search path, and this
-  # rake-driven compile of mruby-rgss (which calls into LVGL -- lib.cxx's
-  # vp_refresh_overlay/gfx_snap_to_bitmap) needs to see the same config the
+  # rake-driven compile of mruby-rgss (which calls into LVGL -- gfx_lvgl.cxx's
+  # viewport_overlay/snapshot_take) needs to see the same config the
   # real firmware's own LVGL build uses (app/psp/CMakeLists.txt's
   # add_subdirectory, or PlatformIO's own `lib_deps = symlink://3rd/lvgl`
   # for the wio/maix platformio.ini environments), or the two disagree on what LVGL

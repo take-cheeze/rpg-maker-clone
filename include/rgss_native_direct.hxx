@@ -39,6 +39,7 @@ mrb_value color_load_direct(mrb_state* M,
 mrb_value color_to_s_direct(mrb_state* M, mrb_value self);
 mrb_value default_font_path_m_direct(mrb_state* M, mrb_value self);
 mrb_value gfx_frame_reset_direct(mrb_state* M, mrb_value self);
+mrb_value gfx_snap_to_bitmap_direct(mrb_state* M, mrb_value self);
 mrb_value input_push_direct(mrb_state* M,
                             mrb_value self,
                             mrb_int key,
