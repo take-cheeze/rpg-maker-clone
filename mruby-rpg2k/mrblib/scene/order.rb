@@ -247,7 +247,7 @@ class RPG2k
                                      CONFIRM_W, ch)
         @confirm_window.z = 450
         @confirm_window.windowskin = @skin
-        cc = Bitmap.new(CONFIRM_W - Window::BORDER * 2, labels.size * LINE_H)
+        cc = contents_bitmap(CONFIRM_W - Window::BORDER * 2, labels.size * LINE_H)
         cc.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |l, i|
           draw_system_text cc, 0, i * LINE_H, cc.width, LINE_H, l, @skin
@@ -259,7 +259,7 @@ class RPG2k
 
       def refresh_left_window
         inner_w = COLUMN_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, @names.size * LINE_H)
+        c = contents_bitmap(inner_w, @names.size * LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         @names.each_with_index do |name, i|
           next if @picked.include?(i)
@@ -270,7 +270,7 @@ class RPG2k
 
       def refresh_right_window
         inner_w = COLUMN_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, @names.size * LINE_H)
+        c = contents_bitmap(inner_w, @names.size * LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         @picked.each_with_index do |orig, i|
           next unless orig

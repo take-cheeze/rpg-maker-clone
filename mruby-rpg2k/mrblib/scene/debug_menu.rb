@@ -366,7 +366,7 @@ class RPG2k
         @window = Window.new(16, 16, w, h)
         @window.z = 400
         @window.windowskin = @skin
-        @contents = Bitmap.new(w - Window::BORDER * 2, (PAGE_SIZE + 1) * LINE_H)
+        @contents = contents_bitmap(w - Window::BORDER * 2, (PAGE_SIZE + 1) * LINE_H)
         @window.contents = @contents
 
         # The two genuine RPG_RT pages: see the class comment for how this
@@ -375,14 +375,14 @@ class RPG2k
         @left_window = Window.new(0, SW_TOP, LEFT_W, sh)
         @left_window.z = 400
         @left_window.windowskin = @skin
-        @left_contents = Bitmap.new(LEFT_W - Window::BORDER * 2, BLOCK_SIZE * LINE_H)
+        @left_contents = contents_bitmap(LEFT_W - Window::BORDER * 2, BLOCK_SIZE * LINE_H)
         @left_window.contents = @left_contents
 
         rw = SCREEN_W - LEFT_W
         @right_window = Window.new(LEFT_W, SW_TOP, rw, sh)
         @right_window.z = 400
         @right_window.windowskin = @skin
-        @right_contents = Bitmap.new(rw - Window::BORDER * 2, BLOCK_SIZE * LINE_H)
+        @right_contents = contents_bitmap(rw - Window::BORDER * 2, BLOCK_SIZE * LINE_H)
         @right_window.contents = @right_contents
 
         refresh
@@ -540,7 +540,7 @@ class RPG2k
         @editor_window = Window.new((SCREEN_W - w) / 2, (SCREEN_H - h) / 2, w, h)
         @editor_window.z = 410
         @editor_window.windowskin = @skin
-        @editor_contents = Bitmap.new(w - Window::BORDER * 2, LINE_H)
+        @editor_contents = contents_bitmap(w - Window::BORDER * 2, LINE_H)
         @editor_window.contents = @editor_contents
         refresh_editor
       end

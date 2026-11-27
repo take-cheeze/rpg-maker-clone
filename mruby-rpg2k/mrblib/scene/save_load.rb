@@ -409,7 +409,7 @@ class RPG2k
         @header_window.z = 400
         @header_window.windowskin = @skin
         inner_w = SCREEN_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, LINE_H)
+        c = contents_bitmap(inner_w, LINE_H)
         header = @mode == :save ? term(:save_file_select) :
                                    term(:load_file_select)
         draw_system_text c, 0, 0, inner_w, LINE_H, header, @skin, TEXT_COLOR
@@ -474,7 +474,7 @@ class RPG2k
       # occupied slot's name/level/HP never took the windowskin's shading
       # at all.
       def draw_slot_box(win, inner_w, slot_index)
-        c = Bitmap.new(inner_w, LINE_H * SLOT_LINES)
+        c = contents_bitmap(inner_w, LINE_H * SLOT_LINES)
         state = @slots[slot_index]
         draw_slot_label c, slot_index, state ? TEXT_COLOR : DISABLED_COLOR
         if state
@@ -604,7 +604,7 @@ class RPG2k
       def build_face_cell(sheet, index)
         src_x = (index % 4) * FACE_SIZE
         src_y = (index / 4) * FACE_SIZE
-        cell = Bitmap.new(FACE_SIZE, FACE_SIZE)
+        cell = contents_bitmap(FACE_SIZE, FACE_SIZE)
         cell.blt 0, 0, sheet, Rect.new(src_x, src_y, FACE_SIZE, FACE_SIZE)
         cell
       end
