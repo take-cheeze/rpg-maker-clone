@@ -121,7 +121,7 @@ module LCF
   # each command's offset (LCF.event_index, src/lcf.cxx); the :event_packed
   # schema type. A list nobody runs holds no command objects: #[] builds a new
   # LCF::EventCommand on every read, and #command (the interpreter's read) keeps
-  # what it built. Read-only: a writer stores a new list.
+  # what it built once the list reads back. Read-only: a writer stores a new list.
   class EventList
     # An EventList as is; an Array of EventCommand (or nil) encoded into one.
     def self.of list
@@ -154,10 +154,18 @@ module LCF
                        LCF.event_params(@bytes, @starts, i))
     end
 
-    # Command +i+ as #[] reads it, built on its first read and kept, so a list
-    # that runs again (a parallel process restarts every frame) builds nothing.
+    # Command +i+ as #[] reads it. A list read straight through (a cutscene)
+    # keeps nothing; from its first read of an earlier command on (a parallel
+    # process restarting, a loop) each command is built once and kept.
     def command i
-      cmds = (@cmds ||= [])
+      cmds = @cmds
+      unless cmds
+        last = @last_read || 0
+        @last_read = i
+        return self[i] if i >= last
+
+        cmds = @cmds = []
+      end
       cmd = cmds[i]
       return cmd if cmd
 
