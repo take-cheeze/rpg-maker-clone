@@ -270,21 +270,22 @@ obvious and cost real iteration time to find:
 
 `scripts/wio/renode_game.bash ELF GAME_DIR` packs the game into an image that
 `game_rom.repl` maps in the QSPI flash window (16 MB from 0x04000000, the
-image after the firmware's own code image there), boots
+image after the firmware's own code image there, and 16 more after it), boots
 the `wio_renode_game` firmware on the 192 KB board (`--board big` with the
 `wio_renode_game_big` ELF: 16 MB) and plays the frames `--config` asks for
 (`app/wio/src/wio_renode_game_main.cxx` lists the keys). It prints the game's
 stderr and one `P <phase>` line per phase (heap extent, bytes in use, stack
 depth, and a live-object census), and exits non-zero unless the run finished
 and every `--expect` regex matched. The firmware has no LCD output (no DMA
-model) and no audio. On the 192 KB board a game reaches and runs its title
-screen (`new_game=0`), but New Game does not reach a map yet.
+model) and no audio.
 
 The image carries palette graphics already decoded (`game_rom.rb --bitmaps`,
 `--no-bitmaps`), which the firmware reads in place from the window instead of
-the heap. They take about seven times their PNG's room, so only some fit: by
-default System and Title, then ChipSet, FaceSet and as many CharSet and other
-images as the 16 MB still holds; the rest load from their files as before.
+the heap, as a card game's pack is. They take about seven times their PNG's
+room: by default System and Title, then ChipSet, FaceSet, CharSet and the
+other folders, as many as the 32 MB holds; the rest load from their files.
+The 192 KB heap cannot decode a chipset itself, so a game whose map images do
+not fit decoded stops there.
 
 `--sd pack` (or `nopack`) puts the game on an SD card image's `/rpg2k` instead, with (or without) its
 `wio_bitmaps.bin`; the image then carries the run's `--config` and the font only. `SPI.SAMD51_QSPI`
@@ -314,8 +315,7 @@ two directories of host logs printed with `BC2CPP_HOST_FRAMEHASH=1`. Compare Ren
 
 The `wio_renode_game_heapwalk` (192 KB) and `wio_renode_game_heapwalk_big` (16 MB) ELFs record the allocating stack
 of every live heap block. With `--heapwalk DIR` the run saves a heap snapshot at each `P` line (after its full GC)
-and at each scene's peak (pre-GC, within 2 KB), and the image window grows to 32 MB so every palette image fits
-decoded. `scripts/wio/heapwalk_report.rb ELF DIR` breaks each snapshot down: GC pages by type, blocks by owning object
-class, unowned blocks by allocating function, and a per-snapshot summary (`--largest N` prints the biggest blocks'
-stacks; `--strings` adds a census of the live Strings by kind, holder, buffer site and duplicate bytes). Stacks are
-found by scanning for return addresses, so a frame can be stale.
+and at each scene's peak (pre-GC, within 2 KB). `scripts/wio/heapwalk_report.rb ELF DIR` breaks each snapshot
+down: GC pages by type, blocks by owning object class, unowned blocks by allocating function, and a per-snapshot
+summary (`--largest N` prints the biggest blocks' stacks; `--strings` adds a census of the live Strings by kind,
+holder, buffer site and duplicate bytes). Stacks are found by scanning for return addresses, so a frame can be stale.

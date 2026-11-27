@@ -4,6 +4,11 @@
 qspi_rom: Memory.MappedMemory @ sysbus 0x04000000
     size: 0x1000000
 
+// A second 16 MB after the window, so the game image can hold its palette images decoded as the deployed card pack
+// does (the real board's chip holds 4 MB): a 192 KB heap cannot decode a chipset itself.
+qspi_rom_ext: Memory.MappedMemory @ sysbus 0x05000000
+    size: 0x1000000
+
 diag: Memory.MappedMemory @ sysbus 0x06000000
     size: 0x10000
 
