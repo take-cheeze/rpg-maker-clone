@@ -5828,8 +5828,16 @@ lv_result_t sprite_view_get_area(lv_image_decoder_t*,
   const lv_color_format_t cf = static_cast<lv_color_format_t>(v->dsc.header.cf);
   const unsigned bpp = lv_color_format_get_size(cf);
   const int32_t w = lv_area_get_width(full_area);
-  const int32_t chunk = std::max<int32_t>(
+  int32_t chunk = std::max<int32_t>(
       1, static_cast<int32_t>(kSpriteViewChunkBytes / (w * bpp)));
+  // A deferred bitmap composes whole rows of its own width (`part` below),
+  // which a sprite drawn narrower than its bitmap would size past the chunk.
+  if (v->src->deferred)
+    chunk = std::min<int32_t>(
+        chunk,
+        std::max<int32_t>(1, static_cast<int32_t>(
+                                 kSpriteViewChunkBytes /
+                                 (static_cast<uint32_t>(v->src->width) * 4u))));
   const int32_t rows = std::min<int32_t>(chunk, full_area->y2 - y1 + 1);
   auto* buf = static_cast<lv_draw_buf_t*>(dsc->user_data);
   lv_draw_buf_t* out =
