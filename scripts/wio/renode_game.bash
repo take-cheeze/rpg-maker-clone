@@ -31,6 +31,8 @@
 #     --qspi-in FILE     start from a saved flash (the same ELF and --config):
 #                        a reboot, with the image cache as the last run left it
 #     --rom-graph FILE   ROM_GRAPH: a rom_graph=1 run's class graph C goes to FILE
+#     --framehash FILE   FRAMEHASH: the run's "FH <frame> <hash>" lines go to FILE
+#                        (scripts/compare/framehash.rb compares two)
 # RENODE_BIN is the Renode binary (see app/wio/renode/README.md); RENODE_GAME_RAW
 # names a file to keep Renode's own output in (per-step PC and log length).
 set -euo pipefail
@@ -43,7 +45,7 @@ usage() {
 elf="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 game="$2"
 shift 2
-board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 heapwalk='' sd='' qspi_out='' qspi_in='' rom_graph=''
+board=real config='frames=600' seconds=120 font='' log='' trace='' trace_at=25 heapwalk='' sd='' qspi_out='' qspi_in='' rom_graph='' framehash=''
 expects=()
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -60,12 +62,14 @@ while [[ $# -gt 0 ]]; do
     --qspi-out) qspi_out=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") ;;
     --qspi-in) qspi_in=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") ;;
     --rom-graph) rom_graph=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") ;;
+    --framehash) framehash=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") ;;
     *) usage ;;
   esac
   shift 2
 done
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+[[ -n "$framehash" ]] && config="$config;framehash=1"
 renode="${RENODE_BIN:-renode}"
 nm="${ARM_NM:-$HOME/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-nm}"
 case $board in
@@ -116,6 +120,7 @@ step=5
   echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/game_rom.repl"
   [[ -n "$heapwalk" ]] && echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/heapwalk.repl"
   [[ -n "$rom_graph" ]] && echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/rom_graph.repl"
+  [[ -n "$framehash" ]] && echo "machine LoadPlatformDescription @$repo_root/app/wio/renode/framehash.repl"
   [[ -n "$sd" ]] && echo "machine LoadPlatformDescription @$work/sdcard.repl"
   echo "sysbus LoadELF @$elf"
   echo "sysbus LoadBinary @$work/game.rom $rom_base"
@@ -151,6 +156,9 @@ step=5
   done
   [[ -n "$qspi_out" ]] &&
     echo "python \"import System; System.IO.File.WriteAllBytes('$qspi_out', monitor.Machine.SystemBus.ReadBytes(0x04000000, 0x400000))\""
+  # The FH log: u32 bytes written at 0x0E040000, the text 16 bytes on.
+  [[ -n "$framehash" ]] &&
+    echo "python \"import System; b = monitor.Machine.SystemBus; System.IO.File.WriteAllBytes('$framehash', b.ReadBytes(0x0E040010, int(b.ReadDoubleWord(0x0E040000))))\""
   echo 'echo "QSPI_ERASES"'
   echo 'qspi EraseCount'
   echo 'echo "DIAG_BEGIN"'
@@ -165,8 +173,14 @@ built_in=$(dirname "$(command -v "$renode")")/src/Infrastructure/src/Emulator/Pe
 for p in SPI/SAMD51_SERCOM_SPI.cs Video/ILI9341_SPI.cs SPI/SAMD51_QSPI.cs; do
   [[ -f "$built_in/$p" ]] || includes+=(-e "include @$repo_root/app/wio/renode/peripherals/$p")
 done
+# An open stdin with no input: a closed one (/dev/null) trips Renode's ConsoleIOSource SemaphoreFullException on long
+# runs, which aborts it before the end-of-run dumps.
+mkfifo "$work/stdin"
+sleep 100000 > "$work/stdin" &
+holder=$!
 "$renode" --disable-gui --console --plain "${includes[@]}" \
-  -e "include @$work/run.resc" -e "quit" < /dev/null > "$work/renode.out" 2>&1 || true
+  -e "include @$work/run.resc" -e "quit" < "$work/stdin" > "$work/renode.out" 2>&1 || true
+kill "$holder" 2>/dev/null || true
 
 ruby -e '
   out = File.binread(ARGV[0])
