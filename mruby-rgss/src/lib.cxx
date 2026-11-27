@@ -1693,6 +1693,30 @@ static bool slurp_file(const char* f, std::vector<uint8_t>& out) {
   return got == (size_t)sz;
 }
 
+// MAPPED_FILE (include/rgss_rom_bitmaps.h): the platform's in-place files.
+static rgss_file_map_fn g_file_map = nullptr;
+
+extern "C" void rgss_set_file_map(rgss_file_map_fn map) {
+  g_file_map = map;
+}
+
+// The bytes of file `f`: in place when the platform maps it, else read into
+// `buf`. False as slurp_file answers it.
+static bool file_bytes(const char* f,
+                       std::vector<uint8_t>& buf,
+                       const uint8_t*& data,
+                       size_t& size) {
+  if (const void* p = g_file_map ? g_file_map(f, &size) : nullptr) {
+    data = static_cast<const uint8_t*>(p);
+    return size > 0;
+  }
+  if (!slurp_file(f, buf))
+    return false;
+  data = buf.data();
+  size = buf.size();
+  return true;
+}
+
 // Decode image bytes into `self` (a Bitmap). Shared by Bitmap#_init_file and
 // #_init_memory: everything below is format work with no notion of where the
 // bytes came from, which is what lets an entry pulled out of an encrypted
@@ -2134,8 +2158,10 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   if (bmp_init_rom(M, self, f, trans))
     return self;
   std::vector<uint8_t> data;
-  if (slurp_file(f, data) &&
-      bmp_decode_into(M, self, data.data(), data.size(), f, trans))
+  const uint8_t* bytes = nullptr;
+  size_t size = 0;
+  if (file_bytes(f, data, bytes, size) &&
+      bmp_decode_into(M, self, bytes, size, f, trans))
     return self;
 #ifndef WIO_TERMINAL
   // Some archives store filenames in NFD form while the game data refers to

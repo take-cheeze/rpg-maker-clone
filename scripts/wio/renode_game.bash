@@ -21,8 +21,7 @@
 #     --trace-at N       virtual second N (default 25: map frames by then)
 #     --heapwalk DIR     HEAPWALK: a wio_renode_game_heapwalk[_big] ELF saves its
 #                        heap snapshots to DIR (scripts/wio/heapwalk_report.rb
-#                        reads them); the image window grows to 32 MB so every
-#                        palette image fits decoded
+#                        reads them)
 #     --sd pack|nopack   the game on an SD card image, in its /rpg2k, instead
 #                        of in the image (which then carries the config and the
 #                        font only); with `pack`, with its wio_bitmaps.bin
@@ -87,8 +86,8 @@ addr() { printf '0x%x' $((0x$("$nm" -C "$elf" | awk -v s="$1" '{n=$3; for (i = 4
 # A QSPI_XIP firmware (app/wio/qspi_xip.ld) runs code from the window's start, and the game image follows it.
 rom_base=0x04000000
 "$nm" "$elf" | awk '$3 == "__wio_game_rom_base" {f = 1} END {exit !f}' && rom_base=$(addr __wio_game_rom_base)
-rom_end=0x05000000
-[[ -n "$heapwalk" ]] && rom_end=0x06000000
+# game_rom.repl's 32 MB, so the image holds the palette images decoded.
+rom_end=0x06000000
 rom_game=$game
 if [[ -n "$sd" ]]; then
   # The card: the game folder as game_rom.rb would pack it (no audio, no Windows binaries), at /rpg2k.

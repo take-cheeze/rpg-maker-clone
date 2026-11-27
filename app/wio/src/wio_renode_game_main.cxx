@@ -541,6 +541,8 @@ void setup(void) {
     rgss_set_rom_bitmaps(bitmaps, bitmaps_len, WIO_GAME_ROOT);
   else if (from_sd)
     wio_image_cache_begin(WIO_GAME_ROOT);
+  // The rest of the image's images decode from the window, not a heap copy.
+  rgss_set_file_map(wio_game_file_map);
   set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, WIO_GAME_ROOT));
   set_const("RTP_DIR", mrb_str_new_cstr(g_mrb, ""));
   set_const("TEST_PLAY", mrb_false_value());
