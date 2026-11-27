@@ -3848,7 +3848,11 @@ module Game
         inflation = db_exp_param(:exp_increase)
         correction = db_exp_param(:exp_correction)
         result = 0
-        (1..n).each { |i| result += base + i * inflation + correction }
+        i = 1
+        while i <= n
+          result += base + i * inflation + correction
+          i += 1
+        end
         cap = exp_max
         return result > cap ? cap : result
       end
@@ -3857,7 +3861,10 @@ module Game
       inflation = 1.5 + db_exp_param(:exp_increase) * 0.01
       correction = db_exp_param(:exp_correction).to_f
       result = 0
-      n.times do
+      # A `while`, not a block, here and above: a blockless loop gives each turn's GC arena entries back (bc2cpp's
+      # LOOP_ARENA), where the block kept all of this loop's Floats rooted until the caller returned.
+      i = 0
+      while i < n
         term = correction + base
         # With base, correction >= 0 and inflation >= 1 (the update keeps both) no later term is negative, so once the
         # total reaches the cap the answer is the cap; stopping here keeps to_i off a Float past 32 bits.
@@ -3865,6 +3872,7 @@ module Game
         result += term.to_i
         base *= inflation
         inflation = ((n + 1) * 0.002 + 0.8) * (inflation - 1) + 1
+        i += 1
       end
       # FLOAT-END exp
       cap = exp_max
