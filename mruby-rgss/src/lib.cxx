@@ -5155,17 +5155,59 @@ mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
   return bmp_text_size_native_body(M, self, s, len);
 }
 
-// RGSS #disposed?: whether #dispose has already run. The data pointer is
-// cleared exactly when it does (see obj_dispose), so a null pointer *is* the
+// DISPLAY_IVARS: the RData payload of a display object (Sprite, Viewport,
+// Plane, Tilemap and its strips, Window): its backend node, then a slot for
+// each ivar its mrb_data_type names. mrb_iv_get/mrb_iv_set find those in the
+// payload by name (rdata_ivar_find, 3rd/mruby/src/variable.c), so an object
+// that sets no other ivar keeps no iv_tbl. A slot costs every object and a
+// table only the objects that set an ivar without one, so the slots are the
+// ivars nearly every object sets. #dispose clears `node` only: the ivars
+// outlive it, as before.
+struct DisplayHead {
+  gfx::Node* node;
+  // mrb_iv_copy (#dup, #clone) copies the payload byte for byte, node and all;
+  // a copy is not its own `self`, so it owns no node.
+  const DisplayHead* self;
+};
+
+template <size_t N>
+struct DisplayObj {
+  DisplayHead head;
+  mrb_value iv[N];
+};
+
+void free_display(mrb_state* M, void* p);
+
+bool display_p(mrb_value v) {
+  return DATA_TYPE(v) && DATA_TYPE(v)->dfree == free_display;
+}
+
+// The node of a display object; null once it is disposed.
+gfx::Node* display_node(mrb_value v) {
+  const DisplayHead* h = static_cast<const DisplayHead*>(DATA_PTR(v));
+  return h && h->self == h ? h->node : nullptr;
+}
+
+// RGSS #disposed?: whether #dispose has already run. It clears the data pointer
+// (a display object's node, see DISPLAY_IVARS), so a null one *is* the
 // disposed state -- this used to answer the other way round, reporting every
 // live object as disposed and every disposed one as live. The stock scripts
 // guard cleanup and redraws with it (`unless bitmap.disposed?`), so inverted it
 // meant skipping work on a live object and touching a freed one.
 mrb_value obj_disposed(mrb_state* M, mrb_value self) {
+  if (display_p(self))
+    return mrb_bool_value(!display_node(self));
   return mrb_bool_value(DATA_PTR(self) == nullptr);
 }
 
 mrb_value obj_dispose(mrb_state* M, mrb_value self) {
+  if (display_p(self)) {
+    if (gfx::Node* n = display_node(self)) {
+      gfx::node_delete(n);
+      static_cast<DisplayHead*>(DATA_PTR(self))->node = nullptr;
+    }
+    return mrb_nil_value();
+  }
   if (!DATA_PTR(self))
     return mrb_nil_value();
 
@@ -5329,7 +5371,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
     // lowest to highest, leaving the greatest `z` on top. Grouping by parent
     // means sprites that live inside a Viewport are ordered among
     // themselves, while the Viewport (and top-level sprites) are ordered
-    // against each other on the screen. Disposed objects (null DATA_PTR) are
+    // against each other on the screen. Disposed objects (no node) are
     // dropped from the set here so it does not grow unbounded.
     if (mrb_bool(mrb_iv_get(M, rgss_mod, MRB_SYM(_z_updated)))) {
       ProfilerScope _zscope("gfx.zorder");
@@ -5338,10 +5380,10 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
       std::map<gfx::Node*, std::multimap<mrb_int, gfx::Node*>> by_parent;
       for (mrb_int i = 0; i < ary_size(objs); ++i) {
         const mrb_value v = ary_items(objs)[i];
-        if (!DATA_PTR(v))
+        if (!display_node(v))
           continue;
         mrb_ary_push(M, live, v);
-        gfx::Node* obj = reinterpret_cast<gfx::Node*>(DATA_PTR(v));
+        gfx::Node* obj = display_node(v);
         const mrb_value z = mrb_iv_get(M, v, MRB_IVSYM(z));
         mrb_assert(mrb_fixnum_p(z));
         by_parent[gfx::node_parent(obj)].insert({mrb_fixnum(z), obj});
@@ -5364,7 +5406,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
       const mrb_sym bitmap_sym = MRB_IVSYM(bitmap);
       for (mrb_int i = 0; i < ary_size(roots); ++i) {
         const mrb_value v = ary_items(roots)[i];
-        gfx::Node* obj = reinterpret_cast<gfx::Node*>(DATA_PTR(v));
+        gfx::Node* obj = display_node(v);
         if (!obj)
           continue;
         const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
@@ -5387,7 +5429,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
       // marked.
       for (mrb_int i = 0; i < ary_size(roots); ++i) {
         const mrb_value v = ary_items(roots)[i];
-        if (!DATA_PTR(v))
+        if (!display_node(v))
           continue;
         const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
         if (mrb_nil_p(bmpv) || !DATA_PTR(bmpv))
@@ -5481,10 +5523,13 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
-void free_obj(mrb_state* M, void* p) {
+void free_display(mrb_state* M, void* p) {
   if (!p)
     return;
-  gfx::node_delete(reinterpret_cast<gfx::Node*>(p));
+  DisplayHead* h = static_cast<DisplayHead*>(p);
+  if (h->self == h && h->node)
+    gfx::node_delete(h->node);
+  mrb_free(M, p);
 }
 
 gfx::Display* get_display(mrb_state* M) {
@@ -5542,18 +5587,133 @@ mrb_value gfx_snap_to_bitmap(mrb_state* M, mrb_value self) {
   return out;
 }
 
-const mrb_data_type obj_type = {"lv_obj_t", free_obj};
+// Slot `i` of a DisplayObj, as an mrb_data_ivar entry (see DISPLAY_IVARS).
+constexpr size_t display_slot(size_t i) {
+  return offsetof(DisplayObj<1>, iv) + i * sizeof(mrb_value);
+}
+#ifdef MRB_DATA_IVAR_BY_NAME
+// That kill switch names an entry by its "@name" string. Stringifying the name
+// here would make bc2cpp read every slot name as a method name (naming_macros),
+// so under it the descriptors are empty and the ivars stay in the iv_tbl.
+#define DISPLAY_IVAR(name, i) {nullptr, display_slot(i), MRB_DATA_IVAR_VALUE}
+#define DISPLAY_IVAR_COUNT(ivars) 0
+#else
+#define DISPLAY_IVAR(name, i) \
+  MRB_DATA_IVAR_ENTRY(name, display_slot(i), MRB_DATA_IVAR_VALUE)
+#define DISPLAY_IVAR_COUNT(ivars) (sizeof(ivars) / sizeof(ivars[0]))
+#endif
+#define DISPLAY_TYPE(name, ivars)                        \
+  {name,                                                 \
+   free_display,                                         \
+   ivars,                                                \
+   DISPLAY_IVAR_COUNT(ivars),                            \
+   sizeof(DisplayObj<sizeof(ivars) / sizeof(ivars[0])>), \
+   nullptr,                                              \
+   0}
+
+// What every sprite sets (register_zobj, spr_init, spr_bind_display) or most
+// do. tone, color, src_rect, ox/oy, zoom, angle, mirror, blend_type, bush_depth
+// and a flash are each set on a few sprites at most, so they take an iv_tbl.
+const mrb_data_ivar sprite_ivars[] = {
+    DISPLAY_IVAR(x, 0),       DISPLAY_IVAR(y, 1),
+    DISPLAY_IVAR(z, 2),       DISPLAY_IVAR(visible, 3),
+    DISPLAY_IVAR(bitmap, 4),  DISPLAY_IVAR(_fx_bitmap, 5),
+    DISPLAY_IVAR(opacity, 6), DISPLAY_IVAR(viewport, 7),
+};
+const mrb_data_type sprite_type = DISPLAY_TYPE("RGSS::Sprite", sprite_ivars);
+
+const mrb_data_ivar viewport_ivars[] = {
+    DISPLAY_IVAR(x, 0),       DISPLAY_IVAR(y, 1),    DISPLAY_IVAR(z, 2),
+    DISPLAY_IVAR(visible, 3), DISPLAY_IVAR(rect, 4), DISPLAY_IVAR(ox, 5),
+    DISPLAY_IVAR(oy, 6),      DISPLAY_IVAR(tone, 7), DISPLAY_IVAR(_tone_key, 8),
+};
+const mrb_data_type viewport_type =
+    DISPLAY_TYPE("RGSS::Viewport", viewport_ivars);
+
+#if !defined(WIO_TERMINAL)  // Plane, Tilemap and Window are not built on wio
+const mrb_data_ivar plane_ivars[] = {
+    DISPLAY_IVAR(x, 0),       DISPLAY_IVAR(y, 1),
+    DISPLAY_IVAR(z, 2),       DISPLAY_IVAR(visible, 3),
+    DISPLAY_IVAR(bitmap, 4),  DISPLAY_IVAR(_plane_canvas, 5),
+    DISPLAY_IVAR(opacity, 6), DISPLAY_IVAR(viewport, 7),
+    DISPLAY_IVAR(ox, 8),      DISPLAY_IVAR(oy, 9),
+};
+const mrb_data_type plane_type = DISPLAY_TYPE("RGSS::Plane", plane_ivars);
+
+const mrb_data_ivar tilemap_ivars[] = {
+    DISPLAY_IVAR(x, 0),           DISPLAY_IVAR(y, 1),
+    DISPLAY_IVAR(z, 2),           DISPLAY_IVAR(visible, 3),
+    DISPLAY_IVAR(viewport, 4),    DISPLAY_IVAR(ox, 5),
+    DISPLAY_IVAR(oy, 6),          DISPLAY_IVAR(tileset, 7),
+    DISPLAY_IVAR(map_data, 8),    DISPLAY_IVAR(priorities, 9),
+    DISPLAY_IVAR(autotiles, 10),  DISPLAY_IVAR(_tm_canvas, 11),
+    DISPLAY_IVAR(_tm_anim, 12),   DISPLAY_IVAR(_tm_animated, 13),
+    DISPLAY_IVAR(_tm_strips, 14),
+};
+const mrb_data_type tilemap_type = DISPLAY_TYPE("RGSS::Tilemap", tilemap_ivars);
+
+// A tilemap's priority strips and its "above" layer (tilemap_strip,
+// tilemap_ensure_above).
+const mrb_data_ivar tilemap_part_ivars[] = {
+    DISPLAY_IVAR(x, 0),       DISPLAY_IVAR(y, 1),       DISPLAY_IVAR(z, 2),
+    DISPLAY_IVAR(_bitmap, 3), DISPLAY_IVAR(_bucket, 4),
+};
+const mrb_data_type tilemap_part_type =
+    DISPLAY_TYPE("RGSS::Tilemap", tilemap_part_ivars);
+
+const mrb_data_ivar window_ivars[] = {
+    DISPLAY_IVAR(x, 0),
+    DISPLAY_IVAR(y, 1),
+    DISPLAY_IVAR(z, 2),
+    DISPLAY_IVAR(visible, 3),
+    DISPLAY_IVAR(viewport, 4),
+    DISPLAY_IVAR(contents, 5),
+    DISPLAY_IVAR(width, 6),
+    DISPLAY_IVAR(height, 7),
+    DISPLAY_IVAR(ox, 8),
+    DISPLAY_IVAR(oy, 9),
+    DISPLAY_IVAR(contents_opacity, 10),
+    DISPLAY_IVAR(_anim, 11),
+    DISPLAY_IVAR(windowskin, 12),
+    DISPLAY_IVAR(opacity, 13),
+    DISPLAY_IVAR(back_opacity, 14),
+    DISPLAY_IVAR(cursor_rect, 15),
+    DISPLAY_IVAR(active, 16),
+    DISPLAY_IVAR(pause, 17),
+    DISPLAY_IVAR(_win_canvas, 18),
+    DISPLAY_IVAR(_win_structural, 19),
+    DISPLAY_IVAR(_win_struct_key, 20),
+};
+const mrb_data_type window_type = DISPLAY_TYPE("RGSS::Window", window_ivars);
+#endif  // !defined(WIO_TERMINAL)
+
+// Give `self` its payload, before it has a node: a raise until wrap_node leaves
+// it disposed, with nothing to leak. A second #initialize keeps the payload.
+void display_init(mrb_state* M, mrb_value self, const mrb_data_type* type) {
+  DisplayHead* h = static_cast<DisplayHead*>(DATA_PTR(self));
+  if (DATA_TYPE(self) != type || !h) {
+    h = static_cast<DisplayHead*>(mrb_malloc(M, type->ivar_data_size));
+    h->node = nullptr;
+    for (size_t i = 0; i < type->ivar_count; ++i)
+      *reinterpret_cast<mrb_value*>(reinterpret_cast<char*>(h) +
+                                    type->ivars[i].offset) = mrb_undef_value();
+    mrb_data_init(self, h, type);
+  } else if (h->self != h) {
+    h->node = nullptr;  // a copy's node is its original's
+  }
+  h->self = h;
+}
 
 // Bind a node to its mruby wrapper, which the backend invalidates when the node
 // goes (gfx::node_released below).
 void wrap_node(mrb_state* M, mrb_value self, gfx::Node* obj) {
-  mrb_data_init(self, obj, &obj_type);
+  static_cast<DisplayHead*>(DATA_PTR(self))->node = obj;
   gfx::node_bind(obj, mrb_ptr(self));
 }
 
 // obj_dispose (see bmp_require's own citation, its Bitmap counterpart above)
-// nulls the data pointer but leaves the mruby wrapper object alive and
-// non-nil, so a setter that read DATA_PTR(self) directly on an
+// nulls the node but leaves the mruby wrapper object alive and
+// non-nil, so a setter that read the node directly on an
 // already-disposed Sprite/Viewport/Window/Tilemap used to hit a bare
 // mrb_assert(obj): a real abort() under this build's -DMRB_DEBUG (the crash
 // this fixes -- a battle-loss Game Over disposing the whole scene mid-frame,
@@ -5561,7 +5721,7 @@ void wrap_node(mrb_state* M, mrb_value self, gfx::Node* obj) {
 // to nothing without MRB_DEBUG, an unguarded null-pointer LVGL call otherwise.
 // Raises a catchable RGSSError instead, matching real RGSS and bmp_require.
 gfx::Node* obj_require(mrb_state* M, mrb_value self) {
-  gfx::Node* obj = reinterpret_cast<gfx::Node*>(DATA_PTR(self));
+  gfx::Node* obj = display_node(self);
   if (!obj) {
     RClass* mod = mrb_module_get_id(M, MRB_SYM(RGSS));
     mrb_raisef(M, mrb_class_get_under_id(M, mod, MRB_SYM(RGSSError)),
@@ -5580,8 +5740,8 @@ gfx::Node* parent_object(mrb_state* M, mrb_value vp) {
   if (mrb_nil_p(vp))
     return game_root(get_display(M));
 
-  mrb_assert(mrb_type(vp) == MRB_TT_DATA && DATA_TYPE(vp) == &obj_type);
-  return gfx::viewport_content(reinterpret_cast<gfx::Node*>(DATA_PTR(vp)));
+  mrb_assert(mrb_type(vp) == MRB_TT_DATA && DATA_TYPE(vp) == &viewport_type);
+  return gfx::viewport_content(display_node(vp));
 }
 
 // Register a display object for z-ordering and give it a default z of 0.
@@ -5597,6 +5757,7 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
   mrb_value vp = mrb_nil_value();
   mrb_get_args(M, "|o", &vp);
 
+  display_init(M, self, &sprite_type);
   gfx::Node* p = gfx::sprite_new(parent_object(M, vp));
   wrap_node(M, self, p);
   register_zobj(M, self);
@@ -5643,7 +5804,7 @@ static bool tone_is_set(const Tone& t) {
 // into the object. See vp_set_tone for how a change is propagated.
 static Tone viewport_tone(mrb_state* M, mrb_value vp) {
   Tone t{};
-  if (!mrb_test(vp) || !DATA_PTR(vp))
+  if (!mrb_test(vp) || !display_node(vp))
     return t;
   const mrb_value tv = mrb_iv_get(M, vp, MRB_IVSYM(tone));
   if (mrb_test(tv) && DATA_PTR(tv))
@@ -5757,12 +5918,13 @@ SpriteView* sprite_view(gfx::Node* obj, bool create) {
 namespace rgss {
 namespace gfx {
 
-// Each wrapped node's RData: null its data pointer so the wrapper (and its
-// later dispose/GC) never deletes a freed node. This is what makes it safe to
-// nest Sprites inside a Viewport that owns them: whichever wrapper the GC frees
+// Each wrapped node's RData: null its node so the wrapper (and its later
+// dispose/GC) never deletes a freed node. This is what makes it safe to nest
+// Sprites inside a Viewport that owns them: whichever wrapper the GC frees
 // first, the others are invalidated.
 void node_released(void* owner) {
-  static_cast<struct RData*>(owner)->data = nullptr;
+  static_cast<DisplayHead*>(static_cast<struct RData*>(owner)->data)->node =
+      nullptr;
 }
 
 DrawHold::DrawHold() {
@@ -6199,7 +6361,7 @@ mrb_value spr_update(mrb_state* M, mrb_value self) {
   }
 
   if (recomposite) {
-    gfx::Node* obj = reinterpret_cast<gfx::Node*>(DATA_PTR(self));
+    gfx::Node* obj = display_node(self);
     if (obj)
       spr_bind_display(M, self, obj);
   }
@@ -6296,7 +6458,7 @@ mrb_value obj_visible(mrb_state* M, mrb_value self) {
 // canvas format difference. The canvas is invalidated directly (its backing
 // buffer is not the sprite @bitmap that Graphics.update's dirty sweep watches).
 void plane_retile(mrb_state* M, mrb_value self) {
-  gfx::Node* obj = reinterpret_cast<gfx::Node*>(DATA_PTR(self));
+  gfx::Node* obj = display_node(self);
   if (!obj)
     return;
   const mrb_value canvas_v = mrb_iv_get(M, self, MRB_IVSYM(_plane_canvas));
@@ -6394,6 +6556,7 @@ mrb_value plane_init(mrb_state* M, mrb_value self) {
   if (h <= 0)
     h = 1;
 
+  display_init(M, self, &plane_type);
   gfx::Node* c = gfx::sprite_new(parent_object(M, vp));
   wrap_node(M, self, c);
   register_zobj(M, self);
@@ -6953,7 +7116,7 @@ Bitmap* tilemap_strip(mrb_state* M, mrb_value self, int b, int w) {
       ((b % TILEMAP_STRIP_SLOTS) + TILEMAP_STRIP_SLOTS) % TILEMAP_STRIP_SLOTS;
   const mrb_value key = mrb_fixnum_value(slot);
   const mrb_value found = mrb_hash_get(M, strips, key);
-  if (mrb_test(found) && DATA_PTR(found)) {
+  if (mrb_test(found) && display_node(found)) {
     // The slot may have been holding a different bucket before the map
     // scrolled; it is reused in place rather than reallocated, so record which
     // bucket it carries now for the placement pass.
@@ -6967,11 +7130,12 @@ Bitmap* tilemap_strip(mrb_state* M, mrb_value self, int b, int w) {
   const int arena = mrb_gc_arena_save(M);
   const mrb_value vp = mrb_iv_get(M, self, MRB_IVSYM(viewport));
   const int h = TILEMAP_PRIO_SPAN * TILE_SIZE;
+  const mrb_value obj = mrb_obj_value(
+      mrb_data_object_alloc(M, mrb_obj_class(M, self), nullptr, nullptr));
+  display_init(M, obj, &tilemap_part_type);
   gfx::Node* c = gfx::sprite_new(parent_object(M, vp));
   gfx::node_set_pos(c, 0, 0);
-  const mrb_value obj = mrb_obj_value(
-      mrb_data_object_alloc(M, mrb_obj_class(M, self), c, &obj_type));
-  gfx::node_bind(c, mrb_ptr(obj));
+  wrap_node(M, obj, c);
   register_zobj(M, obj);
   RClass* bmp_class = mrb_class_get_under_id(
       M, mrb_module_get_id(M, MRB_SYM(RGSS)), MRB_SYM(Bitmap));
@@ -7000,7 +7164,7 @@ std::vector<TilemapStrip> tilemap_strips(mrb_state* M, mrb_value self) {
   for (mrb_int i = 0; i < ary_size(keys); ++i) {
     const mrb_value k = mrb_ary_ref(M, keys, i);
     const mrb_value v = mrb_hash_get(M, strips, k);
-    if (!mrb_test(v) || !DATA_PTR(v))
+    if (!mrb_test(v) || !display_node(v))
       continue;
     // The bucket the slot currently carries, which is what its position and z
     // are derived from -- not the slot index the hash is keyed by.
@@ -7199,15 +7363,16 @@ void tilemap_apply_viewport_tone(mrb_state* M,
 // down by tilemap_dispose exactly as before.
 void tilemap_ensure_above(mrb_state* M, mrb_value self, int w, int h) {
   const mrb_value existing = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_obj));
-  if (mrb_test(existing) && DATA_PTR(existing))
+  if (mrb_test(existing) && display_node(existing))
     return;
 
   const mrb_value vp = mrb_iv_get(M, self, MRB_IVSYM(viewport));
+  const mrb_value above_obj = mrb_obj_value(
+      mrb_data_object_alloc(M, mrb_obj_class(M, self), nullptr, nullptr));
+  display_init(M, above_obj, &tilemap_part_type);
   gfx::Node* ac = gfx::sprite_new(parent_object(M, vp));
   gfx::node_set_pos(ac, 0, 0);
-  const mrb_value above_obj = mrb_obj_value(
-      mrb_data_object_alloc(M, mrb_obj_class(M, self), ac, &obj_type));
-  gfx::node_bind(ac, mrb_ptr(above_obj));
+  wrap_node(M, above_obj, ac);
   register_zobj(M, above_obj);
   // Sync to whatever this tilemap's own z/visible already are, rather than
   // the fixed z=TILEMAP_ABOVE_Z/always-visible the old eager tilemap_init
@@ -7236,7 +7401,7 @@ void tilemap_ensure_above(mrb_state* M, mrb_value self, int w, int h) {
 }
 
 void tilemap_refresh(mrb_state* M, mrb_value self) {
-  gfx::Node* obj = reinterpret_cast<gfx::Node*>(DATA_PTR(self));
+  gfx::Node* obj = display_node(self);
   if (!obj)
     return;
   const mrb_value canvas_v = mrb_iv_get(M, self, MRB_IVSYM(_tm_canvas));
@@ -7271,9 +7436,7 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
               static_cast<uint8_t>(0));
   const mrb_value above_obj_v = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_obj));
   gfx::Node* above_lv =
-      (mrb_test(above_obj_v) && DATA_PTR(above_obj_v))
-          ? reinterpret_cast<gfx::Node*>(DATA_PTR(above_obj_v))
-          : nullptr;
+      mrb_test(above_obj_v) ? display_node(above_obj_v) : nullptr;
 
   // Per-tile priority table (0..5 per tile id); tiles with priority >= 1 draw
   // into the above layer. A nil or short table leaves everything at priority 0.
@@ -7424,7 +7587,7 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   const Tone strip_tone =
       viewport_tone(M, mrb_iv_get(M, self, MRB_IVSYM(viewport)));
   for (const auto& e : tilemap_strips(M, self)) {
-    gfx::Node* sc = reinterpret_cast<gfx::Node*>(DATA_PTR(e.second));
+    gfx::Node* sc = display_node(e.second);
     if (!sc)
       continue;
     const bool used = std::find(used_buckets.begin(), used_buckets.end(),
@@ -7486,6 +7649,7 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
   if (h <= 0)
     h = 1;
 
+  display_init(M, self, &tilemap_type);
   gfx::Node* c = gfx::sprite_new(parent_object(M, vp));
   wrap_node(M, self, c);
   register_zobj(M, self);
@@ -7519,7 +7683,7 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
 // on screen and in the z-order set).
 mrb_value tilemap_dispose(mrb_state* M, mrb_value self) {
   const mrb_value above = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_obj));
-  if (mrb_test(above) && DATA_PTR(above))
+  if (mrb_test(above) && display_node(above))
     obj_dispose(M, above);
   // Each priority strip is its own LVGL object in the z set; disposing the
   // tilemap alone would leave them on screen and sorting.
@@ -7953,7 +8117,7 @@ static mrb_int clamp_opacity(mrb_state* M, mrb_value self, const char* iv) {
 // the cursor (and the cached composite's one-shot copy onto the canvas) per
 // frame instead.
 void window_refresh(mrb_state* M, mrb_value self) {
-  gfx::Node* obj = reinterpret_cast<gfx::Node*>(DATA_PTR(self));
+  gfx::Node* obj = display_node(self);
   if (!obj)
     return;
   const mrb_int w = mrb_as_int(M, mrb_iv_get(M, self, MRB_IVSYM(width)));
@@ -8181,6 +8345,7 @@ void window_refresh(mrb_state* M, mrb_value self) {
 mrb_value window_init(mrb_state* M, mrb_value self) {
   mrb_value vp = mrb_nil_value();
   mrb_get_args(M, "|o", &vp);
+  display_init(M, self, &window_type);
   gfx::Node* c = gfx::sprite_new(parent_object(M, vp));
   wrap_node(M, self, c);
   register_zobj(M, self);
@@ -8478,7 +8643,7 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self);
 // frame takes the rect's position and size (and clips to it), while the inner
 // content layer is shifted by (-ox, -oy) to scroll its sprites.
 void vp_apply(mrb_state* M, mrb_value self) {
-  gfx::Node* outer = reinterpret_cast<gfx::Node*>(DATA_PTR(self));
+  gfx::Node* outer = display_node(self);
   if (!outer)
     return;
   Rect& r = DataType<Rect>::get(M, mrb_iv_get(M, self, MRB_IVSYM(rect)));
@@ -8520,6 +8685,7 @@ mrb_value vp_init(mrb_state* M, mrb_value self) {
     h = dh;
   }
 
+  display_init(M, self, &viewport_type);
   gfx::Node* outer = gfx::viewport_new(game_root(get_display(M)));
   wrap_node(M, self, outer);
   register_zobj(M, self);
@@ -8608,7 +8774,7 @@ mrb_value vp_set_oy(mrb_state* M, mrb_value self) {
 // The overlay, created on demand and found again through the frame, so no
 // pointer to it is kept alive across a GC.
 gfx::Node* vp_overlay(mrb_state* M, mrb_value self, bool create) {
-  gfx::Node* outer = reinterpret_cast<gfx::Node*>(DATA_PTR(self));
+  gfx::Node* outer = display_node(self);
   if (!outer)
     return nullptr;
   return gfx::viewport_overlay(outer, create);
@@ -8645,7 +8811,7 @@ Color vp_effective_color(mrb_state* M, mrb_value self) {
 // effective colour is transparent so a viewport with no effect draws nothing
 // extra.
 void vp_refresh_overlay(mrb_state* M, mrb_value self) {
-  gfx::Node* outer = reinterpret_cast<gfx::Node*>(DATA_PTR(self));
+  gfx::Node* outer = display_node(self);
   if (!outer)
     return;
   const Color c = vp_effective_color(M, self);
@@ -8721,13 +8887,13 @@ void vp_refresh_children(mrb_state* M, mrb_value self) {
   const mrb_value objs = zorder_objs(M);
   for (mrb_int i = 0; i < ary_size(objs); ++i) {
     const mrb_value v = ary_items(objs)[i];
-    if (!DATA_PTR(v))
+    if (!display_node(v))
       continue;
     const mrb_value vp = mrb_iv_get(M, v, MRB_IVSYM(viewport));
     if (!mrb_obj_equal(M, vp, self))
       continue;
     if (mrb_obj_is_kind_of(M, v, spr_class))
-      spr_bind_display(M, v, reinterpret_cast<gfx::Node*>(DATA_PTR(v)));
+      spr_bind_display(M, v, display_node(v));
 #if !defined(WIO_TERMINAL)  // Plane and Tilemap: not built on wio
     else if (mrb_obj_is_kind_of(M, v, plane_class))
       plane_retile(M, v);
@@ -9236,6 +9402,7 @@ mrb_value dispose_direct(mrb_state* M, mrb_value self) {
 // `self.allocate` step, which the direct path bypasses).
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
   mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
+  display_init(M, self, &sprite_type);
   gfx::Node* p = gfx::sprite_new(parent_object(M, viewport));
   wrap_node(M, self, p);
   register_zobj(M, self);
@@ -9657,9 +9824,7 @@ mrb_value tilemap_z_set_direct(mrb_state* M, mrb_value self, mrb_int z) {
 mrb_value tilemap_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
   gfx::Node* obj = obj_require(M, self);
   const mrb_value above = mrb_iv_get(M, self, MRB_IVSYM(_tm_above_obj));
-  gfx::Node* al = (mrb_test(above) && DATA_PTR(above))
-                      ? reinterpret_cast<gfx::Node*>(DATA_PTR(above))
-                      : nullptr;
+  gfx::Node* al = mrb_test(above) ? display_node(above) : nullptr;
   if (v) {
     gfx::node_set_hidden(obj, false);
     if (al)
