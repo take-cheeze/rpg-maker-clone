@@ -91,7 +91,7 @@ class RPG2k
         # (plain `draw_text` in the current font colour) still supplies the
         # flat gray when there is no skin to sample, so the `font.color` set
         # below is unchanged, just no longer the only path.
-        contents = Bitmap.new content_w, content_h
+        contents = contents_bitmap content_w, content_h
         @menu_items.each_with_index do |item, index|
           y = index * LINE_HEIGHT
           if index == 1 && !@continue_available

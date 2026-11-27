@@ -1049,12 +1049,12 @@ REWRITES = {
     deletions: [
       { first: '      def build_header_window',
         last: '      end', # def build_header_window's own `end`
-        expect_lines: 11, digest: '810a01572a332d0c' },
+        expect_lines: 11, digest: 'bb73ddce7dd909a3' },
     ],
     substitutions: [
       { old: '        build_header_window
 ',
-        new: '        (@header_window = Window.new(0, 0, SCREEN_W, HEADER_H); @header_window.z = 400; @header_window.windowskin = @skin; inner_w = SCREEN_W - Window::BORDER * 2; c = Bitmap.new(inner_w, LINE_H); header = @mode == :save ? term(:save_file_select) :
+        new: '        (@header_window = Window.new(0, 0, SCREEN_W, HEADER_H); @header_window.z = 400; @header_window.windowskin = @skin; inner_w = SCREEN_W - Window::BORDER * 2; c = contents_bitmap(inner_w, LINE_H); header = @mode == :save ? term(:save_file_select) :
                                    term(:load_file_select); draw_system_text c, 0, 0, inner_w, LINE_H, header, @skin, TEXT_COLOR; @header_window.contents = c)
 ' }, # build_header_window
     ],
