@@ -173,8 +173,14 @@ built_in=$(dirname "$(command -v "$renode")")/src/Infrastructure/src/Emulator/Pe
 for p in SPI/SAMD51_SERCOM_SPI.cs Video/ILI9341_SPI.cs SPI/SAMD51_QSPI.cs; do
   [[ -f "$built_in/$p" ]] || includes+=(-e "include @$repo_root/app/wio/renode/peripherals/$p")
 done
+# An open stdin with no input: a closed one (/dev/null) trips Renode's ConsoleIOSource SemaphoreFullException on long
+# runs, which aborts it before the end-of-run dumps.
+mkfifo "$work/stdin"
+sleep 100000 > "$work/stdin" &
+holder=$!
 "$renode" --disable-gui --console --plain "${includes[@]}" \
-  -e "include @$work/run.resc" -e "quit" < /dev/null > "$work/renode.out" 2>&1 || true
+  -e "include @$work/run.resc" -e "quit" < "$work/stdin" > "$work/renode.out" 2>&1 || true
+kill "$holder" 2>/dev/null || true
 
 ruby -e '
   out = File.binread(ARGV[0])
