@@ -632,6 +632,7 @@ class RGSS::Bitmap
   def set_pixel: (Numeric, Numeric, untyped) -> self
   def stretch_blt: (untyped, untyped, untyped, ?Numeric) -> self
   def text_size: (String) -> untyped
+  def tile_grid: (untyped, untyped, Numeric, Numeric, Numeric, Numeric, untyped) -> self
   def tone_blt: (untyped, untyped) -> self
   def wave_blt: (untyped, Numeric, untyped) -> self
   def width: () -> Integer
@@ -1550,7 +1551,6 @@ module Game::ChipsetLayout
   def self.anim_ab: (untyped, untyped, untyped) -> untyped
   def self.anim_c: (untyped) -> untyped
   def self.event_tile_rect_cached: (untyped) -> untyped
-  def self.prepare_quads: (untyped) -> untyped
   def self.quads_from_quarters: (untyped) -> untyped
   def self.quads_key: (untyped, untyped, untyped, untyped) -> untyped
 end
@@ -1968,7 +1968,6 @@ class Game::Map
   def height: () -> untyped
   def chipset_id: () -> untyped
   def revision: () -> untyped
-  def drawn_tile_ids: () -> untyped
   def restore_substitutions: (untyped, untyped) -> untyped
   def set_lower: (untyped, untyped, untyped) -> untyped
   def set_tile: (untyped, untyped, untyped, untyped) -> untyped
@@ -3099,6 +3098,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def draw_shop_party: (untyped) -> untyped
   def draw_shop_prompt: () -> untyped
   def draw_shop_status: (untyped) -> untyped
+  def draw_tile_colors: (untyped, untyped) -> untyped
   def draw_vehicles: (untyped, untyped, untyped, untyped) -> untyped
   def draw_weather_particle: (untyped, untyped) -> untyped
   def drive_event: () -> untyped
@@ -3117,6 +3117,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def event_draw_order: () -> untyped
   def event_id_at: (untyped, untyped) -> untyped
   def event_position: (untyped) -> untyped
+  def fill_tile_cells: (untyped, untyped) -> untyped
   def finish_inn: (untyped, ?untyped) -> untyped
   def fire_animation_flashes: (untyped) -> untyped
   def fire_map_target_flash: (untyped, untyped) -> untyped
@@ -3190,7 +3191,6 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def player_intended_target: () -> untyped
   def player_slide_step: () -> untyped
   def player_walk_pattern: () -> untyped
-  def prepare_tile_quads: () -> untyped
   def rebuild_chipset: () -> untyped
   def rebuild_events_preserving_positions: () -> untyped
   def record_value: (untyped, untyped, untyped) -> untyped
@@ -3230,6 +3230,8 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def terrain_backdrop: (untyped, untyped) -> untyped
   def terrain_id: (untyped, untyped) -> untyped
   def terrain_step_damage: (?untyped) -> untyped
+  def tile_cell_id: (untyped) -> untyped
+  def tile_cells_valid?: (untyped, untyped) -> untyped
   def tile_color: (untyped) -> untyped
   def troop_ids: (untyped) -> untyped
   def try_action_trigger: () -> untyped
@@ -7189,9 +7191,6 @@ class RPG2k::Scene::Map
   def event_pixel_y: (untyped) -> Integer
   %a{bc2cpp:hint}
   def rev: (untyped) -> Integer
-  # Runtime-checked: an array built by a by-name each.
-  %a{bc2cpp:hint}
-  def patch_anim_cells: (untyped, untyped) -> Array
   def draw_timer: () -> nil
   def draw_weather: () -> nil
   def draw_player_frame: () -> nil
@@ -7368,8 +7367,6 @@ class RPG2k::Scene::Map
   def apply_sprite_flash_requests: (untyped, untyped) -> nil
   %a{bc2cpp:hint}
   def draw_event: (untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
-  %a{bc2cpp:hint}
-  def draw_tile: (untyped, untyped, untyped, untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
   def drive_message: () -> (bool | nil)
   def drive_text_message: () -> (bool | nil)
   def drive_wait: () -> (Integer | bool)
@@ -7379,9 +7376,9 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def new_parallel: (untyped, untyped, untyped, untyped) -> RPG2k::Scene::Map::Parallel
   %a{bc2cpp:hint}
-  def note_anim_input: (untyped) -> (Symbol | nil)
+  def note_anim_input: (untyped) -> (bool | nil)
   %a{bc2cpp:hint}
-  def rebuild_tile_cache: (untyped, untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
+  def rebuild_tile_cache: (untyped, untyped, untyped, untyped) -> Integer
   %a{bc2cpp:hint}
   def record_foreground_event_exec: () -> (Game::State::ForegroundExec | nil)
   %a{bc2cpp:hint}
@@ -7624,7 +7621,6 @@ class Game::Map
   def initialize: (Integer, LCF::MapUnit) -> untyped
   def substitution_snapshot: () -> Array
   def in_bounds?: (Integer, Integer) -> bool
-  def add_drawn_ids: (untyped, LCF::ShortArray, untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def lower: (untyped, untyped) -> (Integer | nil)
   %a{bc2cpp:hint}
@@ -9931,7 +9927,6 @@ class RPG2k::Scene::Map
   @layers_visible: bool
   @lower_bmp: RGSS::Bitmap | nil
   @lower_sprite: RGSS::Sprite | nil
-  @lower_tiles: RGSS::Bitmap | nil
   @map_viewport: RGSS::Viewport | nil
   @moving: bool
   @parallax_bmp: RGSS::Bitmap | nil
@@ -9956,7 +9951,6 @@ class RPG2k::Scene::Map
   @tiles_uses_cf: bool
   @upper_bmp: RGSS::Bitmap | nil
   @upper_sprite: RGSS::Sprite | nil
-  @upper_tiles: RGSS::Bitmap | nil
   @upper_viewport: RGSS::Viewport | nil
   @weather_bmp: RGSS::Bitmap | nil
   @weather_sprite: RGSS::Sprite | nil

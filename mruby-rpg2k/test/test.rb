@@ -376,3 +376,93 @@ assert 'Game::Interpreter#character_ref resolves this event and passes other ref
   # #free_two_handed_slot's own nil case already has above.
   assert_equal nil, interp.send(:character_ref, nil)
 end
+
+# A chipset whose every 4x4 block is its own colour, so a chip taken from the
+# wrong place shows as a different colour where it lands.
+def tile_grid_chipset
+  cs = RGSS::Bitmap.new(480, 256)
+  by = 0
+  while by < 64
+    bx = 0
+    while bx < 120
+      i = by * 120 + bx
+      cs.fill_rect(bx * 4, by * 4, 4, 4, RGSS::Color.new(i % 256, i / 256, 77 + (bx % 2) * 100, 255))
+      bx += 1
+    end
+    by += 1
+  end
+  cs
+end
+
+# Whether two bitmaps of one size agree at every `step`th pixel.
+def tile_grid_same?(a, b, step)
+  y = step / 2
+  while y < a.height
+    x = step / 2
+    while x < a.width
+      p = a.get_pixel(x, y)
+      q = b.get_pixel(x, y)
+      return false unless p.red == q.red && p.green == q.green && p.blue == q.blue && p.alpha == q.alpha
+      x += step
+    end
+    y += step
+  end
+  true
+end
+
+assert 'Bitmap#tile_grid lays every tile id out as Game::ChipsetLayout.quads does' do
+  cs = tile_grid_chipset
+  cells = RGSS::Table.new(1, 1, 3)
+  2.times { |z| cells[0, 0, z + 1] = -32_768 }
+  got = RGSS::Bitmap.new(16, 16)
+  want = RGSS::Bitmap.new(16, 16)
+  cases = []
+  (0...3000).each { |id| 3.times { |abf| cases << [id, abf, 0] } }
+  (3000...4000).each { |id| 4.times { |cf| cases << [id, 0, cf] } }
+  [(4000...5200), (9990...10_200)].each { |r| r.each { |id| cases << [id, 1, 2] } }
+  [-1, -32_768, 32_767].each { |id| cases << [id, 0, 0] }
+  bad = cases.reject do |id, abf, cf|
+    cells[0, 0, 0] = id
+    got.clear
+    want.clear
+    got.tile_grid(cs, cells, 0, 0, abf, cf, false)
+    want.blt_quads(0, 0, cs, Game::ChipsetLayout.quads(id, abf, cf))
+    tile_grid_same?(got, want, 4)
+  end
+  assert_equal [], bad.first(5)
+end
+
+assert 'Bitmap#tile_grid draws the planes in order at the scroll offset, deferred or not' do
+  cs = tile_grid_chipset
+  cols = 4
+  rows = 3
+  cells = RGSS::Table.new(cols, rows, 3)
+  ids = [[0, 1234, 3050, 4111], [5000, 5143, 10_005, -32_768], [2049, 4320, 5100, 10_100]]
+  rows.times do |y|
+    cols.times do |x|
+      cells[x, y, 0] = ids[y][x]
+      cells[x, y, 1] = (x + y).even? ? 10_000 + x * 7 + y : -32_768
+      cells[x, y, 2] = (x + y).odd? ? 10_060 + x + y : -32_768
+    end
+  end
+  [[0, 0], [5, 11], [15, 15]].each do |ox, oy|
+    [false, true].each do |deferred|
+      [false, true].each do |upper|
+        want = RGSS::Bitmap.new(cols * 16, rows * 16)
+        planes = upper ? [2] : [0, 1]
+        rows.times do |y|
+          cols.times do |x|
+            planes.each do |z|
+              want.blt_quads(x * 16 - ox, y * 16 - oy, cs, Game::ChipsetLayout.quads(cells[x, y, z], 2, 1))
+            end
+          end
+        end
+        got = RGSS::Bitmap.new(cols * 16, rows * 16)
+        got._defer if deferred
+        got.clear
+        got.tile_grid(cs, cells, ox, oy, 2, 1, upper)
+        assert_true tile_grid_same?(got, want, 2), "ox=#{ox} oy=#{oy} deferred=#{deferred} upper=#{upper}"
+      end
+    end
+  end
+end

@@ -33,6 +33,11 @@ class RPG2k
       # Visible tiles plus a one-tile margin so partially scrolled edges show.
       COLS = SCREEN_W / TILE + 1
       ROWS = SCREEN_H / TILE + 1
+      # Planes of @tile_cells, as Bitmap#tile_grid draws them: the lower layer,
+      # an unstarred upper tile (drawn over it, in the lower buffer), and a
+      # starred one (in the upper buffer). TILE_NONE is a cell with nothing.
+      TILE_PLANES = 3
+      TILE_NONE = -32_768
 
       # One live map event's full per-frame state: identity/paging fields set
       # once by #build_event, plus render/movement fields updated every real
@@ -579,7 +584,6 @@ class RPG2k
           @chipset = build_chipset
           @chipset_bmp = load_chipset_graphic
         end
-        prepare_tile_quads
         RGSS::Profiler.section(:"map.transition.charset_windowskin") do
           @charset = load_charset
           @windowskin = load_windowskin
@@ -813,8 +817,6 @@ class RPG2k
         @flash_out_buffer.dispose if @flash_out_buffer
         @animation_cell_crop_buffer.dispose if @animation_cell_crop_buffer
         # Held by no sprite (see #setup_sprites), so nothing else frees these.
-        @lower_tiles.dispose if @lower_tiles
-        @upper_tiles.dispose if @upper_tiles
         @chipset_bmp.dispose if @chipset_bmp
         @parallax_img.dispose if @parallax_img
       end
@@ -989,23 +991,17 @@ class RPG2k
 
         @lower_sprite = Sprite.new(@map_viewport)
         @lower_sprite.z = 0
-        # The two layers and the two tile grids below record their draws
-        # rather than holding pixels; the layers are composed a few rows at a
-        # time as the screen is drawn (Bitmap#_defer, DEFERRED_BITMAP in
-        # mruby-rgss/src/lib.cxx).
+        # The two layers record their draws rather than holding pixels; they
+        # are composed a few rows at a time as the screen is drawn
+        # (Bitmap#_defer, DEFERRED_BITMAP in mruby-rgss/src/lib.cxx).
         @lower_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
         @lower_bmp._defer
         @lower_sprite.bitmap = @lower_bmp
 
-        # The cached tile grids behind @lower_bmp / @upper_bmp: same size, but
-        # holding only the tiles, aligned to whole tiles and with no events on
-        # them, so a frame that changed nothing but the scroll remainder can be
-        # served by copying rather than by re-blitting the grid. Never attached
-        # to a sprite -- #draw_layers copies them into the two buffers above.
-        @lower_tiles = Bitmap.new(COLS * TILE, ROWS * TILE)
-        @lower_tiles._defer
-        @upper_tiles = Bitmap.new(COLS * TILE, ROWS * TILE)
-        @upper_tiles._defer
+        # The visible tiles behind @lower_bmp / @upper_bmp, one cell per tile
+        # on whole-tile boundaries (see #fill_tile_cells), which each layer
+        # draws in one Bitmap#tile_grid.
+        @tile_cells = RGSS::Table.new(COLS, ROWS, TILE_PLANES)
         @tiles_built = false
 
         # The upper (above-character) chip layer lives in its own viewport
@@ -4547,7 +4543,7 @@ class RPG2k
       # itself already answers every lookup with the substituted tile
       # (Game::Map#substitute_tile), and that same call bumps Game::Map#revision,
       # which is one of the things #tile_cache_valid? watches -- so the next
-      # render rebuilds the cached tile buffers and the swap is on screen, with
+      # render refills the tile cells and the swap is on screen, with
       # nothing to invalidate by hand here. Draining the flag is what keeps the
       # request from being reported again next step.
       def apply_tile_substitution(interp)
@@ -9152,7 +9148,6 @@ class RPG2k
           @chipset_bmp = load_chipset_graphic
           old_bmp.dispose if old_bmp && !old_bmp.equal?(@chipset_bmp)
         end
-        prepare_tile_quads
         # ... nor does the timer's sticky "message was at top" flag: ported
         # from a reference implementation, not independently confirmed
         # against genuine RPG_RT under wine: it rebuilds its own message
@@ -11458,27 +11453,22 @@ class RPG2k
 
       # Compose this frame's two tile buffers, then draw the events into them.
       #
-      # The tiles themselves are not re-blitted every frame. They are built into
-      # a pair of cached buffers (@lower_tiles / @upper_tiles) that hold the grid
-      # on whole-tile boundaries, and each frame those are copied across at the
-      # sub-tile scroll offset. That copy is two full-surface blits instead of
-      # ~670 per-tile ones, and the expensive build behind it only re-runs when
-      # something it depends on actually changed -- see #tile_cache_valid?.
+      # Each buffer gets the visible tiles as one Bitmap#tile_grid draw over
+      # #fill_tile_cells' cells, at the sub-tile scroll offset; those cells are
+      # only refilled when something they hold changed -- see
+      # #tile_cache_valid?.
       #
-      # The events cannot go in the cache: they move every frame and composite
-      # into these same two buffers (see #event_target_buffer), which is exactly
-      # why the buffers stay separate from the cache rather than being drawn to
-      # directly.
+      # The events composite into these same two buffers (see
+      # #event_target_buffer), over the tiles.
       #
       # When nothing the buffers show has changed -- same sub-tile scroll
       # offset, cache still valid, no event redrawn differently -- the whole
-      # composition is skipped and the buffers keep last frame's pixels. This
+      # composition is skipped and the buffers keep last frame's draws. This
       # is the common frame while standing still, reading a message or watching
       # a still demo scene, and skipping it is what lets the display layer skip
       # too: an untouched Bitmap stays clean, so RGSS::Graphics.update does not
       # invalidate the layer sprites and LVGL re-renders only what actually
-      # moved. On a low-end device the recompose plus the re-render it triggered
-      # measured a third of the whole frame budget.
+      # moved.
       def draw_layers cam_x, cam_y
         first_tx = cam_x / TILE
         first_ty = cam_y / TILE
@@ -11486,7 +11476,9 @@ class RPG2k
         oy = cam_y % TILE
 
         # Animation columns/frames for this render, shared by every tile so the
-        # whole map animates in lock-step. Only needed on the real-chipset path.
+        # whole map animates in lock-step. Only read on the real-chipset path.
+        abf = 0
+        cf = 0
         if @chipset_bmp
           abf = Game::ChipsetLayout.anim_ab(@anim_frame, @chipset.animation_type,
                                             @chipset.animation_speed)
@@ -11495,11 +11487,6 @@ class RPG2k
 
         rebuilt = false
         unless tile_cache_valid?(first_tx, first_ty, abf, cf)
-          # Cleared first so the layers drop the grids' old draws before the
-          # rebuild replaces them (a deferred grid is copied on write while a
-          # layer still refers to it).
-          @lower_bmp.clear
-          @upper_bmp.clear
           rebuild_tile_cache(first_tx, first_ty, abf, cf)
           rebuilt = true
         end
@@ -11519,20 +11506,12 @@ class RPG2k
 
         @lower_bmp.clear
         @upper_bmp.clear
-        # Shifting by taking the source from (ox, oy) rather than blitting to
-        # (-ox, -oy) is the same picture -- the cache is one tile wider and
-        # taller than the screen precisely so the scrolled-in edge is there to
-        # copy -- and keeps every coordinate non-negative. The strip past the
-        # shifted grid is what the clears above leave transparent, exactly as
-        # the old per-tile loop did (it never drew there either).
-        #
-        # #copy_blt, not #blt: the destination was just cleared, and blending
-        # onto transparency returns the source unchanged, so the two draw the
-        # same picture here -- but #blt pays a per-pixel read/blend/write for
-        # it, which on these two 336x256 surfaces measured ~5ms a frame.
-        src = Rect.new(ox, oy, COLS * TILE - ox, ROWS * TILE - oy)
-        @lower_bmp.copy_blt 0, 0, @lower_tiles, src
-        @upper_bmp.copy_blt 0, 0, @upper_tiles, src
+        if @chipset_bmp
+          @lower_bmp.tile_grid @chipset_bmp, @tile_cells, ox, oy, @tiles_abf, @tiles_cf, false
+          @upper_bmp.tile_grid @chipset_bmp, @tile_cells, ox, oy, @tiles_abf, @tiles_cf, true
+        else
+          draw_tile_colors ox, oy
+        end
 
         draw_events cam_x, cam_y
         # The signatures must describe what was *just drawn*, not some earlier
@@ -11625,132 +11604,106 @@ class RPG2k
         dirty
       end
 
-      # Whether the cached tile buffers still show what this frame wants.
+      # Whether the tile cells and the animation they are drawn at still show
+      # what this frame wants.
       #
-      # Everything the build reads has to be covered here, or the change never
-      # reaches the screen. In order: the cache has been built at all; the grid
-      # has not scrolled onto a different first tile (the sub-tile remainder is
-      # applied at copy time, so it is deliberately *not* part of this); the
-      # animation has not stepped; the map object is the same one (a teleport
-      # swaps it); its tile lookups still answer the same (Tile Substitution --
-      # see Game::Map#revision); and the tileset has not been swapped under us.
-      # The two animation inputs are only compared when the grid actually holds
-      # a tile that moves with them (see Game::ChipsetLayout.anim_input): an
-      # indoor map with no water and no block C chip is the same picture in
-      # every animation state, and rebuilding it on their schedule would be
-      # pure waste -- .anim_c alone steps ten times a second.
+      # Everything the cells read has to be covered here, or the change never
+      # reaches the screen. In order: the cells have been filled at all; the
+      # grid has not scrolled onto a different first tile (the sub-tile
+      # remainder is applied at draw time, so it is deliberately *not* part of
+      # this); the animation has not stepped; the map object is the same one (a
+      # teleport swaps it); its tile lookups still answer the same (Tile
+      # Substitution -- see Game::Map#revision); and the tileset has not been
+      # swapped under us. The two animation inputs are only compared when the
+      # grid actually holds a tile that moves with them (see
+      # Game::ChipsetLayout.anim_input): an indoor map with no water and no
+      # block C chip is the same picture in every animation state, and
+      # recomposing it on their schedule would be pure waste -- .anim_c alone
+      # steps ten times a second.
       def tile_cache_valid?(first_tx, first_ty, abf, cf)
+        tile_cells_valid?(first_tx, first_ty) &&
+          (!@tiles_uses_abf || @tiles_abf == abf) &&
+          (!@tiles_uses_cf || @tiles_cf == cf)
+      end
+
+      def tile_cells_valid?(first_tx, first_ty)
         @tiles_built &&
           @tiles_tx == first_tx && @tiles_ty == first_ty &&
-          (!@tiles_uses_abf || @tiles_abf == abf) &&
-          (!@tiles_uses_cf || @tiles_cf == cf) &&
           @tiles_map.equal?(@map) &&
           @tiles_revision == @map.revision &&
           @tiles_chipset.equal?(@chipset) &&
           @tiles_chipset_bmp.equal?(@chipset_bmp)
       end
 
-      # Drop the cached tile buffers, forcing the next render to rebuild them.
+      # Drop the tile cells, forcing the next render to refill them.
       # Only needed for a change #tile_cache_valid? cannot see by itself.
       def invalidate_tile_cache
         @tiles_built = false
       end
 
-      # Record that this tile ties the grid to one of the animation inputs,
-      # returning which one (nil for a tile that moves with neither) so the
-      # full build can also list the cell for #patch_anim_cells.
+      # Record whether this tile ties the grid to one of the animation inputs.
       def note_anim_input(id)
         case Game::ChipsetLayout.anim_input(id)
-        when :abf then @tiles_uses_abf = true; :abf
-        when :cf  then @tiles_uses_cf = true; :cf
+        when :abf then @tiles_uses_abf = true
+        when :cf  then @tiles_uses_cf = true
         end
       end
 
-      # Re-blit the whole visible grid into the cached buffers, on whole-tile
-      # boundaries (the scroll remainder is applied when they are copied out).
-      # This is the expensive path the cache exists to avoid running per frame.
-      #
-      # When *only* the animation inputs moved -- the grid still covers the same
-      # tiles of the same map, chipset and revision -- the full pass is pure
-      # waste for every cell whose tiles do not read the animation: those pixels
-      # are identical. #patch_anim_cells re-blits just the cells that do (#anim_cells,
-      # recorded by the full pass below), which on a real map is a handful of
-      # water/animated chips rather than all 336 cells -- the difference between
-      # an ~80ms rebuild ten times a second and a few ms.
-      # See Game::ChipsetLayout.prepare_quads.
-      def prepare_tile_quads
-        Game::ChipsetLayout.prepare_quads(@map.drawn_tile_ids) if @map
-      rescue StandardError => e
-        $stderr.puts "[RPG2k] tile quads not prepared, built as drawn: #{e.message}"
-      end
-
-      # Fields per #anim_cells entry: rx, ry, lower, upper, upper_drawn.
-      ANIM_CELL_FIELDS = 5
-
+      # Take the animation the next compose draws at, refilling the cells
+      # first when what they hold changed.
       def rebuild_tile_cache(first_tx, first_ty, abf, cf)
-        if @tiles_built && @anim_cells &&
-           @tiles_tx == first_tx && @tiles_ty == first_ty &&
-           @tiles_map.equal?(@map) && @tiles_revision == @map.revision &&
-           @tiles_chipset.equal?(@chipset) && @tiles_chipset_bmp.equal?(@chipset_bmp)
-          patch_anim_cells abf, cf
-          @tiles_abf = abf
-          @tiles_cf = cf
-          return
-        end
+        fill_tile_cells(first_tx, first_ty) unless tile_cells_valid?(first_tx, first_ty)
+        @tiles_abf = abf
+        @tiles_cf = cf
+      end
 
-        @lower_tiles.clear
-        @upper_tiles.clear
-        # Whether anything actually drawn this pass moves with the animation
-        # columns/frames, which is what #tile_cache_valid? consults rather than
-        # assuming every map animates.
+      # A tile id as @tile_cells holds it: one that draws nothing -- nil past
+      # the map's edge, or outside every chipset block (an int16 cell could
+      # not hold it as it is) -- is TILE_NONE.
+      def tile_cell_id(id)
+        Game::ChipsetLayout.block(id) ? id : TILE_NONE
+      end
+
+      # Read the visible tiles of the map into @tile_cells, on whole-tile
+      # boundaries (the scroll remainder is applied when they are drawn).
+      def fill_tile_cells(first_tx, first_ty)
+        # Whether anything held moves with the animation columns/frames, which
+        # is what #tile_cache_valid? consults rather than assuming every map
+        # animates.
         @tiles_uses_abf = false
         @tiles_uses_cf = false
-        # Flat and reused (ANIM_CELL_FIELDS per cell): a scroll rebuilds the
-        # grid every tile step, and a tuple per cell was made each time.
-        (@anim_cells ||= []).clear
-
+        cells = @tile_cells
         ry = 0
         while ry < ROWS
           rx = 0
           while rx < COLS
             tx = first_tx + rx
             ty = first_ty + ry
-            dx = rx * TILE
-            dy = ry * TILE
-
             lower = @map.lower(tx, ty)
             upper = @map.upper(tx, ty)
-            upper_drawn = !Game::ChipsetLayout.upper_blank?(upper)
-            lower_input = note_anim_input lower
-            upper_input = upper_drawn ? note_anim_input(upper) : nil
-            @anim_cells.push(rx, ry, lower, upper, upper_drawn) if
-              lower_input || upper_input
-
-            if @chipset_bmp
-              draw_tile @lower_tiles, lower, dx, dy, abf, cf
-              # Nothing to draw for the two "no upper tile here" ids -- the
-              # reserved blank chip the upper layer is almost entirely made of,
-              # and a raw 0. Only this call may skip them: on the lower layer 0
-              # is water set 0, a real tile. See ChipsetLayout.upper_blank?.
-              if upper_drawn
-                # Only a starred ("above hero") upper tile belongs in the
-                # buffer that composites over the player/events -- see
-                # Game::ChipSet#elevated? and its ABOVE_BIT comment. An
-                # unstarred one (most of a chipset's upper tiles: furniture,
-                # counters, anything meant to be walked *against* rather than
-                # *under*) goes in the same buffer as the lower layer instead,
-                # so it draws behind a character standing on or against it
-                # rather than masking them outright.
-                if @chipset.elevated?(upper)
-                  draw_tile @upper_tiles, upper, dx, dy, abf, cf
-                else
-                  draw_tile @lower_tiles, upper, dx, dy, abf, cf
-                end
-              end
+            note_anim_input lower
+            cells[rx, ry, 0] = tile_cell_id(lower)
+            # Nothing to draw for the two "no upper tile here" ids -- the
+            # reserved blank chip the upper layer is almost entirely made of,
+            # and a raw 0. Only the upper layer may skip them: on the lower
+            # layer 0 is water set 0, a real tile. See ChipsetLayout.upper_blank?.
+            if Game::ChipsetLayout.upper_blank?(upper)
+              cells[rx, ry, 1] = TILE_NONE
+              cells[rx, ry, 2] = TILE_NONE
             else
-              # Fallback: solid colour blocks keyed by tile id (no chipset image).
-              @lower_tiles.fill_rect dx, dy, TILE, TILE, tile_color(lower)
-              @upper_tiles.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper_drawn
+              note_anim_input upper
+              # Only a starred ("above hero") upper tile belongs in the buffer
+              # that composites over the player/events -- see
+              # Game::ChipSet#elevated? and its ABOVE_BIT comment. An unstarred
+              # one (most of a chipset's upper tiles: furniture, counters,
+              # anything meant to be walked *against* rather than *under*) goes
+              # in the same buffer as the lower layer instead, so it draws
+              # behind a character standing on or against it rather than
+              # masking them outright.
+              # The colour-block fallback draws no cells (#draw_tile_colors).
+              above = @chipset_bmp ? @chipset.elevated?(upper) : false
+              cells[rx, ry, 1] = above ? TILE_NONE : tile_cell_id(upper)
+              cells[rx, ry, 2] = above ? tile_cell_id(upper) : TILE_NONE
             end
             rx += 1
           end
@@ -11760,37 +11713,32 @@ class RPG2k
         @tiles_built = true
         @tiles_tx = first_tx
         @tiles_ty = first_ty
-        @tiles_abf = abf
-        @tiles_cf = cf
         @tiles_map = @map
         @tiles_revision = @map.revision
         @tiles_chipset = @chipset
         @tiles_chipset_bmp = @chipset_bmp
       end
 
-      # Re-blit only the animation-following cells of the cached grid (see
-      # #rebuild_tile_cache). Reads exactly what the full pass draws for those
-      # cells, so the patched grid is pixel-identical to a full rebuild.
-      def patch_anim_cells(abf, cf)
-        cells = @anim_cells
-        i = 0
-        while i < cells.size
-          dx = cells[i] * TILE
-          dy = cells[i + 1] * TILE
-          lower = cells[i + 2]
-          upper = cells[i + 3]
-          upper_drawn = cells[i + 4]
-          i += ANIM_CELL_FIELDS
-          draw_tile @lower_tiles, lower, dx, dy, abf, cf
-          if upper_drawn
-            if @chipset.elevated?(upper)
-              draw_tile @upper_tiles, upper, dx, dy, abf, cf
-            else
-              draw_tile @lower_tiles, upper, dx, dy, abf, cf
+      # Fallback with no chipset image: solid colour blocks keyed by tile id,
+      # straight into the two buffers at the scroll offset.
+      def draw_tile_colors(ox, oy)
+        ry = 0
+        while ry < ROWS
+          rx = 0
+          while rx < COLS
+            tx = @tiles_tx + rx
+            ty = @tiles_ty + ry
+            dx = rx * TILE - ox
+            dy = ry * TILE - oy
+            upper = @map.upper(tx, ty)
+            @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(@map.lower(tx, ty))
+            unless Game::ChipsetLayout.upper_blank?(upper)
+              @upper_bmp.fill_rect dx, dy, TILE, TILE, tile_color(upper)
             end
+            rx += 1
           end
+          ry += 1
         end
-        cells
       end
 
       # Draw every event's graphic into the tile buffers, layered so it composits
@@ -11941,19 +11889,6 @@ class RPG2k
         # height, which is one tile rather than the 32px charset frame.
         src = (@event_src_rect ||= Rect.new(0, 0, 0, 0)).set(sx, sy, sw, sh)
         blt_bushed bmp, dx, dy, @chipset_bmp, src, opacity, event_bush_depth(e, sh)
-      end
-
-      # Blit one map tile from the chipset image into `bmp` at (dx, dy). A plain
-      # chip is a single 16x16 copy; an autotile is assembled from four 8x8
-      # quarters. Empty/out-of-range ids draw nothing (id 0 is transparent).
-      def draw_tile bmp, id, dx, dy, abf, cf
-        # One native dispatch for the whole chip instead of a dispatch (and
-        # a Rect allocation) per sub-quad -- see Bitmap#blt_quads in
-        # mruby-rgss/src/lib.cxx. Animation steps redraw every animated cell,
-        # so this is the map renderer's hottest mruby path.
-        qs = Game::ChipsetLayout.quads(id, abf, cf)
-        return if qs.empty?
-        bmp.blt_quads dx, dy, @chipset_bmp, qs
       end
 
       # Which CharSet bitmap + index currently draw the player: ordinarily the

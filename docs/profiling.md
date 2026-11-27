@@ -91,15 +91,13 @@ draws the map edge every frame), and the key has to stay inside a signed
 32-bit `mrb_int` or it becomes a bignum on the Emscripten / PSP / Wio builds.
 Resolving the tile's block first answers both.
 
-**(2) The grid is cached.** `#rebuild_tile_cache` builds the visible tiles into
-a pair of buffers on whole-tile boundaries, and each frame `#draw_layers` copies
-those into the frame buffers at the sub-tile scroll offset. The rebuild only
-re-runs when `#tile_cache_valid?` says something it depends on changed: the
+**(2) The grid is cached.** `#fill_tile_cells` reads the visible tile ids into
+a three-plane `Table` on whole-tile boundaries, and `#draw_layers` draws each
+layer from it with one `Bitmap#tile_grid` at the sub-tile scroll offset (at
+first the cache was a pair of tile buffers copied across). The layers are only
+recomposed when `#tile_cache_valid?` says something they depend on changed: the
 camera crossing a tile, an animation input *the visible tiles actually follow*,
 a Tile Substitution (via `Game::Map#revision`), a tileset swap, or a new map.
-The events cannot be cached — they move every frame and composite into these
-same buffers — which is why the cache is separate from the frame buffers rather
-than being drawn to directly.
 
 That last qualifier matters more than it looks. `Game::ChipsetLayout.anim_c`
 steps every 6 frames but only drives the block C animated chips; keying the
@@ -137,6 +135,7 @@ Two things are newly allocated:
 
 - **The two cached grids**, `COLS*TILE x ROWS*TILE` at ARGB8888 — 336x256x4 =
   336 KiB each, **672 KiB** together. Fixed, allocated once with the scene.
+  (Now 2 KiB of tile cells instead.)
 - **The `quads` table.** Bounded, not unbounded: its key space is the game's
   distinct tile ids x 3 `abf` x 4 `cf`. For Nepheshel that ceiling is 639
   distinct ids across all 543 maps, so **7,668 entries / ~28,000 small arrays /

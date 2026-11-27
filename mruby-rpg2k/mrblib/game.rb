@@ -1086,18 +1086,10 @@ module Game
     # quarters. An absent tile and out-of-range ids return []; id 0 is water, not
     # empty (see .block). `abf` / `cf` are the current animation columns/frames
     # from #anim_ab / #anim_c.
-    # Memoised on (id, abf, cf), which is the whole of the input: the result is
-    # pure geometry, the same six numbers per quad every time. Uncached this was
-    # the single largest source of allocation in the engine -- the map renderer
-    # calls it once per visible tile per layer (~670 times a frame), and an
-    # autotile answers with five fresh arrays -- which measured as ~350k mruby
-    # allocations/second on Nepheshel. The distinct key count is bounded by the
-    # chipset (a few thousand tile ids x 4 animation columns x 3 frames) and
-    # each entry is a handful of small arrays, so the table settles quickly
-    # rather than growing with play time.
-    #
-    # The returned arrays are shared between callers and must not be mutated;
-    # every caller only reads them (see Scene::Map#draw_tile).
+    # The map renderer does not call this: Bitmap#tile_grid lays chips out
+    # natively, held to this by mruby-rpg2k/test/test.rb.
+    # Memoised on (id, abf, cf), which is the whole of the input. The returned
+    # arrays are shared between callers and must not be mutated.
     def self.quads(id, abf = 0, cf = 0)
       # Resolving the block first does double duty. It answers the inputs that
       # have no quads at all -- `nil` (Game::Map#lower/#upper out of bounds,
@@ -1129,51 +1121,6 @@ module Game
       when :animated then (id << 16) | cf
       else id << 16
       end
-    end
-
-    # DENSE_QUADS: the .quads entries of +ids+, for every animation state they
-    # read, made up front and copied side by side. Made lazily mid-render, each
-    # landed among that frame's garbage and kept its heap page alive after the
-    # garbage died; the copies are the only objects made in the last loop.
-    def self.prepare_quads(ids)
-      @quads_cache ||= {}
-      keys = []
-      made = []
-      i = 0
-      while i < ids.size
-        id = ids[i]
-        b = block(id)
-        i += 1
-        next if b.nil?
-        abf_n = b == :water ? 3 : 1
-        cf_n = b == :animated ? 4 : 1
-        a = 0
-        while a < abf_n
-          c = 0
-          while c < cf_n
-            key = quads_key(b, id, a, c)
-            unless @quads_cache.key?(key)
-              keys.push(key)
-              made.push(uncached_quads(b, id, a, c))
-            end
-            c += 1
-          end
-          a += 1
-        end
-      end
-      i = 0
-      while i < keys.size
-        qs = made[i]
-        out = Array.new(qs.size)
-        j = 0
-        while j < qs.size
-          out[j] = qs[j].dup
-          j += 1
-        end
-        @quads_cache[keys[i]] = out
-        i += 1
-      end
-      nil
     end
 
     # Whether an upper-layer id draws nothing, so the renderer can skip it.
@@ -6353,15 +6300,6 @@ module Game
     def lower(x, y); tile(@lower, 0, x, y); end
     def upper(x, y); tile(@upper, 1, x, y); end
 
-    # Every tile id the layers draw now (substitutions applied), each once;
-    # the upper layer's blank ids are left out, as the renderer skips them.
-    def drawn_tile_ids
-      seen = {}
-      add_drawn_ids(seen, @lower, @substitutions[0], false)
-      add_drawn_ids(seen, @upper, @substitutions[1], true)
-      seen.keys
-    end
-
     # Tile Substitution: from now on draw (and treat) as `new_id` every tile on
     # `layer` (0 lower, 1 upper) that *currently* renders as `old_id` -- not
     # just tiles whose original chipset id is `old_id`. Ported from a
@@ -6463,17 +6401,6 @@ module Game
     # `y` that reaches the MUL below is a Fixnum wherever the already-
     # annotated `x` is.
 
-
-    def add_drawn_ids(seen, layer, table, upper)
-      i = 0
-      size = layer.size
-      while i < size
-        id = layer[i]
-        id = table[id] || id unless table.empty?
-        seen[id] = true unless upper && ChipsetLayout.upper_blank?(id)
-        i += 1
-      end
-    end
 
     def tile(layer, index, x, y)
       return nil unless in_bounds?(x, y)

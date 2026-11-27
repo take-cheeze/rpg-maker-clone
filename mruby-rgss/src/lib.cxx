@@ -3040,17 +3040,17 @@ mrb_value bmp_copy_blt(mrb_state* M, V self) {
 }
 
 // DEFERRED_BITMAP: Bitmap#_defer turns a canvas into a list of the draws made
-// on it (clear, fill_rect, blt, blt_quads, copy_blt, stretch_blt, and the
-// shinonome draw_text and blend_text), evaluated a few rows at a time when a
-// sprite shows it (see DRAW_TIME_SPRITE) instead of being held as pixels. Each
-// recorded draw runs later through the very function the immediate draw uses
-// (blt_pixels, copy_pixels, fill_pixels, text_stamp) on a window of rows, so a
-// row comes out byte for byte as the canvas would have held it.
-// Anything else that touches the bitmap materializes it first: DataType::get,
-// bmp_require and promote_to_direct all do, and only bmp_raw sees the list.
-// Sources stay as they were when drawn: a decoded image is held (nothing draws
-// into a loaded asset), a deferred one by a snapshot of its list (copy on
-// write), and any other bitmap by a copy of the rect drawn from it.
+// on it (clear, fill_rect, blt, blt_quads, copy_blt, stretch_blt, tile_grid,
+// and the shinonome draw_text and blend_text), evaluated a few rows at a time
+// when a sprite shows it (see DRAW_TIME_SPRITE) instead of being held as
+// pixels. Each recorded draw runs later through the very function the immediate
+// draw uses (blt_pixels, copy_pixels, fill_pixels, text_stamp, grid_rows) on a
+// window of rows, so a row comes out byte for byte as the canvas would have
+// held it. Anything else that touches the bitmap materializes it first:
+// DataType::get, bmp_require and promote_to_direct all do, and only bmp_raw
+// sees the list. Sources stay as they were when drawn: a decoded image is held
+// (nothing draws into a loaded asset), a deferred one by a snapshot of its list
+// (copy on write), and any other bitmap by a copy of the rect drawn from it.
 // RGSS_DEFERRED_BITMAPS=0 (environment or build define) makes _defer a clear.
 #ifndef RGSS_DEFERRED_BITMAPS
 #define RGSS_DEFERRED_BITMAPS 1
@@ -3074,6 +3074,7 @@ enum : uint8_t {
   kDeferredFill,
   kDeferredStretch,
   kDeferredText,
+  kDeferredGrid,
   kDeferredDead
 };
 
@@ -3081,8 +3082,8 @@ enum : uint8_t {
 struct DeferredOp {
   int16_t dx, dy;
   // A fill keeps its R, G, B, A bytes in sx and sy, a stretch the index of its
-  // rects in sx and a text run that of its glyphs in sx; all keep the rows and
-  // columns they reach in dx, dy, w, h.
+  // rects in sx, a text run that of its glyphs and a tile grid that of its
+  // cells; all keep the rows and columns they reach in dx, dy, w, h.
   uint16_t sx, sy, w, h;
   uint16_t src;
   uint8_t opacity, kind;
@@ -3152,12 +3153,187 @@ class DeferredOps {
   size_t size_ = 0;
 };
 
+// RPG2000 chip geometry for Bitmap#tile_grid: Game::ChipsetLayout.quads
+// (mruby-rpg2k/mrblib/game.rb) for one tile id, as up to four squares.
+// mruby-rpg2k/test/test.rb holds the two to the same rects for every id.
+struct ChipQuad {
+  int16_t dx, dy, sx, sy, size;
+};
+constexpr int kChip = 16;
+constexpr int kHalfChip = 8;
+constexpr int16_t kTileNone = INT16_MIN;
+
+// ChipsetLayout::BLOCK_A_SUBTILES and BLOCK_D_SUBTILES.
+static const int8_t kChipBlockA[47 * 4] = {
+    -1, -1, -1, -1, 3, -1, -1, -1, -1, 3,  -1, -1, 3, 3,  -1, -1, -1, -1, -1,
+    3,  3,  -1, -1, 3, -1, 3,  -1, 3,  3,  3,  -1, 3, -1, -1, 3,  -1, 3,  -1,
+    3,  -1, -1, 3,  3, -1, 3,  3,  3,  -1, -1, -1, 3, 3,  3,  -1, 3,  3,  -1,
+    3,  3,  3,  3,  3, 3,  3,  1,  -1, 1,  -1, 1,  3, 1,  -1, 1,  -1, 1,  3,
+    1,  3,  1,  3,  2, 2,  -1, -1, 2,  2,  -1, 3,  2, 2,  3,  -1, 2,  2,  3,
+    3,  -1, 1,  -1, 1, -1, 1,  3,  1,  3,  1,  -1, 1, 3,  1,  3,  1,  -1, -1,
+    2,  2,  3,  -1, 2, 2,  -1, 3,  2,  2,  3,  3,  2, 2,  1,  1,  1,  1,  2,
+    2,  2,  2,  0,  2, 1,  -1, 0,  2,  1,  3,  2,  0, -1, 1,  2,  0,  3,  1,
+    -1, 1,  2,  0,  3, 1,  2,  0,  1,  -1, 0,  2,  1, 3,  0,  2,  0,  0,  1,
+    1,  0,  2,  0,  2, 1,  1,  0,  0,  2,  0,  2,  0, 0,  0,  0,  0,
+};
+static const int8_t kChipBlockD[50 * 8] = {
+    1, 2, 1, 2, 1, 2, 1, 2, 2, 0, 1, 2, 1, 2, 1, 2, 1, 2, 2, 0, 1, 2, 1, 2, 2,
+    0, 2, 0, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 2, 0, 2, 0, 1, 2, 1, 2, 2, 0, 1, 2,
+    2, 0, 1, 2, 2, 0, 2, 0, 2, 0, 1, 2, 2, 0, 1, 2, 1, 2, 2, 0, 1, 2, 2, 0, 1,
+    2, 2, 0, 1, 2, 1, 2, 2, 0, 2, 0, 1, 2, 2, 0, 2, 0, 2, 0, 1, 2, 1, 2, 1, 2,
+    2, 0, 2, 0, 2, 0, 1, 2, 2, 0, 2, 0, 1, 2, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2,
+    0, 2, 0, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 2, 0, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2,
+    2, 0, 0, 2, 2, 0, 0, 2, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2,
+    0, 1, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1, 1, 2, 0, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 0, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 0, 2, 2, 1,
+    3, 1, 3, 1, 3, 1, 3, 2, 0, 1, 3, 1, 3, 1, 3, 1, 3, 2, 0, 1, 3, 1, 3, 2, 0,
+    2, 0, 1, 3, 1, 3, 0, 2, 2, 2, 0, 2, 2, 2, 1, 1, 1, 1, 1, 3, 1, 3, 0, 1, 0,
+    1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 0, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1,
+    2, 0, 2, 1, 2, 3, 2, 3, 2, 3, 2, 3, 2, 0, 2, 3, 2, 3, 2, 3, 0, 3, 0, 3, 0,
+    3, 0, 3, 0, 3, 2, 0, 0, 3, 0, 3, 0, 1, 2, 1, 0, 1, 2, 1, 0, 1, 0, 1, 0, 3,
+    0, 3, 0, 3, 2, 3, 0, 3, 2, 3, 2, 1, 2, 1, 2, 3, 2, 3, 0, 1, 2, 1, 0, 3, 2,
+    3, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+static int chip_full(int col, int row, ChipQuad* q) {
+  q[0] = ChipQuad{0, 0, static_cast<int16_t>(col * kChip),
+                  static_cast<int16_t>(row * kChip), kChip};
+  return 1;
+}
+
+// Quarter k (row k / 2, column k % 2) from that quarter of chip (c[k], r[k]).
+static int chip_quarters(const int* c, const int* r, ChipQuad* q) {
+  for (int k = 0; k < 4; ++k) {
+    const int i = k % 2, j = k / 2;
+    q[k] =
+        ChipQuad{static_cast<int16_t>(i * kHalfChip),
+                 static_cast<int16_t>(j * kHalfChip),
+                 static_cast<int16_t>(c[k] * kChip + i * kHalfChip),
+                 static_cast<int16_t>(r[k] * kChip + j * kHalfChip), kHalfChip};
+  }
+  return 4;
+}
+
+static int chip_water(int id, int anim, ChipQuad* q) {
+  const int set = id / 1000, b = (id % 1000) / 50, a = id % 50;
+  if (a >= 47 || b >= 16)
+    return 0;
+  int c[4], r[4];
+  for (int k = 0; k < 4; ++k) {
+    const int row = kChipBlockA[a * 4 + k];
+    if (row < 0) {
+      int t = (b >> k) & 1;
+      if (set == 2)
+        t ^= 3;
+      c[k] = anim;
+      r[k] = 4 + t;
+    } else {
+      c[k] = anim + (set == 1 ? 3 : 0);
+      r[k] = row;
+    }
+  }
+  // When both a border and a corner are set, the border quarters win.
+  if (b != 0 && a != 0) {
+    for (int k = 0; k < 4; ++k) {
+      int t = (b >> k) & 1;
+      if (set == 2)
+        t *= 2;
+      if (t != 0) {
+        c[k] = anim;
+        r[k] = 4 + t;
+      }
+    }
+  }
+  return chip_quarters(c, r, q);
+}
+
+static int chip_terrain(int id, ChipQuad* q) {
+  const int blk = (id - 4000) / 50, sub = (id - 4000) % 50;
+  if (blk >= 12)
+    return 0;
+  const int col = blk < 4 ? (blk % 2) * 3 : 6 + (blk % 2) * 3;
+  const int row = blk < 4 ? 8 + (blk / 2) * 4 : ((blk - 4) / 2) * 4;
+  int c[4], r[4];
+  for (int k = 0; k < 4; ++k) {
+    c[k] = col + kChipBlockD[sub * 8 + k * 2];
+    r[k] = row + kChipBlockD[sub * 8 + k * 2 + 1];
+  }
+  return chip_quarters(c, r, q);
+}
+
+static int chip_quads(int id, int abf, int cf, ChipQuad* q) {
+  if (id < 0)
+    return 0;
+  if (id >= 10000) {
+    const int i = id - 10000;
+    if (i >= 144)
+      return 0;
+    return i < 48 ? chip_full(18 + i % 6, 8 + i / 6, q)
+                  : chip_full(24 + (i - 48) % 6, (i - 48) / 6, q);
+  }
+  if (id >= 5000) {
+    const int i = id - 5000;
+    if (i >= 144)
+      return 0;
+    return i < 96 ? chip_full(12 + i % 6, i / 6, q)
+                  : chip_full(18 + (i - 96) % 6, (i - 96) / 6, q);
+  }
+  if (id >= 4000)
+    return chip_terrain(id, q);
+  if (id >= 3000)
+    return chip_full(3 + (id - 3000) / 50, 4 + cf, q);
+  return chip_water(id, abf, q);
+}
+
+// A Bitmap#tile_grid draw: its chipset, the planes it draws (cols * rows tile
+// ids each, in draw order), and the scroll and animation they are drawn at.
+struct DeferredGrid {
+  std::shared_ptr<Bitmap> chipset;
+  std::vector<int16_t> ids;
+  int cols, rows, ox, oy, abf, cf, planes;
+};
+
+// Draw rows [a, e) of the grid into `win`, whose first row is row y0.
+static void grid_rows(Bitmap& win,
+                      int y0,
+                      const DeferredGrid& g,
+                      int a,
+                      int e) {
+  const size_t n = static_cast<size_t>(g.cols) * g.rows;
+  // Integer division rounds toward zero, so these bound the rows from outside.
+  const int ry0 = std::max(0, (a + g.oy) / kChip);
+  const int ry1 = std::min(g.rows - 1, (e - 1 + g.oy) / kChip);
+  ChipQuad q[4];
+  for (int ry = ry0; ry <= ry1; ++ry) {
+    const int cy = ry * kChip - g.oy;
+    for (int rx = 0; rx < g.cols; ++rx) {
+      const int cx = rx * kChip - g.ox;
+      if (cx + kChip <= 0 || cx >= win.width)
+        continue;
+      for (int p = 0; p < g.planes; ++p) {
+        const int k =
+            chip_quads(g.ids[p * n + ry * g.cols + rx], g.abf, g.cf, q);
+        for (int i = 0; i < k; ++i) {
+          const int qy = cy + q[i].dy;
+          const int ya = std::max(qy, a), yb = std::min(qy + q[i].size, e);
+          if (ya >= yb)
+            continue;
+          blt_pixels(win, *g.chipset, cx + q[i].dx, ya - y0,
+                     Rect{q[i].sx, q[i].sy + (ya - qy), q[i].size, yb - ya},
+                     255);
+        }
+      }
+    }
+  }
+}
+
 struct DeferredList {
   DeferredOps ops;
   std::vector<DeferredSrc> srcs;
   std::vector<std::vector<uint16_t>> bands;       // op indices, ascending
   std::vector<std::array<int32_t, 8>> stretches;  // destination, source rects
   std::vector<DeferredText> texts;
+  std::vector<std::shared_ptr<const DeferredGrid>> grids;
   size_t dead = 0;
 };
 
@@ -3259,6 +3435,10 @@ static void deferred_rows(const DeferredList& L,
       text_stamp(win, y0, o, L.texts[o.sx], a, e);
       continue;
     }
+    if (o.kind == kDeferredGrid) {
+      grid_rows(win, y0, *L.grids[o.sx], a, e);
+      continue;
+    }
     const DeferredSrc& s = L.srcs[o.src];
     if (o.kind == kDeferredStretch) {
       const std::array<int32_t, 8>& r = L.stretches[o.sx];
@@ -3358,7 +3538,8 @@ static void deferred_cover(DeferredList& L,
                            bool opaque,
                            int height) {
   if (L.bands.empty() || o.kind == kDeferredStretch ||
-      o.kind == kDeferredText || (o.kind == kDeferredBlt && o.opacity < 255))
+      o.kind == kDeferredText || o.kind == kDeferredGrid ||
+      (o.kind == kDeferredBlt && o.opacity < 255))
     return;
   for (int b = o.dy / kDeferredBand; b <= (o.dy + o.h - 1) / kDeferredBand;
        ++b) {
@@ -3383,6 +3564,7 @@ static void deferred_compact(DeferredList& L, int height, bool full = false) {
   std::vector<DeferredSrc> srcs;
   std::vector<std::array<int32_t, 8>> stretches;
   std::vector<DeferredText> texts;
+  std::vector<std::shared_ptr<const DeferredGrid>> grids;
   for (size_t k = 0; k < L.ops.size(); ++k) {
     DeferredOp e = L.ops[k];
     if (e.kind == kDeferredDead)
@@ -3395,7 +3577,12 @@ static void deferred_compact(DeferredList& L, int height, bool full = false) {
       texts.push_back(std::move(L.texts[e.sx]));
       e.sx = static_cast<uint16_t>(texts.size() - 1);
     }
-    if (e.kind != kDeferredFill && e.kind != kDeferredText) {
+    if (e.kind == kDeferredGrid) {
+      grids.push_back(std::move(L.grids[e.sx]));
+      e.sx = static_cast<uint16_t>(grids.size() - 1);
+    }
+    if (e.kind != kDeferredFill && e.kind != kDeferredText &&
+        e.kind != kDeferredGrid) {
       if (remap[e.src] < 0) {
         remap[e.src] = static_cast<int>(srcs.size());
         srcs.push_back(L.srcs[e.src]);
@@ -3408,6 +3595,7 @@ static void deferred_compact(DeferredList& L, int height, bool full = false) {
   L.srcs.swap(srcs);
   L.stretches.swap(stretches);
   L.texts.swap(texts);
+  L.grids.swap(grids);
   L.dead = 0;
   L.bands.clear();
   for (size_t i = 0; i < L.ops.size(); ++i)
@@ -3592,6 +3780,86 @@ bool deferred_stretch(Bitmap& dst,
                static_cast<uint8_t>(opacity),
                kDeferredStretch};
   return deferred_push(dst, o, false);
+}
+
+// The chipset a recorded grid reads: a decoded image as it is, anything else
+// as a copy, as deferred_source keeps a blt's source.
+static std::shared_ptr<Bitmap> grid_chipset(const std::shared_ptr<Bitmap>& s) {
+  if (s->decoded_from_source && !s->deferred)
+    return s;
+  settle_for_access(*s);
+  auto c = std::make_shared<Bitmap>(s->width, s->height, s->format);
+  if (s->indexed())
+    c->palette.assign(s->pal(), s->pal() + 256 * 4);
+  c->direct_format = s->direct_format;
+  c->counter() += c->palette.size();
+  std::memcpy(c->buffer.data(), s->px(),
+              static_cast<size_t>(s->width) * s->height *
+                  lv_color_format_get_size(s->format));
+  return c;
+}
+
+// Bitmap#tile_grid(chipset, cells, ox, oy, abf, cf, upper) -- an RPG2000 map
+// layer in one draw. `cells` is a cols x rows x 3 Table of tile ids: cell
+// (x, y) is drawn at (x * 16 - ox, y * 16 - oy) from `chipset`, as
+// Game::ChipsetLayout.quads(id, abf, cf) lays it out, planes 0 then 1 unless
+// `upper`, plane 2 if it is. -32768 draws nothing. A deferred bitmap records
+// it as one draw over a copy of those planes instead of a draw per chip.
+mrb_value bmp_tile_grid(mrb_state* M, V self) {
+  void* src;
+  V cells_v;
+  mrb_int ox, oy, abf, cf;
+  mrb_bool upper;
+  mrb_get_args(M, "doiiiib", &src, &DataType<Bitmap>::data_type, &cells_v, &ox,
+               &oy, &abf, &cf, &upper);
+  Bitmap& dst = bmp_raw(M, self);
+  const std::shared_ptr<Bitmap>& sb = bmp_require_shared(M, src);
+  const Table& t = DataType<Table>::get(M, cells_v);
+  if (t.zsize != 3)
+    mrb_raise(M,
+              mrb_class_get_under_id(M, mrb_module_get_id(M, MRB_SYM(RGSS)),
+                                     MRB_SYM(RGSSError)),
+              "tile_grid: cells must be a Table of 3 planes");
+  auto g = std::make_shared<DeferredGrid>();
+  g->cols = t.xsize;
+  g->rows = t.ysize;
+  g->ox = static_cast<int>(ox);
+  g->oy = static_cast<int>(oy);
+  g->abf = static_cast<int>(abf);
+  g->cf = static_cast<int>(cf);
+  g->planes = upper ? 1 : 2;
+  const size_t n = static_cast<size_t>(t.xsize) * t.ysize;
+  const auto first = t.data.begin() + (upper ? 2 * n : 0);
+  g->ids.assign(first, first + g->planes * n);
+  dst.dirty = true;
+  const mrb_int x0 = std::max<mrb_int>(-ox, 0), y0 = std::max<mrb_int>(-oy, 0);
+  const mrb_int x1 = std::min<mrb_int>(g->cols * kChip - ox, dst.width);
+  const mrb_int y1 = std::min<mrb_int>(g->rows * kChip - oy, dst.height);
+  if (x0 >= x1 || y0 >= y1 ||
+      std::all_of(g->ids.begin(), g->ids.end(),
+                  [](int16_t id) { return id == kTileNone; }))
+    return self;
+  if (dst.deferred && sb.get() != &dst) {
+    g->chipset = grid_chipset(sb);
+    DeferredList& L = deferred_edit(dst);
+    L.grids.push_back(std::move(g));
+    DeferredOp o{static_cast<int16_t>(x0),
+                 static_cast<int16_t>(y0),
+                 static_cast<uint16_t>(L.grids.size() - 1),
+                 0,
+                 static_cast<uint16_t>(x1 - x0),
+                 static_cast<uint16_t>(y1 - y0),
+                 0,
+                 255,
+                 kDeferredGrid};
+    deferred_push(dst, o, false);
+    return self;
+  }
+  Bitmap& d = bmp_self(M, self);
+  settle_for_access(*sb);
+  g->chipset = sb;
+  grid_rows(d, 0, *g, static_cast<int>(y0), static_cast<int>(y1));
+  return self;
 }
 
 // Bitmap#_defer(on = true): drop the pixels and record later draws (see
@@ -10635,6 +10903,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 #endif  // !defined(WIO_TERMINAL)
       MRB_MT_ENTRY(bmp_blt, MRB_SYM(blt), MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1))  //
       MRB_MT_ENTRY(bmp_blt_quads, MRB_SYM(blt_quads), MRB_ARGS_REQ(4))        //
+      MRB_MT_ENTRY(bmp_tile_grid, MRB_SYM(tile_grid), MRB_ARGS_REQ(7))        //
       MRB_MT_ENTRY(bmp_copy_blt, MRB_SYM(copy_blt), MRB_ARGS_REQ(4))          //
       MRB_MT_ENTRY(bmp_defer, MRB_SYM(_defer), MRB_ARGS_OPT(1))               //
       MRB_MT_ENTRY(bmp_tone_blt, MRB_SYM(tone_blt), MRB_ARGS_REQ(2))          //
