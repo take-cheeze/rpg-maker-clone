@@ -303,6 +303,9 @@ class RPG2k
       # LVGL object down; disposing the viewport then only frees the frame.
       [@skin_sprite, @cursor_sprite, @contents_sprite, @arrow_sprite].each(&:dispose)
       @viewport.dispose
+      # The layers' own bitmaps, which hold the windowskin they draw from; the
+      # contents are the caller's.
+      [@skin_bmp, @cursor_bmp, @arrow_bmp].each(&:dispose)
     end
 
     private
@@ -861,6 +864,7 @@ class RPG2k
   # inspect one map's rendering, e.g. piped through --iterm, without a save
   # file positioned there.
   def start_new_game
+    release_views
     init = map_tree[:initial]
     map_id = preview_map_id || init[:initial_map_id]
     map = RGSS::Profiler.section(:"map.transition.load") { load_map map_id }
@@ -880,8 +884,8 @@ class RPG2k
       state.seed_vehicle_positions map_tree
     end
     state.map = map
-    # Build the play scene first; only tear down the title once it succeeds so a
-    # data problem leaves the title intact instead of a blank screen.
+    # The title scene itself goes only once the map is built, so a data problem
+    # puts its view back (#restore_top_view) instead of leaving a blank screen.
     scene = Scene::Map.new(self, state)
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [scene]
@@ -909,6 +913,20 @@ class RPG2k
   rescue StandardError => e
     # Never let a data problem crash the title screen; report and stay put.
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
+    restore_top_view
+  end
+
+  # MAP_SWITCH (Scene::Title#release_view): the scenes a map is about to replace
+  # drop their views first.
+  def release_views
+    @scenes.each { |s| s.release_view if s.respond_to?(:release_view) }
+  end
+
+  # The top scene takes its view back after a failed switch; one under it does
+  # when it is resumed.
+  def restore_top_view
+    top = @scenes.last
+    top.restore_view if top && top.respond_to?(:restore_view)
   end
 
   # --rpg2k_preview_animation: play the named battle animation back on `scene`
@@ -1191,6 +1209,7 @@ class RPG2k
       RGSS.warn_stub "Continue (no save data found)"
       return
     end
+    release_views
     state.map = RGSS::Profiler.section(:"map.transition.load") { load_map state.map_id }
     # Reapply the Tile Substitution table the save carried for this map --
     # #load_map always builds a fresh, unsubstituted Game::Map (correct for
@@ -1212,6 +1231,7 @@ class RPG2k
     $stderr.puts "[RPG2k-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
   rescue StandardError => e
     $stderr.puts "[RPG2k] Failed to continue: #{e.message}"
+    restore_top_view
   end
 
   # Fences around #bug_report_text so a reader (a human scrolling the log)
