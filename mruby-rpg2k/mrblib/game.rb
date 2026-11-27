@@ -985,54 +985,53 @@ module Game
     # to take the quarter from block B instead. (Ported from a reference
     # implementation's block-A subtile table.)
     N = -1
-    # FLAT_SUBTILES: four entries per subtile in [row][col] order, so the table
-    # is one Array where the nested ones were 142 heap objects (block D's 351).
-    BLOCK_A_SUBTILES = [
-      N, N, N, N, 3, N, N, N, N, 3, N, N, 3, 3, N, N,
-      N, N, N, 3, 3, N, N, 3, N, 3, N, 3, 3, 3, N, 3,
-      N, N, 3, N, 3, N, 3, N, N, 3, 3, N, 3, 3, 3, N,
-      N, N, 3, 3, 3, N, 3, 3, N, 3, 3, 3, 3, 3, 3, 3,
-      1, N, 1, N, 1, 3, 1, N, 1, N, 1, 3, 1, 3, 1, 3,
-      2, 2, N, N, 2, 2, N, 3, 2, 2, 3, N, 2, 2, 3, 3,
-      N, 1, N, 1, N, 1, 3, 1, 3, 1, N, 1, 3, 1, 3, 1,
-      N, N, 2, 2, 3, N, 2, 2, N, 3, 2, 2, 3, 3, 2, 2,
-      1, 1, 1, 1, 2, 2, 2, 2, 0, 2, 1, N, 0, 2, 1, 3,
-      2, 0, N, 1, 2, 0, 3, 1, N, 1, 2, 0, 3, 1, 2, 0,
-      1, N, 0, 2, 1, 3, 0, 2, 0, 0, 1, 1, 0, 2, 0, 2,
-      1, 1, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0
-    ].freeze
+    # FLAT_SUBTILES: four entries per subtile in [row][col] order, each the digit
+    # of value + 1, sixteen to a line (#subtile_at). One literal, unindented: a
+    # heredoc or a continued one compiles to a STRCAT, which the VM-free class
+    # body refuses. An Array held 188 (block D's 400) words for the whole game.
+    BLOCK_A_SUBTILES = '0000400004004400
+0004400404044404
+0040404004404440
+0044404404444444
+2020242020242424
+3300330433403344
+0202024242024242
+0033403304334433
+2222333313201324
+3102314202314231
+2013241311221313
+221131311111'
     BLOCK_A_COUNT = 47
 
     # [subtile][row][col] -> [dx, dy] chipset-chip offset within the block-D cell.
     # (Ported from a reference implementation's block-D subtile table.)
-    # FLAT_SUBTILES: dx then dy, eight entries per subtile in [row][col] order.
-    BLOCK_D_SUBTILES = [
-      1, 2, 1, 2, 1, 2, 1, 2, 2, 0, 1, 2, 1, 2, 1, 2,
-      1, 2, 2, 0, 1, 2, 1, 2, 2, 0, 2, 0, 1, 2, 1, 2,
-      1, 2, 1, 2, 1, 2, 2, 0, 2, 0, 1, 2, 1, 2, 2, 0,
-      1, 2, 2, 0, 1, 2, 2, 0, 2, 0, 2, 0, 1, 2, 2, 0,
-      1, 2, 1, 2, 2, 0, 1, 2, 2, 0, 1, 2, 2, 0, 1, 2,
-      1, 2, 2, 0, 2, 0, 1, 2, 2, 0, 2, 0, 2, 0, 1, 2,
-      1, 2, 1, 2, 2, 0, 2, 0, 2, 0, 1, 2, 2, 0, 2, 0,
-      1, 2, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0,
-      0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 2, 0, 0, 2, 0, 2,
-      0, 2, 0, 2, 0, 2, 2, 0, 0, 2, 2, 0, 0, 2, 2, 0,
-      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0,
-      1, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1, 1, 2, 0, 2, 0,
-      2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 2, 2,
-      2, 0, 2, 2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 0, 2, 2,
-      1, 3, 1, 3, 1, 3, 1, 3, 2, 0, 1, 3, 1, 3, 1, 3,
-      1, 3, 2, 0, 1, 3, 1, 3, 2, 0, 2, 0, 1, 3, 1, 3,
-      0, 2, 2, 2, 0, 2, 2, 2, 1, 1, 1, 1, 1, 3, 1, 3,
-      0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 0,
-      2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 0, 2, 1,
-      2, 3, 2, 3, 2, 3, 2, 3, 2, 0, 2, 3, 2, 3, 2, 3,
-      0, 3, 0, 3, 0, 3, 0, 3, 0, 3, 2, 0, 0, 3, 0, 3,
-      0, 1, 2, 1, 0, 1, 2, 1, 0, 1, 0, 1, 0, 3, 0, 3,
-      0, 3, 2, 3, 0, 3, 2, 3, 2, 1, 2, 1, 2, 3, 2, 3,
-      0, 1, 2, 1, 0, 3, 2, 3, 1, 2, 1, 2, 1, 2, 1, 2,
-      1, 2, 1, 2, 1, 2, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0
-    ].freeze
+    # FLAT_SUBTILES: dx then dy, eight entries per subtile in [row][col] order,
+    # laid out as BLOCK_A_SUBTILES.
+    BLOCK_D_SUBTILES = '2323232331232323
+2331232331312323
+2323233131232331
+2331233131312331
+2323312331233123
+2331312331313123
+2323313131233131
+2331313131313131
+1313131313311313
+1313133113311331
+2222222222222231
+2222312222223131
+3333333333333133
+3133333331333133
+2424242431242424
+2431242431312424
+1333133322222424
+1212121212121231
+3232323232323132
+3434343431343434
+1414141414311414
+1232123212121414
+1434143432323434
+1232143423232323
+2323232311111111'
     BLOCK_D_COUNT = 50
 
     # Animation column (0..2) for the water autotiles (blocks A/B), from a frame
@@ -1188,6 +1187,11 @@ module Game
       out
     end
 
+    # Entry +k+ of a FLAT_SUBTILES table: each line holds sixteen digits and its newline.
+    def self.subtile_at(table, k)
+      table.getbyte(k + k / 16) - 49
+    end
+
     # Water autotile (blocks A/B). `set` (id/1000) selects the water set, then the
     # id's low digits select a block-B border combination and a block-A corner
     # combination; each quarter comes from block A or block B accordingly.
@@ -1201,7 +1205,7 @@ module Game
       # Quarters the A table leaves open (-1) come from block B (rows 4..7).
       2.times do |j|
         2.times do |i|
-          next unless BLOCK_A_SUBTILES[a_subtile * 4 + j * 2 + i] == N
+          next unless subtile_at(BLOCK_A_SUBTILES, a_subtile * 4 + j * 2 + i) == N
           t = (b_subtile >> (j * 2 + i)) & 1
           t ^= 3 if set == 2
           quarters[j][i] = [anim, 4 + t]
@@ -1211,7 +1215,7 @@ module Game
       # uses the second column trio, +3).
       2.times do |j|
         2.times do |i|
-          row = BLOCK_A_SUBTILES[a_subtile * 4 + j * 2 + i]
+          row = subtile_at(BLOCK_A_SUBTILES, a_subtile * 4 + j * 2 + i)
           next if row == N
           quarters[j][i] = [anim + (set == 1 ? 3 : 0), row]
         end
@@ -1247,7 +1251,8 @@ module Game
       2.times do |j|
         2.times do |i|
           k = subtile * 8 + j * 4 + i * 2
-          quarters[j][i] = [base_col + BLOCK_D_SUBTILES[k], base_row + BLOCK_D_SUBTILES[k + 1]]
+          quarters[j][i] = [base_col + subtile_at(BLOCK_D_SUBTILES, k),
+                            base_row + subtile_at(BLOCK_D_SUBTILES, k + 1)]
         end
       end
       quads_from_quarters(quarters)

@@ -1553,6 +1553,7 @@ module Game::ChipsetLayout
   def self.event_tile_rect_cached: (untyped) -> untyped
   def self.quads_from_quarters: (untyped) -> untyped
   def self.quads_key: (untyped, untyped, untyped, untyped) -> untyped
+  def self.subtile_at: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
 module Game::CommonEvent
