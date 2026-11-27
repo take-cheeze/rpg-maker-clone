@@ -68,6 +68,7 @@ extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display);
 extern "C" unsigned rgss_wio_mrb_state_size(void);
+extern "C" bool rgss_oom_gc(void);
 extern "C" char __end__;
 extern "C" char __StackTop;
 extern "C" void* _sbrk(ptrdiff_t);
@@ -128,6 +129,8 @@ void rom_graph_line(void*, const char* line) {
 constexpr size_t kBigNew = 4096;
 size_t g_big_new = 0;
 unsigned g_big_new_n = 0;
+// operator new's full GCs (rgss_oom_gc).
+unsigned long g_new_gcs = 0;
 
 mrb_state* g_mrb = nullptr;
 mrb_value g_game = mrb_nil_value();
@@ -350,9 +353,17 @@ void track_scene() {
 }  // namespace
 
 // The core's operator new returns nullptr when malloc fails, and the caller
-// (a bitmap's std::vector) then writes through it. Stop the run instead.
+// (a bitmap's std::vector) then writes through it. A full GC gets one try at
+// making the room (rgss_oom_gc says when one may run); then stop the run.
 void* operator new(size_t n) {
   void* p = malloc(n);
+  if (!p && rgss_oom_gc()) {
+    p = malloc(n);
+    ++g_new_gcs;
+    wio_diag_printf("[Wio] operator new %u bytes: full GC #%lu, %s\n",
+                    static_cast<unsigned>(n), g_new_gcs,
+                    p ? "fits" : "still no room");
+  }
   if (!p) {
     wio_diag_printf("OOM operator new %u bytes\n", static_cast<unsigned>(n));
     probe("oom");
