@@ -252,7 +252,7 @@ REWRITES = {
         expect_lines: 6, digest: '6115d4f38fd493a5' },
       { first: '      def build_timer_sprite',
         last: '      end', # def build_timer_sprite's own `end`
-        expect_lines: 6, digest: 'b81382a16878ceaf' },
+        expect_lines: 6, digest: '4b5acbbd863e7c08' },
       { first: '      def player_draw_charset',
         last: '      end', # def player_draw_charset's own `end`
         expect_lines: 8, digest: 'a1b54c83e13bdf9c' },
@@ -475,7 +475,7 @@ REWRITES = {
 ' }, # draw_timer
       { old: '        spr ||= (@timer_sprites[id] = build_timer_sprite)
 ',
-        new: '        spr ||= (@timer_sprites[id] = (spr = Sprite.new; spr.z = 250; spr.bitmap = Bitmap.new(TIMER_INNER_W, TIMER_INNER_H); spr))
+        new: '        spr ||= (@timer_sprites[id] = (spr = Sprite.new; spr.z = 250; spr.bitmap = contents_bitmap(TIMER_INNER_W, TIMER_INNER_H); spr))
 ' }, # build_timer_sprite
       { old: '        charset, charset_index = player_draw_charset
 ',

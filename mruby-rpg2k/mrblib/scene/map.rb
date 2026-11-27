@@ -6313,7 +6313,7 @@ class RPG2k
         win = Window.new(SCREEN_W - gw - 6, 6, gw, gh)
         win.z = 300
         win.windowskin = @windowskin
-        c = Bitmap.new(gw - Window::BORDER * 2, INN_LINE_H)
+        c = contents_bitmap(gw - Window::BORDER * 2, INN_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, INN_LINE_H, "#{@state.party.gold}#{gold_term}"
         win.contents = c
@@ -6609,7 +6609,7 @@ class RPG2k
         win = Window.new(0, SHOP_DESC_H, win_w, inner_h + Window::BORDER * 2)
         win.z = 300
         win.windowskin = @windowskin
-        c = Bitmap.new(inner_w, inner_h)
+        c = contents_bitmap(inner_w, inner_h)
         c.font.color = Color.new(255, 255, 255, 255)
         visible.each_with_index do |(label, _), i|
           c.draw_text 0, i * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
@@ -6680,7 +6680,7 @@ class RPG2k
           shop.desc = win
         end
         inner_w = SCREEN_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, SHOP_LINE_H)
+        c = contents_bitmap(inner_w, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, id ? shop.model.description(id) : ''
         win.contents = c
@@ -6713,7 +6713,7 @@ class RPG2k
           shop.prompt = win
         end
         inner_w = MSG_WIN_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, SHOP_LINE_H)
+        c = contents_bitmap(inner_w, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, text
         win.contents = c
@@ -6752,7 +6752,7 @@ class RPG2k
           shop.prompt = win
         end
         inner_w = MSG_WIN_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, text_lines.length * MSG_LINE_H)
+        c = contents_bitmap(inner_w, text_lines.length * MSG_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         text_lines.each_with_index do |line, i|
           c.draw_text 0, i * MSG_LINE_H, inner_w, MSG_LINE_H, line
@@ -6777,7 +6777,7 @@ class RPG2k
         shop.gold.visible = visible
         return unless visible
         gw = SHOP_STATUS_W
-        c = Bitmap.new(gw - Window::BORDER * 2, SHOP_LINE_H)
+        c = contents_bitmap(gw - Window::BORDER * 2, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, SHOP_LINE_H,
                     "#{@state.party.gold}#{shop_gold_term}"
@@ -6839,7 +6839,7 @@ class RPG2k
           shop.status = win
         end
         inner_w = SHOP_STATUS_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, SHOP_LINE_H * 2)
+        c = contents_bitmap(inner_w, SHOP_LINE_H * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, term(:possessed_items)
         c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H, term(:equipped_items)
@@ -6969,8 +6969,8 @@ class RPG2k
           win.z = 300
           win.windowskin = @windowskin
           if @windowskin
-            c = Bitmap.new(SHOP_STATUS_W - Window::BORDER * 2,
-                           SHOP_PARTY_H - Window::BORDER * 2)
+            c = contents_bitmap(SHOP_STATUS_W - Window::BORDER * 2,
+                                SHOP_PARTY_H - Window::BORDER * 2)
             ox, oy = SHOP_PARTY_ICON_OFFSET
             c.blt ox, oy, @windowskin, SHOP_PARTY_ICON_SRC
             win.contents = c
@@ -7802,7 +7802,7 @@ class RPG2k
                          inner_w + Window::BORDER * 2, inner_h + Window::BORDER * 2)
         win.z = 400
         win.windowskin = @windowskin
-        c = Bitmap.new(inner_w, inner_h)
+        c = contents_bitmap(inner_w, inner_h)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, NAME_CELL_H, "Name: #{ui[:name]}"
         NAME_CELLS.each_with_index do |cell, i|
@@ -7978,7 +7978,7 @@ class RPG2k
         win = Window.new(NAME_FACE_X, NAME_FACE_Y, NAME_FACE_WIN, NAME_FACE_WIN)
         win.z = 400
         win.windowskin = @windowskin
-        c = Bitmap.new(FACE_SIZE, FACE_SIZE)
+        c = contents_bitmap(FACE_SIZE, FACE_SIZE)
         face = load_face_bitmap(face_name)
         if face
           src = Rect.new((face_index % 4) * FACE_SIZE, (face_index / 4) * FACE_SIZE,
@@ -7998,7 +7998,7 @@ class RPG2k
         win.windowskin = @windowskin
         inner_w = NAME_FIELD_W - Window::BORDER * 2
         inner_h = NAME_FIELD_H - Window::BORDER * 2
-        c = Bitmap.new(inner_w, inner_h)
+        c = contents_bitmap(inner_w, inner_h)
         # One codepoint per slot -- `name[i]` would be a lone byte in the
         # game's own mruby (see Scene::Base#utf8_chars).
         chars = utf8_chars(ui[:name])
@@ -8019,7 +8019,7 @@ class RPG2k
         win.windowskin = @windowskin
         inner_w = NAME_GRID_W - Window::BORDER * 2
         inner_h = NAME_GRID_H - Window::BORDER * 2
-        c = Bitmap.new(inner_w, inner_h)
+        c = contents_bitmap(inner_w, inner_h)
         # Read before the loop: the blocks never see `ui`, so the record type's scan can follow it here.
         page = ui[:page]
         rows = name_kana_rows(page)
@@ -9748,12 +9748,13 @@ class RPG2k
       # pass for the same reason), so a mirrored face is built one column at a
       # time -- 48 single-column blits, done once here rather than once per
       # #draw_message_face call, since that runs every frame the text is still
-      # revealing.
+      # revealing. The cell records its blits too, so the message window's blit
+      # of it shares them instead of copying the 48x48 pixels each redraw.
       def build_face_cell(sheet, index, flipped)
         return nil unless sheet
         src_x = (index % 4) * FACE_SIZE
         src_y = (index / 4) * FACE_SIZE
-        cell = Bitmap.new(FACE_SIZE, FACE_SIZE)
+        cell = contents_bitmap(FACE_SIZE, FACE_SIZE)
         unless flipped
           cell.blt 0, 0, sheet, Rect.new(src_x, src_y, FACE_SIZE, FACE_SIZE)
           return cell
@@ -10240,7 +10241,7 @@ class RPG2k
         win = Window.new((SCREEN_W - win_w) / 2, SCREEN_H - win_h - 6, win_w, win_h)
         win.z = 320
         win.windowskin = @windowskin
-        contents = Bitmap.new(inner_w, inner_h)
+        contents = contents_bitmap(inner_w, inner_h)
         @number_input = { window: win, contents: contents, model: model, interp: interp }
         draw_number_input
         win.contents = contents
@@ -11074,7 +11075,7 @@ class RPG2k
       def build_timer_sprite
         spr = Sprite.new
         spr.z = 250 # above the map, below the message / menu windows (z 300+)
-        spr.bitmap = Bitmap.new(TIMER_INNER_W, TIMER_INNER_H)
+        spr.bitmap = contents_bitmap(TIMER_INNER_W, TIMER_INNER_H)
         spr
       end
 
