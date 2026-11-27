@@ -99,10 +99,27 @@ module RGSS
       end
     end
     def clear_blt_calls; @blt_calls = []; end
-    # The non-blending copy the map renderer moves its cached tile grid with
-    # (see Bitmap#copy_blt in mruby-rgss/src/lib.cxx). Recorded apart from
-    # #blt_calls so a check counting *tile* draws is not confused by the one
-    # whole-grid copy per frame.
+    # Bitmap#tile_grid (mruby-rgss/src/lib.cxx) draws a map layer's cells in
+    # one native call. The stub records the call and expands it into the chips
+    # it draws, through Game::ChipsetLayout.quads (which mruby-rpg2k/test/
+    # test.rb holds the native to), apart from #blt_calls.
+    def tile_grid(chipset, cells, ox, oy, abf, cf, upper)
+      (@tile_grid_calls ||= []) << [ox, oy, abf, cf, upper]
+      @tile_blts ||= []
+      planes = upper ? [2] : [0, 1]
+      cells.ysize.times do |ry|
+        cells.xsize.times do |rx|
+          planes.each do |pl|
+            Game::ChipsetLayout.quads(cells[rx, ry, pl], abf, cf).each do |qdx, qdy, sx, sy, w, h|
+              @tile_blts << [rx * 16 - ox + qdx, ry * 16 - oy + qdy, chipset, Rect.new(sx, sy, w, h)]
+            end
+          end
+        end
+      end
+      self
+    end
+    attr_reader :tile_grid_calls, :tile_blts
+    def clear_tile_blts; @tile_grid_calls = []; @tile_blts = []; end
     def copy_blt(*a); (@copy_blt_calls ||= []) << Bitmap.copied(a); end
     attr_reader :copy_blt_calls
     def clear_copy_blt_calls; @copy_blt_calls = []; end
@@ -140,6 +157,24 @@ module RGSS
     def hue_change(h); (@hue_calls ||= []) << h; end
     attr_reader :hue_calls
     def dispose; end
+  end
+
+  # RGSS::Table, int16 cells as the native one keeps them. Counts its writes,
+  # so a check can tell when the map renderer refilled its tile cells.
+  class Table
+    attr_reader :xsize, :ysize, :zsize, :writes
+    def initialize(x, y = 1, z = 1)
+      @xsize = x; @ysize = y; @zsize = z
+      @data = Array.new(x * y * z, 0)
+      @writes = 0
+    end
+    def [](x, y = 0, z = 0); @data[x + y * @xsize + z * @xsize * @ysize]; end
+    def []=(x, y, z, v)
+      raise RangeError, "#{v.inspect} is not an int16" unless v.is_a?(Integer) && v.between?(-32_768, 32_767)
+      @writes += 1
+      @data[x + y * @xsize + z * @xsize * @ysize] = v
+    end
+    def clear_writes; @writes = 0; end
   end
 
   # A readable colour (the real Color stub above swallows its args); get_pixel
@@ -16582,10 +16617,10 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
     # behaviour. The fight's own hide/show below is checked exactly instead.
     ok vp.visible != false, 'the map view draws normally before any fight opens'
     ok upper.visible != false, 'and so does the above-character layer'
-    # The tile layers reach the frame buffer as the cached grid's #copy_blt
-    # (see Scene::Map#draw_layers), so that -- not #blt, which now only carries
-    # the events drawn over it -- is what says compositing happened at all.
-    ok !(lower_bmp.copy_blt_calls || []).empty?, 'and the tile layers do composite'
+    # The tile layers reach the frame buffer as one #tile_grid each (see
+    # Scene::Map#draw_layers), so that -- not #blt, which only carries the
+    # events drawn over it -- is what says compositing happened at all.
+    ok !(lower_bmp.tile_grid_calls || []).empty?, 'and the tile layers do composite'
   end
   ui = battle_ui(scene)
   ok ui, 'the battle opened'
@@ -16595,9 +16630,9 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
   eq false, vp.visible, 'so the map view is hidden the instant the battle screen is up'
   eq false, upper.visible, 'and so is the above-character layer'
   lower_bmp.clear_blt_calls
-  lower_bmp.clear_copy_blt_calls
+  lower_bmp.clear_tile_blts
   scene.update
-  eq 0, (lower_bmp.copy_blt_calls || []).size,
+  eq 0, (lower_bmp.tile_grid_calls || []).size,
      'and the tile layers stop compositing entirely while the fight runs'
   eq 0, (lower_bmp.blt_calls || []).size,
      'and nothing draws over them either'
@@ -16609,7 +16644,7 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
   eq nil, battle_ui(scene), 'the battle closed again'
   eq true, vp.visible, 'the map view reappears the instant the fight ends'
   eq true, upper.visible, 'and so does the above-character layer'
-  ok !(lower_bmp.copy_blt_calls || []).empty?, 'and the tile layers composite again'
+  ok !(lower_bmp.tile_grid_calls || []).empty?, 'and the tile layers composite again'
 end
 
 # yado.tk: a Battle Interrupt (Terminate Battle, 13410) satisfies neither the
@@ -25634,15 +25669,12 @@ check 'draw_layers routes an unstarred upper tile behind the player, a starred o
                                               lower_layer: Array.new(w * h, 0),
                                               upper_layer: upper, events: {}))
   scene = RPG2k::Scene::Map.new(fake_parent(db), state)
-  # The tiles are blitted into the *cached* grids, which #draw_layers then
-  # copies into @lower_bmp / @upper_bmp at the sub-tile scroll offset. The
-  # routing under test (Game::ChipSet#elevated? picking the grid) happens on
-  # the way into these, so this is where it is observable; @lower_bmp only ever
-  # sees the one whole-grid copy plus whatever events draw over it.
-  lower = scene.instance_variable_get(:@lower_tiles)
-  upper_bmp = scene.instance_variable_get(:@upper_tiles)
-  lower.clear_blt_calls
-  upper_bmp.clear_blt_calls
+  # The routing under test (Game::ChipSet#elevated? picking the plane) is seen
+  # in the chips each buffer's one Bitmap#tile_grid draws.
+  lower = scene.instance_variable_get(:@lower_bmp)
+  upper_bmp = scene.instance_variable_get(:@upper_bmp)
+  lower.clear_tile_blts
+  upper_bmp.clear_tile_blts
   scene.send(:invalidate_tile_cache)
   scene.send(:draw_layers, 0, 0)
   tile = RPG2k::Scene::Map::TILE
@@ -25650,12 +25682,12 @@ check 'draw_layers routes an unstarred upper tile behind the player, a starred o
   # (0, 0) always gets one blit for its own (plain, id 0) lower tile; the
   # unstarred upper tile at the same spot is a *second* blit into the same
   # grid, not one into the upper grid.
-  eq 2, at.call(lower.blt_calls, 0, 0),
+  eq 2, at.call(lower.tile_blts, 0, 0),
      'the plain floor and the unstarred upper tile both land in the lower buffer'
-  eq 0, at.call(upper_bmp.blt_calls, 0, 0), 'the unstarred tile never reaches the upper buffer'
+  eq 0, at.call(upper_bmp.tile_blts, 0, 0), 'the unstarred tile never reaches the upper buffer'
   # (TILE, 0) also gets its own plain lower tile, but the starred upper tile
   # there is the one that must reach the upper (above-player) buffer.
-  eq 1, at.call(upper_bmp.blt_calls, tile, 0), 'the starred tile lands in the upper buffer'
+  eq 1, at.call(upper_bmp.tile_blts, tile, 0), 'the starred tile lands in the upper buffer'
   # Every other cell of this map is the blank first id, which draws nothing at
   # all -- so the lower buffer is exactly the map's own tiles plus the one
   # unstarred upper tile that landed in it. Cells outside the map draw nothing
@@ -25663,7 +25695,7 @@ check 'draw_layers routes an unstarred upper tile behind the player, a starred o
   # each tile is its four quarters rather than one blit -- both taken from the
   # code rather than written out, so this says "no extra blit" and not "121".
   per_tile = Game::ChipsetLayout.quads(0, 0, 0).size
-  eq w * h * per_tile + 1, lower.blt_calls.size,
+  eq w * h * per_tile + 1, lower.tile_blts.size,
      'the blank upper id adds no blit anywhere'
 end
 
@@ -25690,29 +25722,29 @@ check 'the reserved blank upper id draws nothing but still answers passability' 
                                               lower_layer: Array.new(w * h, 0),
                                               upper_layer: upper, events: {}))
   scene = RPG2k::Scene::Map.new(fake_parent(db), state)
-  lower = scene.instance_variable_get(:@lower_tiles)
-  upper_bmp = scene.instance_variable_get(:@upper_tiles)
-  lower.clear_blt_calls
-  upper_bmp.clear_blt_calls
+  lower = scene.instance_variable_get(:@lower_bmp)
+  upper_bmp = scene.instance_variable_get(:@upper_bmp)
+  lower.clear_tile_blts
+  upper_bmp.clear_tile_blts
   scene.send(:invalidate_tile_cache)
   scene.send(:draw_layers, 0, 0)
   # The lower layer's own tiles, and nothing more. (Only the map's own cells
   # draw -- the grid is bigger than this 4x4 map and #lower answers nil past
   # its edge -- and id 0 is an autotile, so each is its four quarters.)
-  eq w * h * Game::ChipsetLayout.quads(0, 0, 0).size, lower.blt_calls.size,
+  eq w * h * Game::ChipsetLayout.quads(0, 0, 0).size, lower.tile_blts.size,
      'a blank upper layer costs exactly the lower layer'
-  eq 0, upper_bmp.blt_calls.size, 'and nothing reaches the above-player buffer'
+  eq 0, upper_bmp.tile_blts.size, 'and nothing reaches the above-player buffer'
   # ... while the passability table still reads through it: entry 0 here blocks
   # every direction, so the blank id is not silently treated as "no tile".
   cs = scene.instance_variable_get(:@chipset)
   eq false, cs.passable_tile?(0, bf, 2), 'the blank id still blocks per its passability entry'
 end
 
-# The tile grid is cached across frames (see Scene::Map#tile_cache_valid?), so
+# The tile cells are kept across frames (see Scene::Map#tile_cache_valid?), so
 # what needs pinning down is not that a tile is drawn but *when* it is redrawn:
-# too eager and the cache buys nothing, too lazy and a change never reaches the
-# screen. Each case below counts blits into the cached grid across a second
-# #draw_layers, which is zero exactly when the cache was reused.
+# too eager and the cells buy nothing, too lazy and a change never reaches the
+# screen. Each case below runs a second #draw_layers and answers how many cell
+# writes refilled the grid and the tile_grid draws the lower buffer got.
 def tile_cache_probe(map: nil, &change)
   w = 8; h = 8
   db = fake_db
@@ -25722,57 +25754,67 @@ def tile_cache_probe(map: nil, &change)
     lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
     events: {}))
   scene = RPG2k::Scene::Map.new(fake_parent(db), state)
-  scene.send(:draw_layers, 0, 0) # prime the cache
-  grid = scene.instance_variable_get(:@lower_tiles)
-  grid.clear_blt_calls
+  scene.send(:draw_layers, 0, 0) # prime the cells
+  cells = scene.instance_variable_get(:@tile_cells)
+  lower = scene.instance_variable_get(:@lower_bmp)
+  cells.clear_writes
+  lower.clear_tile_blts
   cam = change ? change.call(scene, state) : [0, 0]
   scene.send(:draw_layers, cam[0], cam[1])
-  grid.blt_calls.size
+  [cells.writes, lower.tile_grid_calls]
 end
 
-check 'a frame that changed nothing reuses the cached tile grid' do
-  eq 0, tile_cache_probe, 'an identical frame must not re-blit a single tile'
+check 'a frame that changed nothing reuses the tile cells and draws nothing' do
+  writes, draws = tile_cache_probe
+  eq 0, writes, 'an identical frame must not refill a single cell'
+  eq [], draws, 'nor recompose the layers'
 end
 
-check 'scrolling within a tile reuses the cache, crossing a tile rebuilds it' do
-  # A sub-tile scroll is applied when the cached grid is copied out, so the grid
-  # itself is untouched; stepping onto the next tile changes which tiles it holds.
-  eq 0, tile_cache_probe { |_s, _st| [RPG2k::Scene::Map::TILE - 1, 0] }
-  ok tile_cache_probe { |_s, _st| [RPG2k::Scene::Map::TILE, 0] } > 0,
-     'crossing a tile boundary must rebuild the grid'
+check 'scrolling within a tile reuses the cells, crossing a tile refills them' do
+  # A sub-tile scroll is applied when the cells are drawn, so the cells
+  # themselves are untouched; stepping onto the next tile changes which tiles
+  # they hold.
+  writes, draws = tile_cache_probe { |_s, _st| [RPG2k::Scene::Map::TILE - 1, 0] }
+  eq 0, writes
+  eq RPG2k::Scene::Map::TILE - 1, draws[0][0], 'drawn at the new remainder'
+  ok tile_cache_probe { |_s, _st| [RPG2k::Scene::Map::TILE, 0] }[0] > 0,
+     'crossing a tile boundary must refill the cells'
 end
 
-check 'a Tile Substitution rebuilds the cached tile grid' do
+check 'a Tile Substitution refills the tile cells' do
   # The map answers lookups differently from now on, and Game::Map#revision is
-  # what tells the cache so -- without that bump the swap would never be drawn.
+  # what tells the cells so -- without that bump the swap would never be drawn.
   ok(tile_cache_probe do |_s, st|
     st.map.substitute_tile(0, 0, Game::ChipsetLayout::BLOCK_E)
     [0, 0]
-  end > 0, 'a substituted tile must reach the screen')
+  end[0] > 0, 'a substituted tile must reach the screen')
 end
 
-check 'stepping the tile animation rebuilds the cached tile grid' do
+check 'stepping the tile animation redraws the tiles at the new step' do
   # Water and the block-C animated tiles cycle off @anim_frame, so a frame that
   # advances the animation column is a different picture even standing still.
   # The probe map is all tile id 0, a block A/B autotile, so it moves with
   # .anim_ab -- frame 24 is that input's first step at the default speed. Note
   # a *cycle* is not a step: .anim_ab(96) is back to 0, so a probe there would
-  # see, correctly, no rebuild at all.
-  ok(tile_cache_probe do |s, _st|
+  # see, correctly, no redraw at all.
+  writes, draws = tile_cache_probe do |s, _st|
     s.instance_variable_set(:@anim_frame, 24)
     [0, 0]
-  end > 0, 'an animation step must reach the screen')
+  end
+  eq 0, writes, 'the cells hold ids, not the animation'
+  eq 1, draws.size, 'an animation step must reach the screen'
+  eq Game::ChipsetLayout.anim_ab(24, 0, 0), draws[0][2], 'at the new column'
 end
 
-check 'an animation step the visible tiles do not follow leaves the cache alone' do
+check 'an animation step the visible tiles do not follow leaves the layers alone' do
   # .anim_c steps every 6 frames but drives only the block C animated chips. A
   # grid holding none of them -- all id 0 here, which is block A/B -- is the
-  # same picture either way, and rebuilding it ten times a second for an input
-  # nothing on screen reads was most of the cache's remaining cost.
-  eq 0, tile_cache_probe { |s, _st|
+  # same picture either way, and recomposing it ten times a second for an
+  # input nothing on screen reads was most of the old tile cache's cost.
+  eq [], tile_cache_probe { |s, _st|
     s.instance_variable_set(:@anim_frame, 6)
     [0, 0]
-  }, 'a grid with no block C tile must not rebuild for .anim_c'
+  }[1], 'a grid with no block C tile must not redraw for .anim_c'
 end
 
 check 'a clear member walks the same ground untouched' do
