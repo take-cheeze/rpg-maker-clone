@@ -367,7 +367,7 @@ assert 'Game.exp_curve is the RPG2000 EXP curve' do
   assert_equal 187_144, Game.exp_curve(80, 75, 15, 19, 999_999)
   assert_equal 0, Game.exp_curve(30, 30, 30, -1, 999_999)
   assert_equal(-2598, Game.exp_curve(30, -60, -30, 99, 999_999))
-  assert_raise(FloatDomainError) { Game.exp_curve(-1_000_000, 1000, 0, 2000, 999_999) }
+  assert_raise(RangeError) { Game.exp_curve(-1_000_000, 1000, 0, 2000, 999_999) }
 end
 
 assert 'Game::Interpreter#character_ref resolves this event and passes other refs through' do

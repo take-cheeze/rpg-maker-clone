@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cfloat>
-#include <cmath>
 #include <cstdint>
 
 // mruby rounds every Float operation to mrb_float; so must this loop.
@@ -9,7 +8,7 @@ static_assert(FLT_EVAL_METHOD == 0, "excess-precision float evaluation");
 
 namespace rpg2k {
 
-enum class ExpCurveStatus { ok, not_finite, overflow };
+enum class ExpCurveStatus { ok, overflow };
 
 struct ExpCurveResult {
   ExpCurveStatus status;
@@ -28,7 +27,8 @@ F rounded_product(F a, F b) {
 // The RPG2000 EXP curve (Game::Actor#calc_exp) on F, mrb_float in the native.
 // Each step is the Ruby loop it replaced, one rounded operation at a time:
 // scripts/rpg2k/exp_curve_check.rb holds it to that Ruby over every editor
-// input. not_finite and overflow are where Float#to_i or Integer#+ raised.
+// input. overflow is where the Ruby total passed 64 bits; from Integer inputs a
+// term passes 64 bits before it can reach Infinity or NaN.
 template <class F>
 ExpCurveResult exp_curve_loop(int64_t basic,
                               int64_t increase,
@@ -49,8 +49,6 @@ ExpCurveResult exp_curve_loop(int64_t basic,
         static_cast<F>(result) + term >= static_cast<F>(cap)) {
       return {ExpCurveStatus::ok, cap};
     }
-    if (!std::isfinite(term))
-      return {ExpCurveStatus::not_finite, 0};
     if (!(term >= F(-9223372036854775808.0) && term < F(9223372036854775808.0)))
       return {ExpCurveStatus::overflow, 0};
     if (__builtin_add_overflow(result, static_cast<int64_t>(term), &result))

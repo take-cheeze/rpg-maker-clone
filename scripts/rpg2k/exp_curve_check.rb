@@ -34,7 +34,7 @@ HARNESS = <<~CXX
   #include <cstdlib>
   #include "exp_curve.hxx"
   // sweep B: every increase, correction in 0..100 and n in 0..99 at cap #{CAP}, as int32 values.
-  // rows: "basic increase correction n cap" lines in, "ok VALUE" / "not_finite" / "overflow" lines out.
+  // rows: "basic increase correction n cap" lines in, "ok VALUE" / "overflow" lines out.
   int main(int argc, char** argv) {
     if (argc == 3) {
       const long long b = std::atoll(argv[2]);
@@ -51,7 +51,7 @@ HARNESS = <<~CXX
     while (std::scanf("%lld %lld %lld %lld %lld", &b, &inc, &c, &n, &cap) == 5) {
       const auto r = rpg2k::exp_curve_loop<double>(b, inc, c, n, cap);
       if (r.status == rpg2k::ExpCurveStatus::ok) std::printf("ok %lld\\n", static_cast<long long>(r.value));
-      else std::printf(r.status == rpg2k::ExpCurveStatus::not_finite ? "not_finite\\n" : "overflow\\n");
+      else std::printf("overflow\\n");
     }
     return 0;
   }
@@ -68,14 +68,12 @@ EXTRA_ROWS = [
   [30, -250, 30, 99, CAP], [1000, -60, 0, 99, CAP], [0, 30, -1000, 99, CAP], [-100, 50, 0, 99, CAP],
   [-1000, 100, 0, 99, CAP], [-1_000_000, 100, 0, 99, CAP], [-1_000_000, 1000, 0, 99, CAP],
   [-1_000_000, 10_000, 0, 99, CAP], [1_000_000, 30, 30, 99, CAP], [0x7fff_ffff, 0x7fff_ffff, 0x7fff_ffff, 99, CAP],
-  [0x7fff_ffff, 30, -0x8000_0000, 2, CAP], [-0x8000_0000, 30, 30, 3, CAP]
+  [0x7fff_ffff, 30, -0x8000_0000, 2, CAP], [-0x8000_0000, 30, 30, 3, CAP],
+  [-1_000_000, 1_000_000, 0, 1000, CAP], [-0x8000_0000, -0x8000_0000, -0x8000_0000, 99, CAP]
 ].freeze
 # The C loop stops with overflow where the Ruby one needs an Integer past 64 bits (a Bignum on the host, a RangeError on
-# the 32-bit builds). These rows pass 64 bits on the way to a result, or a FloatDomainError, that fits.
-OVERFLOW_ROWS = [
-  [-1_000_000, 1_000_000, 0, 1000, CAP], [-0x8000_0000, -0x8000_0000, -0x8000_0000, 99, CAP],
-  [30, 30, -0x8000_0000, 99, 9_999_999]
-].freeze
+# the 32-bit builds). These rows pass 64 bits on the way to a result that fits.
+OVERFLOW_ROWS = [[30, 30, -0x8000_0000, 99, 9_999_999]].freeze
 
 INT64 = (-0x8000_0000_0000_0000..0x7fff_ffff_ffff_ffff).freeze
 
@@ -84,8 +82,9 @@ def expected(row)
 
   v = Game.exp_curve(*row)
   INT64.cover?(v) ? ['ok', v.to_s] : %w[overflow]
+# Float#to_i on an infinite term: the total passed 64 bits on an earlier step.
 rescue FloatDomainError
-  %w[not_finite]
+  %w[overflow]
 end
 
 failures = []

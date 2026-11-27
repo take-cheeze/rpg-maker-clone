@@ -85,10 +85,6 @@ mrb_value exp_curve(mrb_state* M, mrb_value) {
   mrb_get_args(M, "iiiii", &basic, &increase, &correction, &n, &cap);
   const rpg2k::ExpCurveResult r =
       rpg2k::exp_curve_loop<mrb_float>(basic, increase, correction, n, cap);
-  if (r.status == rpg2k::ExpCurveStatus::not_finite) {
-    mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(FloatDomainError)),
-              "EXP curve term is not finite");
-  }
   if (r.status == rpg2k::ExpCurveStatus::overflow || r.value < MRB_INT_MIN) {
     mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(RangeError)),
               "integer overflow in exp_curve");
