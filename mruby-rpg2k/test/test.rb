@@ -357,6 +357,19 @@ assert 'Game.mul_div floors a 64-bit product' do
   assert_raise(RangeError) { Game.mul_div(65_536, 65_536, 1) }
 end
 
+# scripts/rpg2k/exp_curve_check.rb sweeps the C loop against the Ruby one; these pin the binding.
+assert 'Game.exp_curve is the RPG2000 EXP curve' do
+  assert_equal 60, Game.exp_curve(30, 30, 30, 1, 999_999)
+  assert_equal 3021, Game.exp_curve(30, 30, 30, 10, 999_999)
+  assert_equal 999_999, Game.exp_curve(30, 30, 30, 98, 999_999)
+  assert_equal 59_179, Game.exp_curve(50, 50, 40, 20, 999_999)
+  # A product fused into an add (an FMA) gives 187_145 here.
+  assert_equal 187_144, Game.exp_curve(80, 75, 15, 19, 999_999)
+  assert_equal 0, Game.exp_curve(30, 30, 30, -1, 999_999)
+  assert_equal(-2598, Game.exp_curve(30, -60, -30, 99, 999_999))
+  assert_raise(RangeError) { Game.exp_curve(-1_000_000, 1000, 0, 2000, 999_999) }
+end
+
 assert 'Game::Interpreter#character_ref resolves this event and passes other refs through' do
   # Game::Interpreter#initialize only ever stores its own `state` argument, which #character_ref never reads.
   interp = Game::Interpreter.new(nil)

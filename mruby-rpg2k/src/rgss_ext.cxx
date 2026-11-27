@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#include "exp_curve.hxx"
+
 namespace {
 
 // INT32_ARITH: engine arithmetic whose intermediate leaves 32 bits on real
@@ -75,12 +77,31 @@ mrb_value mul_div(mrb_state* M, mrb_value) {
   return mrb_int_value(M, static_cast<mrb_int>(q));
 }
 
+#ifndef MRB_NO_FLOAT
+// Game.exp_curve(basic, increase, correction, n, cap): Actor#calc_exp's RPG2000
+// curve (see exp_curve.hxx) in C locals, so no step boxes a Float.
+mrb_value exp_curve(mrb_state* M, mrb_value) {
+  mrb_int basic, increase, correction, n, cap;
+  mrb_get_args(M, "iiiii", &basic, &increase, &correction, &n, &cap);
+  const rpg2k::ExpCurveResult r =
+      rpg2k::exp_curve_loop<mrb_float>(basic, increase, correction, n, cap);
+  if (r.status == rpg2k::ExpCurveStatus::overflow || r.value < MRB_INT_MIN) {
+    mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(RangeError)),
+              "integer overflow in exp_curve");
+  }
+  return mrb_int_value(M, static_cast<mrb_int>(r.value));
+}
+#endif
+
 }  // namespace
 
 extern "C" void mrb_mruby_rpg2k_gem_init(mrb_state* M) {
   RClass* game = mrb_define_module(M, "Game");
   mrb_define_module_function(M, game, "var_op", var_op, MRB_ARGS_REQ(3));
   mrb_define_module_function(M, game, "mul_div", mul_div, MRB_ARGS_REQ(3));
+#ifndef MRB_NO_FLOAT
+  mrb_define_module_function(M, game, "exp_curve", exp_curve, MRB_ARGS_REQ(5));
+#endif
 }
 
 extern "C" void mrb_mruby_rpg2k_gem_final(mrb_state* M) {}
