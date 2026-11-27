@@ -3162,6 +3162,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def music_fadein: (untyped) -> untyped
   def music_tempo: (untyped) -> untyped
   def music_volume: (untyped) -> untyped
+  def name_cells: () -> untyped
   def name_input_cancel: () -> untyped
   def name_input_confirm: () -> untyped
   def name_kana_rows: (untyped) -> untyped
@@ -3217,6 +3218,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def shop_status_item_id: (untyped) -> untyped
   def shop_switch: (untyped) -> untyped
   def shop_terms: (untyped) -> untyped
+  def split_kana_rows: (untyped) -> untyped
   def start_inn_bgm_wait: (untyped) -> untyped
   def start_inn_fade_out: (?untyped) -> untyped
   def start_map_animation: (untyped) -> untyped
@@ -8080,7 +8082,7 @@ module RPG2k
       # arithmetic or window objects and stay untyped (no receiver hint: nothing this record names is forced).
       @name_ui: { name: untyped, sel: untyped, kana: bool, actor_id: untyped, background: untyped,
                   interp: untyped, ?win: untyped, ?page: untyped, ?face_win: untyped, ?name_win: untyped,
-                  ?grid_win: untyped }?
+                  ?grid_win: untyped, ?cells: untyped, ?hiragana_rows: untyped, ?katakana_rows: untyped }?
       # The Input Number widget: the two literals in #open_number_input (embedded: :x/:y; standalone: :window,
       # :contents) and `= nil` in #close_number_input. :model is the one `Game::NumberInput.new`.
       @number_input: { model: Game::NumberInput, interp: untyped, ?embedded: untyped, ?x: untyped, ?y: untyped,
