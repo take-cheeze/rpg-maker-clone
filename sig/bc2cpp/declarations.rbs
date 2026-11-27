@@ -2607,6 +2607,8 @@ class RPG2k
   def map_scene: () -> untyped
   def native_test_play?: () -> untyped
   def pop_to_map: () -> untyped
+  def release_views: () -> untyped
+  def restore_top_view: () -> untyped
   def return_to_title: () -> untyped
   def show_game_over: (?untyped) -> untyped
   def start: () -> untyped
@@ -3543,8 +3545,12 @@ class RPG2k::Scene::StatusMenu < RPG2k::Scene::Base
 end
 # bc2cpp-native: base_rpg
 class RPG2k::Scene::Title < RPG2k::Scene::Base
+  def build_view: (untyped) -> untyped
   def move_selection: (untyped) -> untyped
   def play_cursor_se: () -> untyped
+  def release_view: () -> untyped
+  def restore_view: () -> untyped
+  def resume: () -> untyped
   def state_system_se: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg

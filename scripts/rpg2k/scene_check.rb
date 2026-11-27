@@ -15037,6 +15037,26 @@ check 'without HideTitle the picture shows and the window docks near its foot' d
      'the command window docks near the picture, as RPG_RT does'
 end
 
+# MAP_SWITCH (Scene::Title#release_view): New Game drops the title's view
+# before it builds the map, and a failed build puts it back.
+check 'New Game releases the title view before the map build and restores it on failure' do
+  parent = TitleParent.new(fake_db, nil, false)
+  title = RPG2k::Scene::Title.new(parent)
+  old_picture = title.instance_variable_get(:@title)
+  rpg2k = RPG2k.allocate
+  rpg2k.instance_variable_set(:@scenes, [title])
+  released = nil
+  rpg2k.define_singleton_method(:map_tree) do
+    released = old_picture.disposed?
+    raise StandardError, 'no map tree'
+  end
+  rpg2k.start_new_game
+  ok released, 'the title picture is disposed before the map is built'
+  picture = title.instance_variable_get(:@title)
+  ok !picture.equal?(old_picture) && !picture.disposed?, 'a failed build restores the title picture'
+  eq [title], rpg2k.instance_variable_get(:@scenes), 'the title stays the scene'
+end
+
 # Cycle #217: title_music's own liblcf `BGM`-struct fade_in (field 2,
 # mruby-lcf/mrblib/schema.rb) was read off the record by #play_title_bgm and
 # then dropped before reaching Audio.bgm_play, the same gap cycle #202/#203
