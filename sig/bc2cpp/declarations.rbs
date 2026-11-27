@@ -1104,8 +1104,10 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_rpg
 module Game
+  def exp_curve: (Numeric, Numeric, Numeric, Numeric, Numeric) -> Integer
   def mul_div: (Numeric, Numeric, Numeric) -> Integer
   def var_op: (Numeric, Numeric, Numeric) -> Integer
+  def self.exp_curve: (Numeric, Numeric, Numeric, Numeric, Numeric) -> Integer
   def self.mul_div: (Numeric, Numeric, Numeric) -> Integer
   def self.var_op: (Numeric, Numeric, Numeric) -> Integer
 end

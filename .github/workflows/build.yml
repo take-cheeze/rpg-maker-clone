@@ -1198,6 +1198,8 @@ jobs:
               ruby scripts/rpg2k/lsd_adversarial_check.rb
               # Every mrblib file with a Float use has a no-Float form (mruby-rpg2k/gen_rpg2k_nofloat.rb).
               ruby scripts/rpg2k/nofloat_wiring_check.rb
+              # Game.exp_curve's C loop against the Ruby Float loop it replaced, over every editor input.
+              ruby scripts/rpg2k/exp_curve_check.rb
               # The wio-only mrblib rewrites still apply to the sources, and the wio gem trims stay unused (`wio`
               # builds it on master pushes only).
               ruby scripts/wio/strip_scripts_check.rb

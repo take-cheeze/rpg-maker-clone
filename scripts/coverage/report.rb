@@ -118,6 +118,8 @@ CHECKS = [
   { name: 'rpg2k-scene',        command: %w[scripts/rpg2k/scene_check.rb] },
   { name: 'rpg2k-render',       command: %w[scripts/rpg2k/render_check.rb] },
   { name: 'rpg2k-nofloat',      command: %w[scripts/rpg2k/nofloat_wiring_check.rb] },
+  # A tenth of the sweep: its Ruby loop runs about 7x slower under Coverage, and the RPG2k game-logic step runs it whole.
+  { name: 'rpg2k-exp-curve',    command: %w[scripts/rpg2k/exp_curve_check.rb --basic-step 10] },
   { name: 'wio-strip-scripts',  command: %w[scripts/wio/strip_scripts_check.rb] },
   { name: 'wio-dropped-gems',   command: %w[scripts/wio/dropped_gems_check.rb] },
   { name: 'wio-debug-scenes',   command: %w[scripts/wio/debug_scenes_check.rb] },

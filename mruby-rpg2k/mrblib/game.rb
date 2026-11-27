@@ -3804,23 +3804,9 @@ module Game
         return result > cap ? cap : result
       end
       # FLOAT-BEGIN exp
-      base = db_exp_param(:exp_basic).to_f
-      inflation = 1.5 + db_exp_param(:exp_increase) * 0.01
-      correction = db_exp_param(:exp_correction).to_f
-      result = 0
-      # A `while`, not a block, here and above: a blockless loop gives each turn's GC arena entries back (bc2cpp's
-      # LOOP_ARENA), where the block kept all of this loop's Floats rooted until the caller returned.
-      i = 0
-      while i < n
-        term = correction + base
-        # With base, correction >= 0 and inflation >= 1 (the update keeps both) no later term is negative, so once the
-        # total reaches the cap the answer is the cap; stopping here keeps to_i off a Float past 32 bits.
-        return exp_max if result >= 0 && base >= 0 && correction >= 0 && inflation >= 1 && result + term >= exp_max
-        result += term.to_i
-        base *= inflation
-        inflation = ((n + 1) * 0.002 + 0.8) * (inflation - 1) + 1
-        i += 1
-      end
+      # The Float loop runs in C (Game.exp_curve, src/exp_curve.hxx): in Ruby every step boxed its Floats.
+      result = Game.exp_curve(db_exp_param(:exp_basic), db_exp_param(:exp_increase), db_exp_param(:exp_correction),
+                              n, exp_max)
       # FLOAT-END exp
       cap = exp_max
       result > cap ? cap : result
