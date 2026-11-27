@@ -21,13 +21,6 @@ class RPG2k
       def initialize parent
         super parent
 
-        # HideTitle (RPG_RT.exe's own legacy CLI arg, parsed in RPG2k#initialize):
-        # no title picture, and the command window moves from RPG_RT's usual dock
-        # near the picture's bottom edge to the centre of the screen, since there
-        # is no picture left to dock against.
-        @title = Sprite.new
-        @title.bitmap = load_title_picture unless hide_title?
-
         @menu_items = [
           term(:new_game),
           term(:continue),
@@ -52,6 +45,20 @@ class RPG2k
         # cursor position was wrong.
         @selected_index = 0
 
+        @view_released = false
+        build_view(hide_title? ? 0 : OPEN_ANIM_FRAMES)
+        play_title_bgm
+      end
+
+      # The picture and the command window, opened over `open_frames` frames.
+      def build_view(open_frames)
+        # HideTitle (RPG_RT.exe's own legacy CLI arg, parsed in RPG2k#initialize):
+        # no title picture, and the command window moves from RPG_RT's usual dock
+        # near the picture's bottom edge to the centre of the screen, since there
+        # is no picture left to dock against.
+        @title = Sprite.new
+        @title.bitmap = load_title_picture unless hide_title?
+
         # RPG_RT sizes the window to the widest label plus one border on each
         # side — no extra padding — and one 16px row per entry.
         measure = Bitmap.new 1, 1
@@ -71,8 +78,9 @@ class RPG2k
 
         @window = Window.new window_x, window_y, window_width, window_height
         skin = load_windowskin
+        @skin = skin
         @window.windowskin = skin
-        @window.open_animation(hide_title? ? 0 : OPEN_ANIM_FRAMES)
+        @window.open_animation(open_frames)
 
         # Render the (unchanging) menu labels once, in the windowskin's own
         # default text colour (system-colour swatch 0) with RPG_RT's
@@ -105,7 +113,6 @@ class RPG2k
         @window.contents = contents
 
         refresh_cursor
-        play_title_bgm
       end
 
       # No game state yet, so no Change System SFX override (Base#state_system_se).
@@ -206,8 +213,35 @@ class RPG2k
       end
 
       def dispose
+        release_view
+      end
+
+      # MAP_SWITCH: RPG2k#start_new_game and #continue_game drop the view before
+      # they build the map, whose build is the 192 KB Wio's peak, and hand it back
+      # (#restore_view) if the build fails. No frame is drawn in between.
+      def release_view
+        return if @view_released
+        @view_released = true
+        picture = @title.bitmap
+        contents = @window.contents
         @title.dispose
         @window.dispose
+        picture.dispose if picture
+        contents.dispose if contents
+        @skin.dispose if @skin
+      end
+
+      # Fully open: the title the failed switch left had finished opening, but
+      # for a headless auto-select on the first frame.
+      def restore_view
+        return unless @view_released
+        @view_released = false
+        build_view(0)
+      end
+
+      # Back from Scene::SaveLoad, whose failed Continue released the view.
+      def resume
+        restore_view
       end
 
       private

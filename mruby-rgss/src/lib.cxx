@@ -402,6 +402,22 @@ void pixel_alloc(size_t n, F&& alloc) {
   alloc();
 }
 
+// OOM_GC: a full GC for an allocation that failed outside mruby's allocator,
+// which retries its own (mrb_realloc_simple): the Wio's operator new. Answers
+// whether it collected. Not while LVGL draws (PixelGcHold), before the gem is
+// up or after its final (mrb_close), during a sweep, nor inside itself.
+extern "C" bool rgss_oom_gc(void) {
+  static bool running = false;
+  mrb_state* const M = g_pixel_gc_hold ? nullptr : g_pixel_mrb;
+  if (!M || running || M->gc.state == MRB_GC_STATE_SWEEP || M->gc.disabled ||
+      M->gc.iterating)
+    return false;
+  running = true;
+  pixel_gc(M);
+  running = false;
+  return true;
+}
+
 struct DeferredList;
 
 // LAZY_PIXELS: a `Bitmap.new(w, h)` holds no pixels until something reads or
