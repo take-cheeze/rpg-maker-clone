@@ -23,6 +23,8 @@
 //   (mrb_rom_graph_dump) and stop: renode_game.bash
 //                   --rom-graph FILE saves it (scripts/wio/rom_graph.bash links
 //                   it back in)
+//   framehash=1     an "FH <frame> <hash>" line per frame (FRAMEHASH below):
+//                   renode_game.bash --framehash FILE saves them
 // The constants are the ones scripts/bc2cpp/trace_host.cxx sets, so a run
 // here and a host run of the same config play the same frames.
 //
@@ -147,9 +149,63 @@ long config_long(const char* key, long dflt) {
                                                     : dflt;
 }
 
+// FRAMEHASH (framehash=1): the panel's picture is kept in a Renode-only window
+// (app/wio/renode/framehash.repl), and after each frame its FNV-1a hash goes to
+// a text log there, which renode_game.bash --framehash saves. The display then
+// refreshes on every Graphics.update, so a frame's hash does not depend on
+// where LVGL's refresh timer stood (scripts/compare/framehash.rb compares two
+// runs).
+constexpr uintptr_t kFhPanel = 0x0E000000;
+constexpr int32_t kFhWidth = 320;
+// u32 bytes written, then the text.
+constexpr uintptr_t kFhLog = 0x0E040000;
+constexpr size_t kFhLogSize = 0xC0000;
+bool g_fh = false;
+bool g_fh_drawn = true;
+uint32_t g_fh_hi = 0, g_fh_lo = 0;
+
+void fh_copy(const lv_area_t* area, const uint8_t* px) {
+  const size_t row = static_cast<size_t>(lv_area_get_width(area)) * 2;
+  for (int32_t y = area->y1; y <= area->y2; ++y, px += row)
+    std::memcpy(reinterpret_cast<uint8_t*>(kFhPanel) +
+                    (static_cast<size_t>(y) * kFhWidth + area->x1) * 2,
+                px, row);
+  g_fh_drawn = true;
+}
+
+void fh_frame(long frame) {
+  if (g_fh_drawn) {
+    // Only a frame that drew changes the picture.
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(kFhPanel);
+    uint64_t h = 1469598103934665603ULL;
+    for (size_t i = 0; i < static_cast<size_t>(kFhWidth) * 240 * 2; ++i) {
+      h ^= p[i];
+      h *= 1099511628211ULL;
+    }
+    g_fh_hi = static_cast<uint32_t>(h >> 32);
+    g_fh_lo = static_cast<uint32_t>(h);
+    g_fh_drawn = false;
+  }
+  // newlib-nano's printf has no %ll.
+  char line[48];
+  const int n = std::snprintf(line, sizeof(line), "FH %ld %08lx%08lx\n", frame,
+                              static_cast<unsigned long>(g_fh_hi),
+                              static_cast<unsigned long>(g_fh_lo));
+  uint32_t* const len = reinterpret_cast<uint32_t*>(kFhLog);
+  if (n <= 0 || *len + n > kFhLogSize - 16) {
+    wio_diag_printf("[Wio] framehash: the log is full at frame %ld\n", frame);
+    g_fh = false;
+    return;
+  }
+  std::memcpy(reinterpret_cast<char*>(kFhLog + 16) + *len, line, n);
+  *len += n;
+}
+
 // LVGL's DMA flush never completes under Renode (no DMAC model), and nothing
 // reads the panel here: hand every rendered area straight back.
-void flush_cb(lv_display_t* disp, const lv_area_t*, uint8_t*) {
+void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px) {
+  if (g_fh)
+    fh_copy(area, px);
   lv_display_flush_ready(disp);
 }
 
@@ -424,6 +480,10 @@ void setup(void) {
   lv_init();
   lv_display_t* disp = wio_display_create(320, 240);
   lv_display_set_flush_cb(disp, flush_cb);
+  if (config_long("framehash", 0) != 0) {
+    g_fh = true;
+    lv_timer_set_period(lv_display_get_refr_timer(disp), 0);
+  }
   wio_input_init();
 
   if (rgss_wio_mrb_state_size() != sizeof(mrb_state)) {
@@ -551,6 +611,8 @@ void loop(void) {
     g_result = clean ? kDone : kFailFrame;
     return;
   }
+  if (g_fh)
+    fh_frame(g_frame);
   ++g_frame;
   if (g_every > 0 && g_frame % g_every == 0) {
     char phase[32];

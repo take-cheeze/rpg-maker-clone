@@ -303,6 +303,13 @@ scripts/wio/renode_game.bash .pio/build/wio_renode_game/firmware.elf \
   --config 'frames=300;every=50' --expect 'RPG2k-MAP'
 ```
 
+### Frame hashes: `--framehash FILE`
+
+With `--framehash FILE` the display refreshes on every `Graphics.update` and the run writes one `FH <frame> <hash>`
+line per frame to FILE: the FNV-1a hash of the 320x240 RGB565 picture, kept in a Renode-only window
+(`framehash.repl`). `ruby scripts/compare/framehash.rb A B` fails unless two runs drew the same frames; it also takes
+two directories of host logs printed with `BC2CPP_HOST_FRAMEHASH=1`. Compare Renode with Renode and host with host.
+
 ### Heap snapshots: `--heapwalk DIR`
 
 The `wio_renode_game_heapwalk` (192 KB) and `wio_renode_game_heapwalk_big` (16 MB) ELFs record the allocating stack

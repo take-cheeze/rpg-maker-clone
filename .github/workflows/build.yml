@@ -2046,7 +2046,8 @@ jobs:
         # into the heap, the 320x240 one does not fit this board. renode_game.bash fails on an OOM, a fault or a missing
         # --expect. Each run plays 600 title frames, past where garbage the GC has not reached yet fills the heap (about
         # frame 300), and `flat` fails when the heap after a full GC grew by more than 2 KB from the title's first frame
-        # to the last.
+        # to the last. Both card-with-pack boots record frame hashes (FRAMEHASH, app/wio/renode/README.md) and must
+        # draw the same frames, whether the images came from the card or the cache.
         env:
           RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
           ARM_NM: arm-none-eabi-nm
@@ -2066,7 +2067,7 @@ jobs:
           }
           echo "::group::first boot"
           scripts/wio/renode_game.bash "$elf" /tmp/wio-sd-game --sd pack --config "$cfg" --seconds 30 \
-            --qspi-out /tmp/wio-qspi.bin --log /tmp/wio-sd-1.log \
+            --qspi-out /tmp/wio-qspi.bin --log /tmp/wio-sd-1.log --framehash /tmp/wio-fh-1.txt \
             --expect 'image cache: a new pack \(crc [0-9a-f]+, 2 images\)' \
             --expect 'image cache: copied System/wio' --expect 'image cache: copied Title/wio' \
             --expect 'image cache: [0-9]+ hits, 2 misses' --expect 'Scene::Title'
@@ -2074,11 +2075,12 @@ jobs:
           echo "::endgroup::"
           echo "::group::reboot from the saved flash"
           scripts/wio/renode_game.bash "$elf" /tmp/wio-sd-game --sd pack --config "$cfg" --seconds 30 \
-            --qspi-in /tmp/wio-qspi.bin --log /tmp/wio-sd-2.log \
+            --qspi-in /tmp/wio-qspi.bin --log /tmp/wio-sd-2.log --framehash /tmp/wio-fh-2.txt \
             --expect '^QSPI erases 0$' --expect 'image cache: 2 images, 2 already cached' \
             --expect 'image cache: [1-9][0-9]* hits, 0 misses' --expect 'Scene::Title'
           refuse /tmp/wio-sd-2.log 'image cache: (copied|a new pack)'
           flat /tmp/wio-sd-2.log
+          ruby scripts/compare/framehash.rb --min-distinct 2 /tmp/wio-fh-1.txt /tmp/wio-fh-2.txt
           echo "::endgroup::"
           echo "::group::no pack"
           scripts/wio/renode_game.bash "$elf" /tmp/wio-sd-notitle --sd nopack --config "$cfg" --seconds 30 \

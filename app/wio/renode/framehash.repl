@@ -1,0 +1,4 @@
+// Layered on game_rom.repl for a framehash=1 run of the wio_renode_game firmware (scripts/wio/renode_game.bash
+// --framehash): the panel's 320x240 RGB565 picture, then the "FH" log, where the real board has nothing.
+framehash_out: Memory.MappedMemory @ sysbus 0x0E000000
+    size: 0x100000
