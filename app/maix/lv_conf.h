@@ -74,7 +74,7 @@
  *====================*/
 
 /* On, unlike wio/psp (which keep 0 with their trims): this port compiles the
- * untrimmed lib.cxx, which reaches lv_log_add through LVGL's own static
+ * untrimmed gfx_lvgl.cxx, which reaches lv_log_add through LVGL's own static
  * inlines (lv_obj_move_foreground and friends) -- with LOG off lv_log.c
  * compiles the function out and the firmware link fails on it, the same
  * mismatch mruby-rgss/mrbgem.rake's own comment documents for
