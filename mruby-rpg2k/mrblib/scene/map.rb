@@ -7505,14 +7505,10 @@ class RPG2k
 
       # -- Letters page (charset 2, this build's own extension -- see above) --
 
-      # The selectable cells: the character set, then two control cells — BS
-      # (backspace) and OK (confirm).
-      NAME_CHARS = (%w[A B C D E F G H I J K L M N O P Q R S T U V W X Y Z] +
-                    %w[a b c d e f g h i j k l m n o p q r s t u v w x y z] +
-                    %w[0 1 2 3 4 5 6 7 8 9] + [' ', '-', "'", '.']).freeze
-      # A splat into a literal, not `NAME_CHARS + ...`: the closed world proves a literal's freeze harmless, not a
-      # constant's (user_objects_unfrozen?).
-      NAME_CELLS = [*NAME_CHARS, *%w[BS OK]].freeze
+      # The character set; #name_cells adds the two control cells, BS
+      # (backspace) and OK (confirm). One String, not a constant Array of
+      # cells: those held 68 Strings in RAM for the whole game.
+      NAME_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -'."
       NAME_COLS = 13          # cells per row
       NAME_MAX = 12           # longest name the widget accepts
       NAME_CELL_W = 14
@@ -7537,30 +7533,27 @@ class RPG2k
       # #172): the ま/マ row's small kana column order is っゃゅょゎ, the last
       # row's "vu" cell is katakana ヴ on both pages, and the や/ヤ row ends in
       # the white star ☆ (U+2606).
-      NAME_KANA_LAST_HIRAGANA = (%w[ら り る れ ろ ヴ] + [:toggle, nil, :confirm, nil]).freeze
-      NAME_KANA_LAST_KATAKANA = (%w[ラ リ ル レ ロ ヴ] + [:toggle, nil, :confirm, nil]).freeze
-      NAME_HIRAGANA_ROWS = [
-        %w[あ い う え お が ぎ ぐ げ ご],
-        %w[か き く け こ ざ じ ず ぜ ぞ],
-        %w[さ し す せ そ だ ぢ づ で ど],
-        %w[た ち つ て と ば び ぶ べ ぼ],
-        %w[な に ぬ ね の ぱ ぴ ぷ ぺ ぽ],
-        %w[は ひ ふ へ ほ ぁ ぃ ぅ ぇ ぉ],
-        %w[ま み む め も っ ゃ ゅ ょ ゎ],
-        %w[や ゆ よ わ ん ー 〜 ・ ＝ ☆],
-        NAME_KANA_LAST_HIRAGANA
-      ].freeze
-      NAME_KATAKANA_ROWS = [
-        %w[ア イ ウ エ オ ガ ギ グ ゲ ゴ],
-        %w[カ キ ク ケ コ ザ ジ ズ ゼ ゾ],
-        %w[サ シ ス セ ソ ダ ヂ ヅ デ ド],
-        %w[タ チ ツ テ ト バ ビ ブ ベ ボ],
-        %w[ナ ニ ヌ ネ ノ パ ピ プ ペ ポ],
-        %w[ハ ヒ フ ヘ ホ ァ ィ ゥ ェ ォ],
-        %w[マ ミ ム メ モ ッ ャ ュ ョ ヮ],
-        %w[ヤ ユ ヨ ワ ン ー 〜 ・ ＝ ☆],
-        NAME_KANA_LAST_KATAKANA
-      ].freeze
+      # The pages' cells, a row to a line in one literal (#name_kana_rows
+      # splits them while the widget is open: as constant Arrays they held 180
+      # Strings in RAM for the whole game).
+      NAME_HIRAGANA = 'あ い う え お が ぎ ぐ げ ご
+        か き く け こ ざ じ ず ぜ ぞ
+        さ し す せ そ だ ぢ づ で ど
+        た ち つ て と ば び ぶ べ ぼ
+        な に ぬ ね の ぱ ぴ ぷ ぺ ぽ
+        は ひ ふ へ ほ ぁ ぃ ぅ ぇ ぉ
+        ま み む め も っ ゃ ゅ ょ ゎ
+        や ゆ よ わ ん ー 〜 ・ ＝ ☆
+        ら り る れ ろ ヴ'
+      NAME_KATAKANA = 'ア イ ウ エ オ ガ ギ グ ゲ ゴ
+        カ キ ク ケ コ ザ ジ ズ ゼ ゾ
+        サ シ ス セ ソ ダ ヂ ヅ デ ド
+        タ チ ツ テ ト バ ビ ブ ベ ボ
+        ナ ニ ヌ ネ ノ パ ピ プ ペ ポ
+        ハ ヒ フ ヘ ホ ァ ィ ゥ ェ ォ
+        マ ミ ム メ モ ッ ャ ュ ョ ヮ
+        ヤ ユ ヨ ワ ン ー 〜 ・ ＝ ☆
+        ラ リ ル レ ロ ヴ'
       NAME_KANA_COLS = 10
       NAME_KANA_MAX = 6 # RPG2000's default name length, one kana per slot
 
@@ -7646,7 +7639,12 @@ class RPG2k
       # Cell count in `row` (0-indexed): a full NAME_COLS for every row except
       # the last, which is however many cells are left over.
       def name_row_len(row)
-        [NAME_COLS, NAME_CELLS.length - row * NAME_COLS].min
+        [NAME_COLS, name_cells.length - row * NAME_COLS].min
+      end
+
+      # The letters page's cells, built once per open widget.
+      def name_cells
+        @name_ui[:cells] ||= NAME_CHARS.split('') + %w[BS OK]
       end
 
       # Ported from a reference implementation, not independently confirmed
@@ -7671,7 +7669,7 @@ class RPG2k
         ui = @name_ui
         row = ui[:sel] / NAME_COLS
         col = ui[:sel] % NAME_COLS
-        rows = (NAME_CELLS.length + NAME_COLS - 1) / NAME_COLS
+        rows = (name_cells.length + NAME_COLS - 1) / NAME_COLS
         if Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
           ui[:sel] = row * NAME_COLS + (col + 1) % name_row_len(row)
           draw_name_input
@@ -7706,7 +7704,7 @@ class RPG2k
       # confirmed against genuine RPG_RT under wine, which plays Buzzer and
       # drops the appended text the instant it would overflow the field.
       def name_input_confirm
-        cell = NAME_CELLS[@name_ui[:sel]]
+        cell = name_cells[@name_ui[:sel]]
         case cell
         when 'OK' then commit_name_input
         when 'BS' then backspace_name_input
@@ -7791,7 +7789,7 @@ class RPG2k
       def draw_name_input
         ui = @name_ui
         ui[:win].dispose if ui[:win]
-        rows = (NAME_CELLS.length + NAME_COLS - 1) / NAME_COLS
+        rows = (name_cells.length + NAME_COLS - 1) / NAME_COLS
         inner_w = NAME_COLS * NAME_CELL_W
         inner_h = (rows + 1) * NAME_CELL_H # +1 row for the name-so-far
         win = Window.new((SCREEN_W - inner_w - Window::BORDER * 2) / 2, 30,
@@ -7801,7 +7799,7 @@ class RPG2k
         c = contents_bitmap(inner_w, inner_h)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, NAME_CELL_H, "Name: #{ui[:name]}"
-        NAME_CELLS.each_with_index do |cell, i|
+        name_cells.each_with_index do |cell, i|
           cx = (i % NAME_COLS) * NAME_CELL_W
           cy = NAME_CELL_H + (i / NAME_COLS) * NAME_CELL_H
           label = cell == 'BS' ? '<' : cell
@@ -7817,8 +7815,22 @@ class RPG2k
 
       # -- Kana grid driving --------------------------------------------
 
+      # The kana page's rows, built once per open widget: eight full rows, then
+      # six kana and the page-toggle and confirm cells (each with its `nil`
+      # second half).
       def name_kana_rows(page)
-        page == :katakana ? NAME_KATAKANA_ROWS : NAME_HIRAGANA_ROWS
+        ui = @name_ui
+        if page == :katakana
+          ui[:katakana_rows] ||= split_kana_rows(NAME_KATAKANA)
+        else
+          ui[:hiragana_rows] ||= split_kana_rows(NAME_HIRAGANA)
+        end
+      end
+
+      def split_kana_rows(page_cells)
+        cells = page_cells.split(' ')
+        rows = (0...8).map { |r| cells[r * NAME_KANA_COLS, NAME_KANA_COLS] }
+        rows << cells[8 * NAME_KANA_COLS, 6] + [:toggle, nil, :confirm, nil]
       end
 
       # The column a horizontal step of `dir` (+1 right, -1 left) from `col`

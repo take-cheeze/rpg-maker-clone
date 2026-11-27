@@ -9052,7 +9052,7 @@ check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
   eq 'A', ui[:name], 'confirming the first cell types an A'
 
   # Jump the cursor to the OK cell and confirm to commit.
-  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1
+  ui[:sel] = scene.send(:name_cells).length - 1
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
@@ -9088,7 +9088,7 @@ check 'Enter Hero Name: confirming a blank name refills it and stays open, ' \
   eq '', ui[:name], 'starts empty (no seed)'
 
   # Confirm the OK cell straight away, with nothing typed.
-  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1
+  ui[:sel] = scene.send(:name_cells).length - 1
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
@@ -9097,7 +9097,7 @@ check 'Enter Hero Name: confirming a blank name refills it and stays open, ' \
   eq 'Hero', st.party.actor_by_id(1).name, 'the actor itself is untouched so far'
 
   # Confirming again now commits the refilled (non-blank) name.
-  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1
+  ui[:sel] = scene.send(:name_cells).length - 1
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
@@ -9185,7 +9185,7 @@ check 'Enter Hero Name issued from a Parallel Process opens the entry widget too
   RGSS::Input.triggered = []
   eq 'A', ui[:name]
 
-  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1 # jump to OK and confirm
+  ui[:sel] = scene.send(:name_cells).length - 1 # jump to OK and confirm
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
@@ -9231,7 +9231,7 @@ check 'Enter Hero Name: the character grid cursor wraps around' do
   ok ui, 'the name-entry widget opened'
   # 26 letters (upper) + 26 (lower) + 10 digits + 4 punctuation = 66 characters,
   # plus BS and OK = 68 cells; 13 per row makes 6 rows, the last ragged with 3.
-  eq 68, RPG2k::Scene::Map::NAME_CELLS.length
+  eq 68, scene.send(:name_cells).length
   eq 13, RPG2k::Scene::Map::NAME_COLS
 
   # Row-local wrap: Right past the end of the first (full, 13-cell) row wraps
@@ -9382,7 +9382,7 @@ check 'Enter Hero Name: typing a kana and confirming renames the actor' do
   ok ui, 'the name-entry widget opened'
   eq '', ui[:name], 'starts empty (no seed)'
 
-  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  rows = scene.send(:name_kana_rows, :hiragana)
   cols = RPG2k::Scene::Map::NAME_KANA_COLS
   eq 'あ', rows[0][0], 'the first cell is あ'
 
@@ -9427,7 +9427,7 @@ check 'Enter Hero Name: confirming a blank kana name refills it and stays ' \
   ui = scene.instance_variable_get(:@name_ui)
   eq '', ui[:name], 'starts empty (no seed)'
 
-  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  rows = scene.send(:name_kana_rows, :hiragana)
   cols = RPG2k::Scene::Map::NAME_KANA_COLS
   last_row = rows.length - 1
   ui[:sel] = last_row * cols + rows[last_row].index(:confirm)
@@ -9472,7 +9472,7 @@ check 'Enter Hero Name: the ま row and "vu" cell match a reference implementati
   ui = scene.instance_variable_get(:@name_ui)
   ok ui, 'the name-entry widget opened'
 
-  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  rows = scene.send(:name_kana_rows, :hiragana)
   cols = RPG2k::Scene::Map::NAME_KANA_COLS
   ma_row = rows.index { |r| r[0] == 'ま' }
   ok ma_row, 'the ま row exists'
@@ -9511,7 +9511,7 @@ check 'Enter Hero Name: the toggle cell swaps the hiragana/katakana page' do
   ok ui, 'the name-entry widget opened'
   eq :hiragana, ui[:page], 'opens hiragana (charset 0)'
 
-  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  rows = scene.send(:name_kana_rows, :hiragana)
   cols = RPG2k::Scene::Map::NAME_KANA_COLS
   last_row = rows.length - 1
   toggle_col = rows[last_row].index(:toggle)
@@ -9573,7 +9573,7 @@ check 'Enter Hero Name: the kana grid cursor wraps around and steps over ' \
   ui = scene.instance_variable_get(:@name_ui)
   ok ui, 'the name-entry widget opened'
   cols = RPG2k::Scene::Map::NAME_KANA_COLS
-  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  rows = scene.send(:name_kana_rows, :hiragana)
   eq 10, cols
   eq 9, rows.length, '8 kana rows plus the ら row'
   eq 10, rows.last.length, 'the last row spans the same ten columns'
@@ -9653,7 +9653,7 @@ check 'Enter Hero Name: the kana widget is laid out exactly as RPG_RT draws it' 
   eq [48, 48], [ui[:face_win].contents.width, ui[:face_win].contents.height],
      'the face window holds exactly one 48x48 portrait'
 
-  rows = RPG2k::Scene::Map::NAME_KATAKANA_ROWS
+  rows = scene.send(:name_kana_rows, :katakana)
   rect = ->(r, c) { scene.send(:kana_cell_rect, rows, r, c) }
   eq [0, 0, 12, 16], rect.call(0, 0), 'ア'
   eq [96, 0, 12, 16], rect.call(0, 4), 'オ: four 24px columns in'
