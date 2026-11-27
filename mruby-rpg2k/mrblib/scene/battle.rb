@@ -3850,7 +3850,7 @@ class RPG2k
                          BATTLE_STATUS_W + Window::BORDER * 2, BATTLE_PANEL_H + Window::BORDER * 2)
         win.z = 300
         win.transparent = true
-        c = Bitmap.new(inner_w, inner_h)
+        c = contents_bitmap(inner_w, inner_h)
         allies.each_with_index { |ally, i| draw_battle_gauge_card(c, system2, ally, i) }
         win.contents = c
         win
@@ -4045,7 +4045,7 @@ class RPG2k
         win.z = 320
         win.windowskin = windowskin
         inner_w = BATTLE_CMD_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
+        c = contents_bitmap(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, label
@@ -4077,7 +4077,7 @@ class RPG2k
         win.z = 320
         win.windowskin = windowskin
         inner_w = BATTLE_CMD_W - Window::BORDER * 2
-        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
+        c = contents_bitmap(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, label
@@ -4235,7 +4235,7 @@ class RPG2k
         win = Window.new(x, BATTLE_PANEL_Y, w, BATTLE_PANEL_H)
         win.z = z
         win.windowskin = windowskin
-        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
+        c = contents_bitmap(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
           row = i / column_max
@@ -4267,7 +4267,7 @@ class RPG2k
           dwin = Window.new(0, 0, SCREEN_W, desc_h)
           dwin.z = z
           dwin.windowskin = windowskin
-          dc = Bitmap.new(SCREEN_W - Window::BORDER * 2, desc_h - Window::BORDER * 2)
+          dc = contents_bitmap(SCREEN_W - Window::BORDER * 2, desc_h - Window::BORDER * 2)
           dc.font.color = Color.new(255, 255, 255, 255)
           draw_system_text(dc, 0, 0, dc.width, BATTLE_LINE_H, desc.to_s, windowskin, 0)
           dwin.contents = dc
@@ -4758,7 +4758,7 @@ class RPG2k
         win = Window.new(0, BATTLE_PANEL_Y, SCREEN_W, BATTLE_PANEL_H)
         win.z = z
         win.windowskin = windowskin
-        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
+        c = contents_bitmap(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, line
@@ -4796,7 +4796,7 @@ class RPG2k
         win = Window.new(0, y, SCREEN_W, BATTLE_PANEL_H)
         win.z = z
         win.windowskin = windowskin
-        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
+        c = contents_bitmap(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, line
@@ -4898,7 +4898,7 @@ class RPG2k
         win = Window.new(battle_status_x, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
         win.z = 300
         win.windowskin = windowskin
-        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
+        c = contents_bitmap(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         rows.each_with_index do |segments, i|
           segments.each_with_index do |(text, x, color, cur, max, can_knockout), j|
