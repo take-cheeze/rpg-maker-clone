@@ -1138,7 +1138,9 @@ module LCF
 
       @buf = s
       pos = LCF.ber_next s, 0
-      (0...LCF.ber_at(s, 0)).each do
+      count = LCF.ber_at(s, 0)
+      sized = presize count, s.size - pos
+      (0...count).each do
         idx = LCF.ber_at s, pos
         pos = LCF.ber_next s, pos
         raise "row id #{idx} out of range" if idx < 0 || idx > MAX_CHUNK_ID
@@ -1146,6 +1148,7 @@ module LCF
         @data[idx] = pos
         pos = LCF.row_end s, pos
       end
+      trim_presized count if sized
     end
 
     # The row table of a lazy chunk (see #initialize): a row's chunks are
@@ -1163,7 +1166,9 @@ module LCF
     # The rows of a table that starts at +io+'s position and ends by +stop+.
     def index_rows_to io, stop
       scratch = String.new
-      (0...LCF.read_ber(io)).each do
+      count = LCF.read_ber(io)
+      sized = presize count, stop - io.pos
+      (0...count).each do
         idx = LCF.read_ber io
         raise "row id #{idx} out of range" if idx < 0 || idx > MAX_CHUNK_ID
         @data[idx] = io.pos
@@ -1179,6 +1184,26 @@ module LCF
           end
         end
       end
+      trim_presized count if sized
+    end
+
+    # EXACT_ROWS: a table's row ids run 1..count, so its row array is made that long at once. Grown a store at a time
+    # it doubled its capacity, which left up to half of each table's slots unused (Nepheshel's items: 2048 for 1201);
+    # Array.new rounds up the same way, Array#* allocates the exact length. A row takes at least two bytes (its id and
+    # a 0 terminator), so a count past room/2 is malformed and not trusted.
+    def presize count, room
+      return false unless @data.empty? && count > 0 && count <= room / 2
+
+      @data = [nil] * (count + 1)
+      true
+    end
+
+    # The length the stores alone would have left: one past the highest row id. A row id past +count+ (a sparse
+    # table) grew the array by doubling again, so it is copied to its length (Array#+ allocates exactly; #dup would
+    # share the doubled buffer).
+    def trim_presized count
+      @data.pop while !@data.empty? && @data.last.nil?
+      @data = [] + @data if @data.size > count + 1
     end
 
     # A row of an in-memory table: the span read_row_bytes builds, as a slice of the table's bytes (it shares their

@@ -100,12 +100,14 @@ class LCF::Array2D
   def initialize: (untyped, untyped, ?untyped) -> untyped
   def load_lazy: () -> untyped
   def peek: (untyped) -> untyped
+  def presize: (untyped, untyped) -> untyped
   def read_row_slice: (untyped) -> untyped
   def read_rows: (untyped) -> untyped
   def row_bytes: (untyped) -> untyped
   def row_record: (untyped) -> untyped
   def row_span: (untyped) -> untyped
   def same_schema?: (untyped) -> untyped
+  def trim_presized: (untyped) -> untyped
   def self.blank_table: (untyped) -> untyped
   def self.lazy_section: (untyped, untyped) -> untyped
 end
