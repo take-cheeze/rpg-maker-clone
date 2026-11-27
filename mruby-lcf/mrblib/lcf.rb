@@ -1055,11 +1055,15 @@ module LCF
       row_record(entry)
     end
 
-    # PEEK_ROWS: #each through #peek.
+    # PEEK_ROWS: #each through #peek. A `while`, not a block: a blockless loop gives each row's peek garbage back
+    # to the GC arena every turn (bc2cpp's LOOP_ARENA), where the block kept every row read until the scan ended.
     def each_peek
-      @data.size.times do |i|
+      i = 0
+      n = @data.size
+      while i < n
         v = peek(i)
         yield i, v unless v.nil?
+        i += 1
       end
     end
 
