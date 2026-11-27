@@ -43,6 +43,9 @@ const char* wio_game_rom_config(const char* key, char* buf, size_t cap);
 // The bytes of the image's file at +path+, in place, or nullptr (never the
 // card's).
 const void* wio_game_rom_file(const char* path, size_t* len);
+// rgss_set_file_map's (MAPPED_FILE): the image's file at +path+ in place, or
+// nullptr when the path is not in the image or the card serves it.
+const void* wio_game_file_map(const char* path, size_t* len);
 // Appends to the diagnostic log (stdout/stderr land here too).
 void wio_diag_write(const char* text, size_t len);
 void wio_diag_printf(const char* fmt, ...)
