@@ -904,6 +904,17 @@ module LCF
       (@schema && sym2idx.key?(sym)) ? true : false
     end
 
+    # The bytes chunk +idx+ (a Symbol is a field name) was read as, or nil when the record has no such chunk: equal
+    # chunks compare equal without decoding either.
+    def raw_chunk idx
+      idx = sym2idx[idx] if idx.is_a? Symbol
+      data = @data
+      return buf_bytes(idx) unless data
+
+      d = data[idx]
+      d.nil? ? nil : chunk_value_bytes(d)
+    end
+
     # LAZY_CHUNKS: reads every chunk and table row still in the file into
     # memory, so the file can be rewritten under this record.
     def load_lazy

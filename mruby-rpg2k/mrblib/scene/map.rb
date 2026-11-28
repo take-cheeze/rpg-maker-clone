@@ -1814,13 +1814,19 @@ class RPG2k
         if pages
           shared = @shared_conditions
           pages.each_peek do |page_id, page|
-            cond = page[:condition]
+            # Keyed by the chunk's own bytes, so a repeated condition is decoded once.
+            raw = page.is_a?(LCF::Array1D) ? page.raw_chunk(:condition) : nil
+            cond = raw ? shared[raw] : nil
+            cond ||= page[:condition]
             if cond.is_a?(LCF::Array1D)
-              bytes = cond.to_lcf
+              bytes = raw || cond.to_lcf
               cond = (shared[bytes] ||= cond)
-              key << page_id.to_s << ',' << bytes.bytesize.to_s << ',' << bytes
+              # page id, then length + 1 (0 for no condition) and the bytes: built in place, no temporaries
+              LCF.append_ber(key, page_id)
+              LCF.append_ber(key, bytes.bytesize + 1) << bytes
             elsif cond.nil?
-              key << page_id.to_s << ',-,'
+              LCF.append_ber(key, page_id)
+              LCF.append_ber(key, 0)
             else
               shareable = false
             end
@@ -2547,20 +2553,37 @@ class RPG2k
       # Read an optional event-page field through a guard that logs (rather than
       # silently swallowing) any access error before falling back to `default`.
       # A malformed page then degrades a single field instead of taking out the
-      # whole event list, and the failure still surfaces in the log.
-      def page_field(name, default)
-        yield
-      rescue StandardError => e
-        $stderr.puts "[RPG2k] event page field '#{name}' unavailable " \
-                     "(#{e.message}), using #{default.inspect}"
-        default
+      # whole event list, and the failure still surfaces in the log. Each reader
+      # rescues on its own rather than yielding to a shared guard: a block costs
+      # a Proc per read, and an event build reads a dozen fields.
+      def page_field_note(name, default, e)
+        "[RPG2k] event page field '#{name}' unavailable (#{e.message}), using #{default.inspect}"
       end
 
-      def page_trigger(page); page_field(:trigger, 0) { page[:trigger] }; end
+      def page_trigger(page)
+        page[:trigger]
+      rescue StandardError => e
+        $stderr.puts page_field_note(:trigger, 0, e)
+        0
+      end
+
       # The page's stored facing (0..3: up/right/down/left), default down (2).
       # Converted to the runtime numpad convention by build_event.
-      def page_direction(page); page_field(:direction, 2) { d = page[:direction]; (0..3).include?(d) ? d : 2 }; end
-      def page_move_type(page); page_field(:move_type, 0) { page[:move_type] || 0 }; end
+      def page_direction(page)
+        d = page[:direction]
+        d.is_a?(Integer) && d >= 0 && d <= 3 ? d : 2
+      rescue StandardError => e
+        $stderr.puts page_field_note(:direction, 2, e)
+        2
+      end
+
+      def page_move_type(page)
+        page[:move_type] || 0
+      rescue StandardError => e
+        $stderr.puts page_field_note(:move_type, 0, e)
+        0
+      end
+
       # The page's stored Move Speed is real RPG_RT's own 1..6 scale (liblcf
       # default 3, "Normal"); converted to this engine's internal 0..5 scale
       # (real minus 1, see the SLIDE_UNITS comment above) so it lines up with
@@ -2568,16 +2591,77 @@ class RPG2k
       # treated a raw event's Move Speed as one full notch faster than real
       # RPG_RT -- e.g. the default "Normal" (3) walked at the player's own
       # default rate (real 4) instead of the correct half-speed.
-      def page_move_speed(page); page_field(:move_speed, 2) { (page[:move_speed] || 3) - 1 }; end
-      def page_move_frequency(page); page_field(:move_frequency, 3) { page[:move_frequency] || 3 }; end
-      def page_move_route(page); page_field(:move_route, nil) { page[:move_route] }; end
-      def page_charset_name(page); page_field(:charset_name, nil) { page[:charset_name] }; end
-      def page_charset_index(page); page_field(:charset_index, 0) { page[:charset_index] || 0 }; end
-      def page_layer(page); page_field(:layer, 0) { page[:layer] || 0 }; end
-      def page_overlap_forbidden(page); page_field(:overlap_forbidden, false) { page[:overlap_forbidden] ? true : false }; end
-      def page_pattern(page); page_field(:pattern, 1) { p = page[:pattern]; (0..2).include?(p) ? p : 1 }; end
-      def page_anim_type(page); page_field(:anim_type, 0) { page[:animation_type] || 0 }; end
-      def page_translucent(page); page_field(:translucent, false) { page[:translucent] ? true : false }; end
+      def page_move_speed(page)
+        (page[:move_speed] || 3) - 1
+      rescue StandardError => e
+        $stderr.puts page_field_note(:move_speed, 2, e)
+        2
+      end
+
+      def page_move_frequency(page)
+        page[:move_frequency] || 3
+      rescue StandardError => e
+        $stderr.puts page_field_note(:move_frequency, 3, e)
+        3
+      end
+
+      def page_move_route(page)
+        page[:move_route]
+      rescue StandardError => e
+        $stderr.puts page_field_note(:move_route, nil, e)
+        nil
+      end
+
+      def page_charset_name(page)
+        page[:charset_name]
+      rescue StandardError => e
+        $stderr.puts page_field_note(:charset_name, nil, e)
+        nil
+      end
+
+      def page_charset_index(page)
+        page[:charset_index] || 0
+      rescue StandardError => e
+        $stderr.puts page_field_note(:charset_index, 0, e)
+        0
+      end
+
+      def page_layer(page)
+        page[:layer] || 0
+      rescue StandardError => e
+        $stderr.puts page_field_note(:layer, 0, e)
+        0
+      end
+
+      def page_overlap_forbidden(page)
+        page[:overlap_forbidden] ? true : false
+      rescue StandardError => e
+        $stderr.puts page_field_note(:overlap_forbidden, false, e)
+        false
+      end
+
+      def page_pattern(page)
+        p = page[:pattern]
+        p.is_a?(Integer) && p >= 0 && p <= 2 ? p : 1
+      rescue StandardError => e
+        $stderr.puts page_field_note(:pattern, 1, e)
+        1
+      end
+
+      def page_anim_type(page)
+        page[:animation_type] || 0
+      rescue StandardError => e
+        $stderr.puts page_field_note(:anim_type, 0, e)
+        0
+      end
+
+      def page_translucent(page)
+        page[:translucent] ? true : false
+      rescue StandardError => e
+        $stderr.puts page_field_note(:translucent, false, e)
+        false
+      end
+
       # Whether this page gates its own auto-start to one run per map visit (see
       # #start_autostart). No RPG2000/2003 page carries such a field -- a real
       # auto-start gates itself through its page *conditions*, and turning its
@@ -2587,9 +2671,10 @@ class RPG2k
       # bare read because an LCF record answers an unknown field by raising, and
       # this is read once per event per page rebuild.
       def page_guarded(page)
-        page_field(:guarded, false) do
-          page.respond_to?(:guarded) && page.guarded ? true : false
-        end
+        page.respond_to?(:guarded) && page.guarded ? true : false
+      rescue StandardError => e
+        $stderr.puts page_field_note(:guarded, false, e)
+        false
       end
 
       # -- event execution ----------------------------------------------------
