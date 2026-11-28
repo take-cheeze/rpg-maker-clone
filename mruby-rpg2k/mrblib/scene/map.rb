@@ -2071,16 +2071,15 @@ class RPG2k
       # whole event list, and the failure still surfaces in the log. Each reader
       # rescues on its own rather than yielding to a shared guard: a block costs
       # a Proc per read, and an event build reads a dozen fields.
-      def page_field_failed(name, default, e)
-        $stderr.puts "[RPG2k] event page field '#{name}' unavailable " \
-                     "(#{e.message}), using #{default.inspect}"
-        default
+      def page_field_note(name, default, e)
+        "[RPG2k] event page field '#{name}' unavailable (#{e.message}), using #{default.inspect}"
       end
 
       def page_trigger(page)
         page[:trigger]
       rescue StandardError => e
-        page_field_failed(:trigger, 0, e)
+        $stderr.puts page_field_note(:trigger, 0, e)
+        0
       end
 
       # The page's stored facing (0..3: up/right/down/left), default down (2).
@@ -2089,13 +2088,15 @@ class RPG2k
         d = page[:direction]
         d.is_a?(Integer) && d >= 0 && d <= 3 ? d : 2
       rescue StandardError => e
-        page_field_failed(:direction, 2, e)
+        $stderr.puts page_field_note(:direction, 2, e)
+        2
       end
 
       def page_move_type(page)
         page[:move_type] || 0
       rescue StandardError => e
-        page_field_failed(:move_type, 0, e)
+        $stderr.puts page_field_note(:move_type, 0, e)
+        0
       end
 
       # The page's stored Move Speed is real RPG_RT's own 1..6 scale (liblcf
@@ -2108,62 +2109,72 @@ class RPG2k
       def page_move_speed(page)
         (page[:move_speed] || 3) - 1
       rescue StandardError => e
-        page_field_failed(:move_speed, 2, e)
+        $stderr.puts page_field_note(:move_speed, 2, e)
+        2
       end
 
       def page_move_frequency(page)
         page[:move_frequency] || 3
       rescue StandardError => e
-        page_field_failed(:move_frequency, 3, e)
+        $stderr.puts page_field_note(:move_frequency, 3, e)
+        3
       end
 
       def page_move_route(page)
         page[:move_route]
       rescue StandardError => e
-        page_field_failed(:move_route, nil, e)
+        $stderr.puts page_field_note(:move_route, nil, e)
+        nil
       end
 
       def page_charset_name(page)
         page[:charset_name]
       rescue StandardError => e
-        page_field_failed(:charset_name, nil, e)
+        $stderr.puts page_field_note(:charset_name, nil, e)
+        nil
       end
 
       def page_charset_index(page)
         page[:charset_index] || 0
       rescue StandardError => e
-        page_field_failed(:charset_index, 0, e)
+        $stderr.puts page_field_note(:charset_index, 0, e)
+        0
       end
 
       def page_layer(page)
         page[:layer] || 0
       rescue StandardError => e
-        page_field_failed(:layer, 0, e)
+        $stderr.puts page_field_note(:layer, 0, e)
+        0
       end
 
       def page_overlap_forbidden(page)
         page[:overlap_forbidden] ? true : false
       rescue StandardError => e
-        page_field_failed(:overlap_forbidden, false, e)
+        $stderr.puts page_field_note(:overlap_forbidden, false, e)
+        false
       end
 
       def page_pattern(page)
         p = page[:pattern]
         p.is_a?(Integer) && p >= 0 && p <= 2 ? p : 1
       rescue StandardError => e
-        page_field_failed(:pattern, 1, e)
+        $stderr.puts page_field_note(:pattern, 1, e)
+        1
       end
 
       def page_anim_type(page)
         page[:animation_type] || 0
       rescue StandardError => e
-        page_field_failed(:anim_type, 0, e)
+        $stderr.puts page_field_note(:anim_type, 0, e)
+        0
       end
 
       def page_translucent(page)
         page[:translucent] ? true : false
       rescue StandardError => e
-        page_field_failed(:translucent, false, e)
+        $stderr.puts page_field_note(:translucent, false, e)
+        false
       end
 
       # Whether this page gates its own auto-start to one run per map visit (see
@@ -2177,7 +2188,8 @@ class RPG2k
       def page_guarded(page)
         page.respond_to?(:guarded) && page.guarded ? true : false
       rescue StandardError => e
-        page_field_failed(:guarded, false, e)
+        $stderr.puts page_field_note(:guarded, false, e)
+        false
       end
 
       # -- event execution ----------------------------------------------------
