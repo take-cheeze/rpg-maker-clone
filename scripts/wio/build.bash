@@ -11,6 +11,7 @@
 # Usage:
 #   scripts/wio/build.bash [BUILD_DIR, default ./build-wio]
 #   WIO_ROM_GRAPH=GRAPH.c  link that ROM class graph (scripts/wio/rom_graph.bash)
+#   WIO_ROM_GRAPH=probe    link the graph rom_graph.bash probe makes from this libmruby (BUILD_DIR/rom_graph.c)
 # The link log is BUILD_DIR/pio-wio.log (scripts/wio/size_report.rb reads it); the ELF is .pio/build/wio/firmware.elf.
 #
 # Needs pio on PATH and what scripts/bc2cpp/static_dispatch_lists.bash needs (ruby with prism, rake, gcc, bison,
@@ -73,9 +74,13 @@ if [ "${WIO_BIGINT:-0}" != 1 ]; then
   ruby "$root/scripts/wio/bignum_literal_check.rb" "$build_dir/host/mrbc/bin/mrbc" "$build_dir"
 fi
 
-# ROM_GRAPH: WIO_ROM_GRAPH=GRAPH.c (scripts/wio/rom_graph.bash dump) puts the boot's classes in flash; without it the
+# ROM_GRAPH: WIO_ROM_GRAPH=GRAPH.c (scripts/wio/rom_graph.bash) puts the boot's classes in flash; without it the
 # firmware links an empty graph and every class is on the heap.
-"$root/scripts/wio/rom_graph.bash" lib "$build_dir" "${WIO_ROM_GRAPH:-}"
+if [ "${WIO_ROM_GRAPH:-}" = probe ]; then
+  "$root/scripts/wio/rom_graph.bash" probe "$build_dir" "$build_dir/rom_graph.c"
+else
+  "$root/scripts/wio/rom_graph.bash" lib "$build_dir" "${WIO_ROM_GRAPH:-}"
+fi
 
 log="$build_dir/pio-wio.log"
 flags="-Wl,--print-memory-usage"
