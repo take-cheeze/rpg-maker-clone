@@ -1726,10 +1726,12 @@ class RPG2k
             @event_last_position[id] ||= [ev[:x], ev[:y], nil]
             list = table[id] = page_conditions(ev)
             next if @erased_events[id] # an Erase Event lasts the whole visit
-            page_number = select_page_number(@condition_lists[list])
+            conds = @condition_lists[list]
+            page_number = select_page_number(conds)
             next unless page_number
-            build_live_event(id, ev, page_number, restore_route_index, placed)
+            build_live_event(id, ev, page_number, restore_route_index, placed, peeked_page(conds, page_number))
           end
+          @peeked_pages.clear
         end
         sort_compact_events
         rebuild_event_tiles
@@ -1745,13 +1747,13 @@ class RPG2k
       # Put event +id+ on page +page_number+: a COMPACT_EVENTS record when the page and the state carried over from
       # +placed+ (#rebuild_events_preserving_positions) allow it, a full MapEventState otherwise. +ev+, the event's
       # row, is nil when not read yet.
-      def build_live_event(id, ev, page_number, restore_route_index, placed)
+      def build_live_event(id, ev, page_number, restore_route_index, placed, peeked = nil)
         old = placed && placed[id]
         return if placed && old.nil? && copy_compact_record(id, page_number)
 
         pages = (@event_pages ||= {})[id]
         page = pages ? pages[page_number] : nil
-        page ||= (ev ||= @map.unit[:events].peek(id))[:pages].peek(page_number)
+        page ||= peeked || (ev ||= @map.unit[:events].peek(id))[:pages].peek(page_number)
         return if compact_event(id, ev, page, page_number, old, !placed.nil?)
 
         e = build_event(id, ev, keep_event_page(id, page_number, page), page_number,
@@ -1790,8 +1792,12 @@ class RPG2k
         @condition_ids = []
       end
 
-      # The @condition_lists index of +ev+'s page list.
+      # The @condition_lists index of +ev+'s page list. The pages it read stay in @peeked_pages, in list order,
+      # until the next call: #build_events takes the selected one from there (#peeked_page) instead of reading it
+      # again.
       def page_conditions(ev)
+        peeked = (@peeked_pages ||= [])
+        peeked.clear
         list = []
         key = String.new
         shareable = true
@@ -1816,6 +1822,7 @@ class RPG2k
               shareable = false
             end
             list.push(page_id, cond)
+            peeked.push(page)
           end
         end
         index = shareable ? @condition_list_index[key] : nil
@@ -1826,6 +1833,17 @@ class RPG2k
         lists.push(list)
         @condition_list_index[key] = index if shareable
         index
+      end
+
+      # The page #page_conditions read for page +page_number+ of +conds+, or nil.
+      def peeked_page(conds, page_number)
+        i = 0
+        n = conds.size
+        while i < n
+          return @peeked_pages[i / 2] if conds[i] == page_number
+          i += 2
+        end
+        nil
       end
 
       # The id of the last page in +conds+ (#page_conditions) whose condition holds, as Game::EventPage.select_id
