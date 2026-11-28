@@ -287,7 +287,8 @@ they are skipped with it. `wasm` still runs on every pull request.
 that touches `app/wio/`, not in the merge queue. `wio` dumps the ROM class graph of its own build
 under Renode (no cache, so a graph never outlives its libmruby), fails unless a boot on it leaves
 the same graph, and links it into the `wio` and `wio_renode_game` firmware it uploads
-(`app/wio/README.md`); the link fails if internal flash overflows.
+(`app/wio/README.md`); the link fails if internal flash overflows. It also links
+`wio_renode_game_heapwalk` on the graph and runs `scripts/wio/qspi_xip_check.rb` on both Renode firmwares.
 
 `nano7-qemu` keeps its filter: on a pull request it runs only when its own files changed.
 

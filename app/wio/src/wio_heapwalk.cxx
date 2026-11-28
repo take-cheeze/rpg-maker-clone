@@ -218,8 +218,10 @@ int class_names(mrb_state* mrb, RBasic* o, void* ud) {
   return MRB_EACH_OBJ_OK;
 }
 
-void snapshot(uint32_t slot, uint32_t kind, const char* name, bool classes) {
-  g_busy = true;
+// The header and the live blocks' records of snapshot `slot`; answers where
+// the records end. QSPI_XIP: malloc takes peak snapshots through this, so it
+// stays clear of mruby, whose code is in QSPI (scripts/wio/qspi_xip_check.rb).
+char* snapshot_heap(uint32_t slot, uint32_t kind, const char* name) {
   Header* h = reinterpret_cast<Header*>(kOutBase);
   std::memset(h, 0, sizeof(*h));
   std::memcpy(h->magic, "HWS1", 4);
@@ -248,20 +250,16 @@ void snapshot(uint32_t slot, uint32_t kind, const char* name, bool classes) {
     ++blocks;
   }
   h->n_blocks = blocks;
-  char* out = reinterpret_cast<char*>(r);
-  // mrb_class_name's strings are left in the GC arena: kept there, those of a
-  // boot snapshot would stay live for the whole run.
-  if (classes && g_mrb) {
-    const int ai = mrb_gc_arena_save(g_mrb);
-    mrb_objspace_each_objects(g_mrb, class_names, &out);
-    // ROM_GRAPH: the classes a linked graph holds are not on the heap.
-    mrb_rom_graph_each(g_mrb, class_names, &out);
-    mrb_gc_arena_restore(g_mrb, ai);
-  }
-  h->n_classes_bytes = out - reinterpret_cast<char*>(r);
-  heapwalk_flush(slot, out - reinterpret_cast<char*>(h), heap_base(),
-                 top - heap_base());
-  g_busy = false;
+  return reinterpret_cast<char*>(r);
+}
+
+// Ends the snapshot snapshot_heap began, with the class names in [records,
+// out).
+void snapshot_flush(char* records, char* out) {
+  Header* h = reinterpret_cast<Header*>(kOutBase);
+  h->n_classes_bytes = out - records;
+  heapwalk_flush(h->slot, out - reinterpret_cast<char*>(h), heap_base(),
+                 h->sbrk_top - heap_base());
 }
 
 void maybe_peak() {
@@ -270,7 +268,10 @@ void maybe_peak() {
   g_peak = g_live;
   char name[80];
   std::snprintf(name, sizeof(name), "peak:%s", g_scene_name);
-  snapshot(g_peak_slot, 1, name, false);
+  g_busy = true;
+  char* const records = snapshot_heap(g_peak_slot, 1, name);
+  snapshot_flush(records, records);
+  g_busy = false;
 }
 
 }  // namespace
@@ -330,7 +331,20 @@ void wio_heapwalk_probe(const char* phase, long frame) {
     ++g_peak_slot;
     g_peak = g_live;
   }
-  snapshot(g_probe_slot++, 0, phase, true);
+  g_busy = true;
+  char* const records = snapshot_heap(g_probe_slot++, 0, phase);
+  char* out = records;
+  // mrb_class_name's strings are left in the GC arena: kept there, those of a
+  // boot snapshot would stay live for the whole run.
+  if (g_mrb) {
+    const int ai = mrb_gc_arena_save(g_mrb);
+    mrb_objspace_each_objects(g_mrb, class_names, &out);
+    // ROM_GRAPH: the classes a linked graph holds are not on the heap.
+    mrb_rom_graph_each(g_mrb, class_names, &out);
+    mrb_gc_arena_restore(g_mrb, ai);
+  }
+  snapshot_flush(records, out);
+  g_busy = false;
 }
 
 void wio_heapwalk_frame(long frame) {
