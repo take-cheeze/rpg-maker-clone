@@ -310,6 +310,11 @@ REWRITES = {
              '            end' },
       { old: '        dir = Game::EventGraphic.numpad_direction(page_direction(page))',
         new: '        dir = Game::EventGraphic::LCF_DIR_TO_NUMPAD[page_direction(page)] || 2' },
+      { old: '        build_dir = Game::EventGraphic.numpad_direction(page_direction(page))',
+        new: '        build_dir = Game::EventGraphic::LCF_DIR_TO_NUMPAD[page_direction(page)] || 2' },
+      { old: '        return false if Game::EventGraphic.continuous?(anim_type)',
+        new: '        return false if anim_type == Game::EventGraphic::CONTINUOUS || ' \
+             'anim_type == Game::EventGraphic::FIXED_CONTINUOUS || anim_type == Game::EventGraphic::SPIN' },
       { old: '        return unless sliding || Game::EventGraphic.continuous?(type)',
         new: '        return unless sliding || type == Game::EventGraphic::CONTINUOUS || ' \
              'type == Game::EventGraphic::FIXED_CONTINUOUS || type == Game::EventGraphic::SPIN' },

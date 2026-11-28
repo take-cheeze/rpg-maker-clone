@@ -826,7 +826,7 @@ end
 # The runtime event hash (id => {char:, layer:, anim_type:, ...}) the scene built.
 def event_hashes(scene)
   h = {}
-  scene.instance_variable_get(:@events).each { |e| h[e.id] = e }
+  scene.events.each { |e| h[e.id] = e }
   h
 end
 
@@ -1092,7 +1092,7 @@ end
 # runtime characters (not the source structs), so tests inspect them by id.
 def chars(scene)
   h = {}
-  scene.instance_variable_get(:@events).each { |e| h[e.id] = e.char }
+  scene.events.each { |e| h[e.id] = e.char }
   h
 end
 
@@ -1241,7 +1241,7 @@ check 'a jumping event slides across the whole hop instead of snapping' do
   seen = []
   60.times do
     scene.update
-    e = scene.instance_variable_get(:@events).first
+    e = scene.events.first
     seen << scene.send(:event_pixel, e)[0] if e.jumping
   end
   ok seen.size >= 4, "the hop was drawn over several frames, got #{seen.size}"
@@ -1258,7 +1258,7 @@ check 'a jumping sprite is lifted off the ground and comes back down' do
   heights = []
   40.times do
     scene.update
-    e = scene.instance_variable_get(:@events).first
+    e = scene.events.first
     heights << scene.send(:event_jump_offset, e) if e.jumping
   end
   ok heights.max > 0, 'the sprite left the ground'
@@ -1276,7 +1276,7 @@ check 'an event that walks is never lifted' do
   scene = new_scene({ 1 => ev }, player: [5, 5])
   40.times do
     scene.update
-    e = scene.instance_variable_get(:@events).first
+    e = scene.events.first
     eq false, e.jumping, 'a walking step is not a hop'
     eq 0, scene.send(:event_jump_offset, e)
   end
@@ -1292,7 +1292,7 @@ check 'a jump that lands on its own tile still hops visibly' do
   lifted = 0
   40.times do
     scene.update
-    e = scene.instance_variable_get(:@events).first
+    e = scene.events.first
     lifted += 1 if scene.send(:event_jump_offset, e) > 0
   end
   ok lifted > 0, 'a hop in place still leaves the ground'
@@ -1309,7 +1309,7 @@ check 'Change Event Location does not arc the event it snaps' do
   scene = new_scene({ 1 => event(0, 1, page), 2 => event(5, 5, pg) },
                     player: [5, 0])
   20.times { scene.update }
-  e = scene.instance_variable_get(:@events).find { |x| x.id == 1 }
+  e = scene.events.find { |x| x.id == 1 }
   eq [4, 2], [e.char.x, e.char.y], 'the snap landed'
   eq false, e.jumping, 'a snap is not a hop'
   eq 0, scene.send(:event_jump_offset, e), 'so the sprite is not lifted'
@@ -4369,7 +4369,7 @@ check 'Erase Event removes the running event from the map' do
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   ok chars(scene)[1], 'event present before it runs'
   5.times { scene.update }
-  evs = scene.instance_variable_get(:@events)
+  evs = scene.events
   ok evs.none? { |e| e.id == 1 }, 'the event is gone from the runtime list'
   ok !scene.send(:event_at, 2, 2), 'its occupied tile is cleared (no marker, no collision)'
 end
@@ -4412,7 +4412,7 @@ check 'Erase Event stops a parallel process that erases itself' do
   10.times { scene.update }
   st = scene.instance_variable_get(:@state)
   eq 1, st.variables[1], 'the process ran once, then erased itself (no re-loop)'
-  ok scene.instance_variable_get(:@events).none? { |e| e.id == 1 },
+  ok scene.events.none? { |e| e.id == 1 },
      'erased from the event list'
   ok scene.instance_variable_get(:@parallels).empty?,
      'its background process was removed'
@@ -6176,7 +6176,7 @@ check "a page's own custom move route resumes at its saved cursor across a save/
   scene = RPG2k::Scene::Map.new(parent, state)
 
   15.times { scene.update } # partway through the 4-tile route
-  e = scene.instance_variable_get(:@events).first
+  e = scene.events.first
   c = e.char
   ok c.x > 0 && c.x < 4, "expected partial progress into the route, got x=#{c.x}"
   ok !e.route.done?, 'the route has not finished yet'
@@ -6186,7 +6186,7 @@ check "a page's own custom move route resumes at its saved cursor across a save/
   restored.map = fake_map(1, events)
   fresh = RPG2k::Scene::Map.new(FakeParent.new(db) { |id| fake_map(id, events) },
                                 restored)
-  re = fresh.instance_variable_get(:@events).first
+  re = fresh.events.first
   eq saved_index, re.route.index,
      'the restored route resumes at the exact command it was on, not index 0'
   eq c.x, re.char.x, 'the character position agrees (the already-fixed position half)'
@@ -6199,7 +6199,7 @@ check "a page's own custom move route resumes at its saved cursor across a save/
   # up to 4 whole tiles' worth of that combined pace rather than the old,
   # racing-slide budget.
   100.times { fresh.update }
-  fc = fresh.instance_variable_get(:@events).first.char
+  fc = fresh.events.first.char
   eq 4, fc.x, 'the route completes to its actual endpoint from the resumed cursor'
 end
 
@@ -6225,13 +6225,13 @@ check "a page's own custom-route index does not leak onto an unrelated page's " 
   st = scene.instance_variable_get(:@state)
 
   20.times { scene.update } # partway through page 1's own route
-  e = scene.instance_variable_get(:@events).first
+  e = scene.events.first
   ok e.route.index > 0, "expected partial progress into page 1's route, got index #{e.route.index}"
 
   st.switches[5] = true
   scene.update # page 2's condition now holds: an in-place page reselection runs
 
-  e2 = scene.instance_variable_get(:@events).first
+  e2 = scene.events.first
   ok !e2.page.equal?(e.page), 'page 2 is now the active page'
   eq 0, e2.route.index,
      "page 2's own different route starts at its own index 0, not a stale " \
