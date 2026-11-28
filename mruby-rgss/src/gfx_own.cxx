@@ -127,8 +127,9 @@ struct Display {
   Node root;
   uint32_t last_draw = 0;
   bool drawn_once = false;
-  // DIRTY_LIST: areas to draw this frame; a full list becomes the screen.
-  static constexpr int kDirtyMax = 16;
+  // DIRTY_LIST: areas to draw this frame; a full list becomes the screen
+  // (LVGL's LV_INV_BUF_SIZE).
+  static constexpr int kDirtyMax = 32;
   Area dirty[kDirtyMax];
   int ndirty = 0;
 };
@@ -148,13 +149,14 @@ void add_dirty(Area r) {
   r = intersect(r, screen_rect(*d));
   if (r.empty())
     return;
-  // Joined with any area whose union costs no more than the two apart, until
-  // none is (LVGL's lv_refr_join_area rule).
+  // Joined with any area it overlaps whose union is smaller than the two
+  // apart, until none is (LVGL's lv_refr_join_area rule).
   for (bool merged = true; merged;) {
     merged = false;
     for (int i = 0; i < d->ndirty; ++i) {
       const Area u = join(r, d->dirty[i]);
-      if (u.area() <= r.area() + d->dirty[i].area()) {
+      if (!intersect(r, d->dirty[i]).empty() &&
+          u.area() < r.area() + d->dirty[i].area()) {
         r = u;
         d->dirty[i] = d->dirty[--d->ndirty];
         merged = true;
@@ -330,6 +332,7 @@ alignas(4) uint8_t g_scratch[kScratchBytes];
 
 struct Strip {
   Area r;
+  const Node* cover;  // draw from here up
   uint16_t* px;
   int32_t stride;  // pixels
   uint16_t* at(int32_t x, int32_t y) const {
@@ -399,18 +402,47 @@ void draw_color(const Node* n, const Strip& s) {
   }
 }
 
-void draw_tree(const Node* n, const Strip& s) {
+bool contains(const Area& outer, const Area& inner) {
+  return !outer.empty() && outer.x1 <= inner.x1 && outer.y1 <= inner.y1 &&
+         outer.x2 >= inner.x2 && outer.y2 >= inner.y2;
+}
+
+// COVER: the last sprite in drawing order that paints every pixel of the
+// strip, as lv_refr_get_top_obj finds it (an untransformed RGB888 image at a
+// covering opacity and normal blend). Nothing under it is drawn, which skips
+// the expansion of whatever views lie beneath.
+const Node* find_cover(const Node* n, const Area& s) {
+  if (n->hidden)
+    return nullptr;
+  if (n->kind == Kind::kSprite)
+    return n->src != Src::kNone && n->format == kPixelRGB888 &&
+                   n->opa >= kOpaMax && n->blend == Blend::kNormal &&
+                   n->scale_x == kScaleOne && n->scale_y == kScaleOne &&
+                   n->rotation == 0 && contains(n->vis, s)
+               ? n
+               : nullptr;
+  if (!contains(n->clip, s))
+    return nullptr;
+  for (const Node* c = n->last; c; c = c->prev)
+    if (const Node* found = find_cover(c, s))
+      return found;
+  return nullptr;
+}
+
+void draw_tree(const Node* n, const Strip& s, bool& on) {
   if (n->hidden)
     return;
   if (n->kind == Kind::kSprite) {
-    draw_sprite(n, s);
+    on = on || n == s.cover;
+    if (on)
+      draw_sprite(n, s);
     return;
   }
   if (intersect(n->clip, s.r).empty())
     return;
   for (const Node* c = n->first; c; c = c->next)
-    draw_tree(c, s);
-  if (n->kind == Kind::kFrame && n->color[3] != 0)
+    draw_tree(c, s, on);
+  if (on && n->kind == Kind::kFrame && n->color[3] != 0)
     draw_color(n, s);
 }
 
@@ -426,9 +458,12 @@ void draw_area(Display& d, const Area& r) {
     s.px = d.cfg.strip;
     s.stride = w;
     const int32_t h = s.r.y2 - s.r.y1 + 1;
+    s.cover = find_cover(&d.root, s.r);
     // The screen's own black background, under everything.
-    std::memset(s.px, 0, static_cast<size_t>(w) * h * sizeof(uint16_t));
-    draw_tree(&d.root, s);
+    if (!s.cover)
+      std::memset(s.px, 0, static_cast<size_t>(w) * h * sizeof(uint16_t));
+    bool on = !s.cover;
+    draw_tree(&d.root, s, on);
     d.cfg.flush(r.x1, s.r.y1, w, h, s.px);
   }
 }
