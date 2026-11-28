@@ -1799,13 +1799,19 @@ class RPG2k
         if pages
           shared = @shared_conditions
           pages.each_peek do |page_id, page|
-            cond = page[:condition]
+            # Keyed by the chunk's own bytes, so a repeated condition is decoded once.
+            raw = page.is_a?(LCF::Array1D) ? page.raw_chunk(:condition) : nil
+            cond = raw ? shared[raw] : nil
+            cond ||= page[:condition]
             if cond.is_a?(LCF::Array1D)
-              bytes = cond.to_lcf
+              bytes = raw || cond.to_lcf
               cond = (shared[bytes] ||= cond)
-              key << page_id.to_s << ',' << bytes.bytesize.to_s << ',' << bytes
+              # page id, then length + 1 (0 for no condition) and the bytes: built in place, no temporaries
+              LCF.append_ber(key, page_id)
+              LCF.append_ber(key, bytes.bytesize + 1) << bytes
             elsif cond.nil?
-              key << page_id.to_s << ',-,'
+              LCF.append_ber(key, page_id)
+              LCF.append_ber(key, 0)
             else
               shareable = false
             end

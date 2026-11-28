@@ -90,6 +90,7 @@ class LCF::Array1D
   def key?: (untyped) -> untyped
   def load_lazy: () -> untyped
   def materialize: () -> untyped
+  def raw_chunk: (untyped) -> untyped
   def read_chunks: (untyped, untyped) -> untyped
   def self.blank_record: (untyped) -> untyped
 end
