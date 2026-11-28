@@ -1921,6 +1921,12 @@ class RPG2k
         @events.each { |e| index_event_tile(e, e.char.x, e.char.y) }
       end
 
+      # TILE_KEY: tile (x, y)'s key in @event_tiles and @event_tiles_by_pos: an Integer, so an entry allocates no
+      # [x, y] key. A map is at most 500 tiles a side, so two tiles never share a key.
+      def tile_key(x, y)
+        y * 0x10000 + x
+      end
+
       # Record event `e` as occupying (x, y) in both occupied-tile caches:
       # `@event_tiles`, which keeps a single event per tile (last write wins,
       # i.e. highest id -- see #event_id_at) for the "pick one event here"
@@ -1932,31 +1938,33 @@ class RPG2k
       # blocking event can go unnoticed just because another one sharing its
       # tile was indexed after it.
       def index_event_tile(e, x, y)
-        @event_tiles[[x, y]] = e
-        (@event_tiles_by_pos[[x, y]] ||= []) << e
+        k = tile_key(x, y)
+        @event_tiles[k] = e
+        (@event_tiles_by_pos[k] ||= []) << e
       end
 
       # Undo #index_event_tile for event `e` at (x, y): drops it from the
       # single-event cache only if it is still the one recorded there (a
       # same-tile companion may have since taken over that slot), and always
       # drops it from the multi-event list, pruning the list entirely once
-      # empty so #blockers_at's `@event_tiles_by_pos[[x, y]]` miss stays a
+      # empty so #blockers_at's `@event_tiles_by_pos` miss stays a
       # plain nil rather than accumulating empty arrays.
       def deindex_event_tile(e, x, y)
-        @event_tiles.delete([x, y]) if @event_tiles[[x, y]].equal?(e)
-        list = @event_tiles_by_pos[[x, y]]
+        k = tile_key(x, y)
+        @event_tiles.delete(k) if @event_tiles[k].equal?(e)
+        list = @event_tiles_by_pos[k]
         return unless list
         list.delete_if { |o| o.equal?(e) }
-        @event_tiles_by_pos.delete([x, y]) if list.empty?
+        @event_tiles_by_pos.delete(k) if list.empty?
       end
 
       # Every live event occupying (x, y), for collision -- unlike
-      # `@event_tiles[[x, y]]` (a single, last-write-wins event meant for
+      # `@event_tiles` (a single, last-write-wins event meant for
       # "which one event is here" queries), this answers "is *anything* here
       # that would block", so two events sharing a tile on different priority
       # types both get a say instead of one silently shadowing the other.
       def blockers_at(x, y)
-        @event_tiles_by_pos[[x, y]] || NO_BLOCKERS
+        @event_tiles_by_pos[tile_key(x, y)] || NO_BLOCKERS
       end
 
       # Read an optional event-page field through a guard that logs (rather than
@@ -2918,7 +2926,7 @@ class RPG2k
 
       # The event currently standing on tile (x, y), or nil.
       def event_at(x, y)
-        @event_tiles[[x, y]]
+        @event_tiles[tile_key(x, y)]
       end
 
       # Turn `ev` to face the player and run its command list. `by_decision_key`
@@ -5616,7 +5624,7 @@ class RPG2k
       # to the highest of them.
       def event_id_at(x, y)
         best = 0
-        ev = @event_tiles[[x, y]]
+        ev = @event_tiles[tile_key(x, y)]
         best = ev.id if ev
         @erased_event_positions.each do |id, tile|
           best = id if tile == [x, y] && id > best
