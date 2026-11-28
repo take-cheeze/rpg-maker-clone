@@ -306,9 +306,20 @@ module LCF
           pos = ber_next d, pos
         end
       end
-      cmds.push MoveCommand.new(id, str, a, b, c)
+      bare = id >= 0 && id < BARE_MOVE_IDS && str.empty? && a == 0 && b == 0 && c == 0
+      cmds.push(bare ? bare_move(id) : MoveCommand.new(id, str, a, b, c))
     end
     cmds
+  end
+
+  # SHARED_MOVE: one MoveCommand per id stands for every parameterless command of a decoded route (most of a route
+  # is bare moves and turns). A MoveCommand has no writers, so sharing one changes nothing a reader sees. Ids past
+  # the format's (0..45) are not shared, so a corrupt id cannot size the table.
+  BARE_MOVE_IDS = 64
+
+  def self.bare_move id
+    moves = (@bare_moves ||= [])
+    moves[id] ||= MoveCommand.new(id, empty_str, 0, 0, 0)
   end
 
   # Encode a list of MoveCommand (or {command_id:, parameter_string:,

@@ -494,6 +494,17 @@ assert "LCF.parse_move_commands decodes bare and parameterised commands" do
   assert_equal 11, cmds[4].command_id
 end
 
+assert "LCF.parse_move_commands shares one command per parameterless id" do
+  # move_up, move_up, switch_on 0 (its id is a parameter even when 0), move_up from a second route.
+  a = LCF.parse_move_commands(lcf_ber(0) + lcf_ber(0) + lcf_ber(32) + lcf_ber(0))
+  b = LCF.parse_move_commands(lcf_ber(0) + lcf_ber(70))
+  assert_true a[0].equal?(a[1])
+  assert_true a[0].equal?(b[0])
+  assert_equal 32, a[2].command_id
+  assert_equal 70, b[1].command_id
+  assert_false b[1].equal?(LCF.parse_move_commands(lcf_ber(70))[0]), 'an id past the format is not shared'
+end
+
 assert "LCF.encode_event_commands is the exact inverse of .parse_event_commands" do
   def lcf_command(code, indent, str, params)
     lcf_ber(code) + lcf_ber(indent) + lcf_ber(str.bytesize) + str +
