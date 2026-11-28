@@ -1208,6 +1208,25 @@ assert "MAPPED_LCF: LCF.mapped_file is the platform's bytes, or nil" do
   assert_equal orig, LCF::MapUnit.new(mapped).to_lcf
 end
 
+# The lower layer of the map at +path+, read in place; nothing else of the map outlives the call.
+def lcf_mapped_layer(path)
+  LCF::MapUnit.new(LCF.mapped_file(path))[:lower_layer]
+end
+
+assert "FILE_CACHE: lcf_mapped_in_use finds what points into mapped bytes" do
+  path = LCF::Test.map(lcf_mapped_lmu_bytes)
+  assert_false LCF::Test.in_use?
+  layer = lcf_mapped_layer(path)
+  assert_true LCF::Test.in_use? # the layer's view
+  layer[0] = 1                  # now a copy
+  assert_false LCF::Test.in_use?
+  assert_equal [1, -2, 3], layer.to_a[0, 3]
+  name = LCF::MapUnit.new(LCF.mapped_file(path))[:events][1][:name]
+  assert_equal "NPC", name
+  layer = LCF::ShortArray.unpack(LCF.mapped_file(path))
+  assert_true LCF::Test.in_use?
+end
+
 # ---- Build a save FROM SCRATCH --------------
 # The writer above edits a save parsed from bytes; these exercise assembling a
 # save with no source file: int16 field encoding, an Array2D populated via #[]=,

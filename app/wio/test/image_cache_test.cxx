@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -473,6 +474,213 @@ void test_wear() {
   CHECK(!r.flash.bad_program);
 }
 
+// FILE_CACHE: the card's game files, and what the VM still points into.
+struct Files {
+  std::map<std::string, std::vector<uint8_t>> files;
+  std::vector<const uint8_t*> held;  // pointers the "VM" still has
+  const std::vector<uint8_t>* open = nullptr;
+  uint32_t pos = 0, opens = 0, passes = 0;
+  bool fail = false;
+};
+
+bool files_open(void* ctx, const char* path, uint32_t* size) {
+  Files& f = *static_cast<Files*>(ctx);
+  auto it = f.files.find(path);
+  if (it == f.files.end())
+    return false;
+  ++f.opens;
+  f.open = &it->second;
+  f.pos = 0;
+  *size = static_cast<uint32_t>(it->second.size());
+  return true;
+}
+
+bool files_read(void* ctx, uint8_t* buf, uint32_t len) {
+  Files& f = *static_cast<Files*>(ctx);
+  if (f.fail || !f.open || f.pos + len > f.open->size())
+    return false;
+  if (len)
+    std::memcpy(buf, f.open->data() + f.pos, len);
+  f.pos += len;
+  return true;
+}
+
+void files_close(void* ctx) {
+  static_cast<Files*>(ctx)->open = nullptr;
+}
+
+void files_in_use(void* ctx, const WicRange* r, uint32_t n, bool* used) {
+  Files& f = *static_cast<Files*>(ctx);
+  ++f.passes;
+  for (uint32_t i = 0; i < n; ++i) {
+    used[i] = false;
+    for (const uint8_t* p : f.held)
+      used[i] = used[i] || (p >= r[i].p && p < r[i].p + r[i].len);
+  }
+}
+
+std::vector<uint8_t> file_bytes(uint32_t size, uint8_t seed) {
+  std::vector<uint8_t> v(size);
+  for (uint32_t i = 0; i < size; ++i)
+    v[i] = static_cast<uint8_t>(i * 13 + seed + (i >> 8));
+  return v;
+}
+
+struct FileRig : Rig {
+  Files f;
+  FileRig(uint32_t sectors, uint32_t max_items)
+      : Rig(sectors, make_pack(images(), 0x1234), max_items) {}
+  bool open_files() {
+    if (!open())
+      return false;
+    wic_set_files(&cache,
+                  {files_open, files_read, files_close, files_in_use, &f});
+    return true;
+  }
+  // The file's bytes from the cache, checked against the card's.
+  const uint8_t* get(const char* path, bool hold = true) {
+    uint32_t len = 0;
+    const uint8_t* p = wic_file(&cache, path, &len);
+    if (!p)
+      return nullptr;
+    const std::vector<uint8_t>& want = f.files[path];
+    CHECK(len == want.size());
+    CHECK(len == 0 || std::memcmp(p, want.data(), len) == 0);
+    CHECK(p >= flash.bytes.data() &&
+          p + len <= flash.bytes.data() + flash.bytes.size());
+    CHECK((p - flash.bytes.data()) % 16 == 0);
+    if (hold)
+      f.held.push_back(p);
+    return p;
+  }
+};
+
+void test_files_copy_and_reboot() {
+  FileRig r(40, 16);
+  r.f.files["RPG_RT.ldb"] = file_bytes(9000, 1);  // 32 + 16 + 9000: 3 sectors
+  r.f.files["Map0001.lmu"] = file_bytes(100, 2);
+  r.f.files["Map0002.lmu"] = file_bytes(0, 3);
+  CHECK(r.open_files());
+  const uint8_t* db = r.get("RPG_RT.ldb");
+  CHECK(db && r.cache.stats.file_misses == 1);
+  CHECK(r.get("Map0001.lmu") && r.get("Map0002.lmu"));
+  CHECK(r.get("RPG_RT.ldb") == db);
+  CHECK(r.f.opens == 3 && r.cache.stats.file_hits == 1);
+  // Not on the card, or a path too long to keep: not cached.
+  uint32_t len = 0;
+  CHECK(!wic_file(&r.cache, "Map0099.lmu", &len));
+  CHECK(!wic_file(&r.cache, std::string(kWicMaxPath + 1, 'x').c_str(), &len));
+  CHECK(r.cache.stats.file_failed == 1);
+  // Images and files side by side.
+  rgss_rom_bitmap_view v{};
+  CHECK(r.fetch(2, &v) == RGSS_ROM_FETCH_OK && shows(r, 2, v));
+  wic_release(&r.cache, 2);
+  // A new boot finds every item, and copies nothing.
+  WicCache again{};
+  std::vector<WicItem> items(16);
+  const WicFlash fl{r.flash.bytes.data(),
+                    static_cast<uint32_t>(r.flash.bytes.size()), flash_erase,
+                    flash_program, &r.flash};
+  const WicPack pk{static_cast<uint32_t>(r.pack.bytes.size()), pack_read,
+                   &r.pack};
+  char why[96];
+  const uint32_t erased = r.cache.stats.erased;
+  CHECK(wic_open(&again, fl, pk, items.data(), 16, why, sizeof(why)));
+  CHECK(again.nitems == 4 && again.head == r.cache.head);
+  wic_set_files(&again,
+                {files_open, files_read, files_close, files_in_use, &r.f});
+  CHECK(wic_file(&again, "RPG_RT.ldb", &len) == db && len == 9000);
+  CHECK(wic_file(&again, "Map0001.lmu", &len) && len == 100);
+  CHECK(wic_file(&again, "Map0002.lmu", &len) && len == 0);
+  CHECK(wic_fetch(&again, 2, &v) == RGSS_ROM_FETCH_OK && shows(r, 2, v));
+  CHECK(again.stats.file_misses == 0 && again.stats.file_hits == 3);
+  CHECK(r.f.opens == 3 && r.cache.stats.erased == erased);
+  // Another game (another pack checksum): no file of the old one counts.
+  r.pack.bytes = make_pack(images(), 0x5678);
+  WicCache third{};
+  const WicPack pk2{static_cast<uint32_t>(r.pack.bytes.size()), pack_read,
+                    &r.pack};
+  CHECK(wic_open(&third, fl, pk2, items.data(), 16, why, sizeof(why)));
+  CHECK(third.nitems == 0);
+  CHECK(!r.flash.bad_program);
+}
+
+void test_files_lent() {
+  // 10 item sectors: a 3-sector file and an image of 5 leave 2.
+  FileRig r(12, 16);
+  r.f.files["Map0001.lmu"] = file_bytes(9000, 1);  // 3 sectors
+  r.f.files["Map0002.lmu"] = file_bytes(9000, 2);  // 3
+  r.f.files["Map0003.lmu"] = file_bytes(5000, 3);  // 2
+  CHECK(r.open_files());
+  CHECK(r.get("Map0001.lmu"));
+  rgss_rom_bitmap_view v{};
+  CHECK(r.fetch(2, &v) == RGSS_ROM_FETCH_OK);  // c: 5 sectors, pinned
+  CHECK(r.get("Map0003.lmu"));
+  // No room while both maps are pointed into: nothing is evicted.
+  CHECK(!r.get("Map0002.lmu"));
+  CHECK(r.cache.stats.reclaims > 0 && r.cache.stats.reclaimed == 0);
+  CHECK(r.cache.nitems == 3);
+  // Map0001 is let go (a GC freed what pointed into it): it makes room.
+  r.f.held.erase(r.f.held.begin());
+  CHECK(r.get("Map0002.lmu"));
+  CHECK(r.cache.stats.reclaimed == 1 && r.cache.stats.file_misses == 3);
+  CHECK(r.get("Map0003.lmu") && r.cache.stats.file_hits == 1);
+  // An image miss takes lent files back the same way.
+  FileRig img(12, 16);
+  img.f.files = r.f.files;
+  CHECK(img.open_files());
+  CHECK(img.get("Map0001.lmu") && img.get("Map0002.lmu") &&
+        img.get("Map0003.lmu"));  // 2..4, 5..7, 8..9
+  CHECK(img.fetch(2, &v) == RGSS_ROM_FETCH_FULL);
+  img.f.held.clear();
+  CHECK(img.fetch(2, &v) == RGSS_ROM_FETCH_OK && shows(img, 2, v));
+  CHECK(img.cache.stats.reclaimed == 3 && img.cache.stats.evicted == 2);
+  CHECK(img.get("Map0003.lmu") && img.cache.stats.file_hits == 1);
+  // Without an in_use answer a lent file is never taken back.
+  FileRig none(12, 16);
+  none.f.files = r.f.files;
+  CHECK(none.open());
+  wic_set_files(&none.cache,
+                {files_open, files_read, files_close, nullptr, &none.f});
+  CHECK(none.get("Map0001.lmu") && none.get("Map0002.lmu") &&
+        none.get("Map0003.lmu"));
+  none.f.held.clear();
+  CHECK(none.fetch(2, &v) == RGSS_ROM_FETCH_FULL);
+  CHECK(!r.flash.bad_program && !none.flash.bad_program);
+}
+
+void test_files_table_and_errors() {
+  // A 2-item table: a third file drops the oldest unlent item, or waits for
+  // the in_use pass when both are lent.
+  FileRig r(40, 2);
+  r.f.files["a.lmu"] = file_bytes(10, 1);
+  r.f.files["b.lmu"] = file_bytes(10, 2);
+  r.f.files["c.lmu"] = file_bytes(10, 3);
+  CHECK(r.open_files());
+  CHECK(r.get("a.lmu") && r.get("b.lmu"));
+  CHECK(!r.get("c.lmu"));
+  r.f.held.erase(r.f.held.begin());
+  CHECK(r.get("c.lmu"));
+  CHECK(r.cache.nitems == 2 && r.cache.stats.evicted == 1);
+  // A card that fails part way, or a flash that stops taking writes (a
+  // reset): no header, so no item; the next miss copies it whole.
+  r.f.held.clear();
+  r.f.files["d.lmu"] = file_bytes(6000, 4);
+  r.f.fail = true;
+  CHECK(!r.get("d.lmu"));
+  r.f.fail = false;
+  r.flash.budget = 3;
+  CHECK(!r.get("d.lmu"));
+  r.flash.budget = -1;
+  CHECK(r.get("d.lmu"));
+  // Larger than the whole cache.
+  FileRig tiny(6, 16);
+  tiny.f.files["big.lmu"] = file_bytes(5 * kWicSector, 5);
+  CHECK(tiny.open_files());
+  CHECK(!tiny.get("big.lmu"));
+  CHECK(!r.flash.bad_program && !tiny.flash.bad_program);
+}
+
 }  // namespace
 
 int main() {
@@ -484,6 +692,9 @@ int main() {
   test_reboot_and_new_pack();
   test_card_errors();
   test_wear();
+  test_files_copy_and_reboot();
+  test_files_lent();
+  test_files_table_and_errors();
   if (g_failures) {
     for (const std::string& l : g_log)
       std::fprintf(stderr, "  log: %s\n", l.c_str());
