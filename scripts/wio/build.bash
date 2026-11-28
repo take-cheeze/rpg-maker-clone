@@ -4,7 +4,8 @@
 # the firmware link. CI's `wio` job runs this.
 #
 # The link runs the cold code from the external QSPI flash (app/wio/qspi_xip.py), and fails if internal flash
-# overflows or scripts/wio/qspi_xip_check.rb or scripts/wio/vector_table_check.rb does. WIO_QSPI_XIP=0 links all of
+# overflows or scripts/wio/qspi_xip_check.rb or scripts/wio/vector_table_check.rb does, or when too much of
+# app/wio/qspi_xip_hot.txt names functions the firmware no longer has (scripts/wio/qspi_xip_hot.rb --check). WIO_QSPI_XIP=0 links all of
 # it internally, which does not fit: that link runs with --noinhibit-exec, so the ELF and the size lines are the
 # measurement, and only an undefined reference or a failed vector-table check fails the script.
 #
@@ -100,4 +101,5 @@ ruby "$root/scripts/wio/vector_table_check.rb" "$elf"
 if [ "${WIO_QSPI_XIP:-1}" != 0 ]; then
   [ "$rc" = 0 ] || { echo "error: pio run -e wio failed (exit $rc)" >&2; exit 1; }
   ruby "$root/scripts/wio/qspi_xip_check.rb" "$elf" "$toolchain/arm-none-eabi-"
+  NM="$toolchain/arm-none-eabi-nm" ruby "$root/scripts/wio/qspi_xip_hot.rb" --check "$elf"
 fi

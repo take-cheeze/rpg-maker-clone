@@ -123,6 +123,7 @@ CHECKS = [
   { name: 'wio-strip-scripts',  command: %w[scripts/wio/strip_scripts_check.rb] },
   { name: 'wio-dropped-gems',   command: %w[scripts/wio/dropped_gems_check.rb] },
   { name: 'wio-debug-scenes',   command: %w[scripts/wio/debug_scenes_check.rb] },
+  { name: 'wio-qspi-xip-hot',   command: %w[scripts/wio/qspi_xip_hot_check.rb] },
   { name: 'rpg2k-testbed-logic', command: %w[scripts/rpg2k/testbed_logic_check.rb] },
   # Spawns the exporter as a child process; the coverage hook rides RUBYOPT
   # into it, so Game::ChipsetLayout/ChipSet and the LCF readers it drives are
