@@ -22,6 +22,9 @@ if spec.build.cc.defines.include?('MRB_NO_FLOAT')
 end
 
   cxx.include_paths << "#{dir}/../3rd/uni-algo/include"
+  # MAPPED_LCF: include/lcf_file_map.h, the platform's side of LCF.mapped_file.
+  cxx.include_paths << "#{dir}/../include"
+  cc.include_paths << "#{dir}/../include"
   linker.library_paths << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/uni-algo"
   linker.libraries << "uni-algo"
 

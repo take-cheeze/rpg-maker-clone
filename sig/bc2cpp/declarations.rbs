@@ -18,6 +18,7 @@ module LCF
   def self.event_index: (String) -> String
   def self.event_params: (String, String, Numeric) -> Array
   def self.event_string: (String, String, Numeric) -> String?
+  def self.mapped_file: (String) -> String?
   def self.pack_double: (Numeric) -> String
   def self.pack_int32: (Array) -> String
   def self.rom_get: (untyped, untyped) -> untyped
@@ -59,6 +60,7 @@ module LCF
   def self.field?: (untyped, untyped) -> untyped
   def self.int16_format: (untyped) -> untyped
   def self.level_max: () -> untyped
+  def self.map_io: (untyped) -> untyped
   def self.npc_hp_max: () -> untyped
   def self.pack_fixed_double: (untyped, untyped) -> untyped
   def self.parse_event_commands: (untyped) -> untyped
@@ -78,6 +80,7 @@ class LCF::Array1D
   def []: (untyped) -> untyped
   def []=: (untyped, untyped) -> untyped
   def buf_bytes: (untyped) -> untyped
+  def buf_table: () -> untyped
   def buf_value: (untyped, untyped) -> untyped
   def chunk_bytes: (untyped) -> untyped
   def chunk_value_bytes: (untyped) -> untyped
@@ -115,6 +118,7 @@ end
 class LCF::Database < LCF::File
   def lazy_io: (untyped) -> untyped
   def maker: () -> untyped
+  def mapped_bytes: (untyped) -> untyped
   def self.eager?: () -> untyped
 end
 # bc2cpp-native: base_lcf
@@ -148,6 +152,8 @@ class LCF::File
   def header: () -> untyped
   def initialize: (?untyped) -> untyped
   def lazy_io: (untyped) -> untyped
+  def mapped_bytes: (untyped) -> untyped
+  def read_bytes: (untyped) -> untyped
   def schema: () -> untyped
 end
 # bc2cpp-native: base_lcf
@@ -157,6 +163,7 @@ class LCF::MapTree < LCF::File
 end
 # bc2cpp-native: base_lcf
 class LCF::MapUnit < LCF::File
+  def mapped_bytes: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::MoveCommand

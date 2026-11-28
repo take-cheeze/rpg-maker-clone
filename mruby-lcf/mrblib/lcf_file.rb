@@ -21,6 +21,9 @@ module LCF
         return
       end
       @io = io
+      bytes = io.is_a?(String) ? io : mapped_bytes(io)
+      return read_bytes(bytes) if bytes
+
       h_len = LCF.read_ber io
       h = io.read h_len
       raise "Invalid header: #{h} (expected: #{header})" if h != header
@@ -42,6 +45,23 @@ module LCF
     # or nil. Only a file whose object is the one live reader of its path, and
     # writes it only through #save_to.
     def lazy_io(_io) nil end
+
+    # MAPPED_LCF: the file's bytes where the platform holds them (LCF.mapped_file), for a class whose object reads
+    # them in place, or nil to read +io+.
+    def mapped_bytes(_io) nil end
+
+    # A file from its bytes, +s+ (a String): the root record reads its chunks in place (LAZY_RECORD).
+    def read_bytes s
+      raise 'section-based file from bytes not implemented' if schema.is_a? Array
+
+      h_len = LCF.ber_at s, 0
+      pos = LCF.ber_next s, 0
+      h = h_len >= 0 && h_len <= s.bytesize - pos ? s.byteslice(pos, h_len) : nil
+      raise "Invalid header: #{h} (expected: #{header})" if h != header
+
+      pos += h_len
+      @root = build_root(s.byteslice(pos, s.bytesize - pos), schema)
+    end
 
     def header; raise end
     def schema; raise end
@@ -112,6 +132,8 @@ module LCF
       false
     end
 
+    def mapped_bytes(io) LCF.map_io(io) end
+
     # RPG Maker 2003 databases carry a Classes (職業) section, chunk 30, that
     # RPG2000 never writes. Its presence is the file-level signal that a project
     # was authored in 2003, independent of the compile-time LCF::MODE default.
@@ -156,6 +178,8 @@ module LCF
     # map file written without this byte, and loads it correctly once
     # appended.
     def terminate_root?; true end
+
+    def mapped_bytes(io) LCF.map_io(io) end
   end
 
   class SaveData < File

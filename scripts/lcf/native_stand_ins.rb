@@ -46,6 +46,12 @@ module LCF
 
   def self.ber_next(s, pos) = ber_read(s, pos)[1]
 
+  # LCF.mapped_file (MAPPED_LCF): with LCF_MAP_FILES set, the whole file as the native's snapshot map gives it, else
+  # nil (read the file). Frozen here, so a harness that writes into it fails where mruby would copy it.
+  def self.mapped_file(path)
+    ENV['LCF_MAP_FILES'] ? ::File.binread(path).freeze : nil
+  end
+
   def self.row_end(s, pos)
     size = s.bytesize
     while pos < size

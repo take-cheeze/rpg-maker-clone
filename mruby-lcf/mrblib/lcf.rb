@@ -376,6 +376,11 @@ module LCF
     def field? sym ; @by_name.key? sym end
   end
 
+  # MAPPED_LCF: the bytes of the open file +io+ where the platform holds them (LCF.mapped_file), or nil.
+  def self.map_io io
+    io.is_a?(::File) ? mapped_file(io.path) : nil
+  end
+
   # LCF::ShortArray (src/lcf.cxx): `[]` and `[]=` are Ruby over the native #get and #set, so the compiled world
   # has a definer of each to dispatch to (it reads no operator from a native method table).
   class ShortArray
@@ -770,7 +775,10 @@ module LCF
 
       elem = LCF.sget(LCF.elements_of(@schema), idx)
       value = if data.nil?
-                buf_value idx, elem
+                v = buf_value idx, elem
+                # SHORT_LAYER: kept, as below, so every read shares the one table and #to_lcf writes its edits.
+                (@decoded ||= {})[idx] = v if v.is_a?(ShortArray)
+                v
               elsif !d.is_a?(Integer)
                 v = LCF.to_rb d, elem
                 # SHORT_LAYER: a map layer's table holds the same 2 bytes a tile its chunk did, so it takes the
@@ -864,7 +872,7 @@ module LCF
     # real RPG2000/2003 .lsd ends on the last chunk's bytes).
     def to_lcf terminate = true
       out = String.new
-      (@data || read_chunks(@buf, [])).each_with_index do |v, idx|
+      (@data || buf_table).each_with_index do |v, idx|
         next if idx == 0 || v.nil?
         v = chunk_bytes(v) if v.is_a?(Integer)
         bytes = LCF.binstr(v.is_a?(String) ? v : v.to_lcf)
@@ -920,8 +928,15 @@ module LCF
     def materialize
       return if @data
 
-      @data = read_chunks(@buf, [])
+      @data = buf_table
       @buf = nil
+    end
+
+    # The chunks of @buf, with the SHORT_LAYER tables #[] kept in place of theirs.
+    def buf_table
+      table = read_chunks(@buf, [])
+      @decoded&.each { |idx, v| table[idx] = v if v.is_a?(ShortArray) }
+      table
     end
 
     # The bytes of chunk +idx+ of @buf, or nil.

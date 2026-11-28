@@ -2,8 +2,9 @@
 // microSD card when wio_sd_begin() found a game there (wio_sd.cxx), else from
 // the game image at game_rom_base(); every other path from the image. Reads
 // copy out of the image the way they copy off the card, so the heap behaves
-// the same with either; only an image file is decoded in place
-// (wio_game_file_map). Writes to a file are refused (EROFS).
+// the same with either; an image file is decoded, and the database and maps
+// read, in place instead (wio_game_file_map). Writes to a file are refused
+// (EROFS).
 
 #include "wio_game_rom.h"
 
