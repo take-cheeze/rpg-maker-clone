@@ -1609,12 +1609,17 @@ jobs:
 
       - name: Hold the class graph to a Renode boot
         # The dump stops before the game loads, so the synthetic game does not shape it. Links the graph again after.
+        # Its pio run prunes .pio/build/wio, so the images uploaded below are set aside around it.
         if: steps.oracle.outputs.run == 'true'
         env:
           RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
         run: |
+          mkdir -p "$RUNNER_TEMP/wio-fw"
+          cp .pio/build/wio/firmware.{elf,map,bin} .pio/build/wio/firmware_qspi.bin "$RUNNER_TEMP/wio-fw/"
           ruby scripts/gen/wio-sd-game.rb /tmp/wio-graph-game
           scripts/wio/rom_graph.bash oracle build-wio /tmp/wio-graph-game build-wio/rom_graph.c
+          mkdir -p .pio/build/wio
+          cp "$RUNNER_TEMP/wio-fw/"* .pio/build/wio/
 
       - name: Upload the wio firmware
         # `pio run -e wio_sd_upload` below prunes .pio/build/wio.
