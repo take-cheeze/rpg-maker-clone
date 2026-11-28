@@ -4,8 +4,11 @@
 #include <mruby/data.h>
 #include <mruby/string.h>
 #include "cp932_lookup.hxx"
+#include "lcf_file_map.h"
 
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <optional>
@@ -530,9 +533,18 @@ mrb_value rom_keys(mrb_state* M, mrb_value) {
 // element where an Array of Integers takes a word (the map layers, schema
 // type :int16_packed). One allocation of exactly its size; a write outside
 // the table or the int16 range raises instead of growing or truncating.
+// MAPPED_LCF: a table unpacked from a String over memory that stays put (a
+// mapped file's, see LCF.mapped_file) reads those bytes in place (`view`), and
+// its first write copies them into a table of its own.
 struct ShortArray {
   mrb_int len;
+  const uint8_t* view;  // little-endian; null once the table holds elems()
   int16_t* elems() { return reinterpret_cast<int16_t*>(this + 1); }
+  int16_t at(mrb_int i) {
+    if (view)
+      return static_cast<int16_t>(view[2 * i] | (view[2 * i + 1] << 8));
+    return elems()[i];
+  }
 };
 
 void short_array_free(mrb_state* M, void* p) {
@@ -549,7 +561,16 @@ ShortArray* short_array_new(mrb_state* M, mrb_int len) {
   auto* a = static_cast<ShortArray*>(
       mrb_malloc(M, sizeof(ShortArray) + sizeof(int16_t) * len));
   a->len = len;
+  a->view = nullptr;
   std::memset(a->elems(), 0, sizeof(int16_t) * len);
+  return a;
+}
+
+// A table over `len` elements at `bytes`, which outlive it.
+ShortArray* short_array_view(mrb_state* M, const uint8_t* bytes, mrb_int len) {
+  auto* a = static_cast<ShortArray*>(mrb_malloc(M, sizeof(ShortArray)));
+  a->len = len;
+  a->view = bytes;
   return a;
 }
 
@@ -560,6 +581,25 @@ ShortArray* short_array_get(mrb_state* M, mrb_value self) {
     mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(TypeError)),
               "uninitialized LCF::ShortArray");
   return a;
+}
+
+// A view's first write: copies its bytes into a table of its own. Cold, so
+// the Wio links it in QSPI (app/wio/qspi_xip_placement.txt, unlikely.*).
+__attribute__((cold)) ShortArray* short_array_copy_view(mrb_state* M,
+                                                        mrb_value self,
+                                                        ShortArray* a) {
+  ShortArray* own = short_array_new(M, a->len);
+  for (mrb_int i = 0; i < a->len; ++i)
+    own->elems()[i] = a->at(i);
+  DATA_PTR(self) = own;
+  mrb_free(M, a);
+  return own;
+}
+
+// The table of `self` to write to.
+ShortArray* short_array_own(mrb_state* M, mrb_value self) {
+  ShortArray* a = short_array_get(M, self);
+  return a->view ? short_array_copy_view(M, self, a) : a;
 }
 
 // ShortArray.new(n): n zeros.
@@ -573,12 +613,18 @@ mrb_value short_array_init(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// A copy of a view is another view of the same bytes.
 mrb_value short_array_init_copy(mrb_state* M, mrb_value self) {
   mrb_value src;
   mrb_get_args(M, "o", &src);
   ShortArray* from = short_array_get(M, src);
-  ShortArray* a = short_array_new(M, from->len);
-  std::memcpy(a->elems(), from->elems(), sizeof(int16_t) * from->len);
+  ShortArray* a;
+  if (from->view) {
+    a = short_array_view(M, from->view, from->len);
+  } else {
+    a = short_array_new(M, from->len);
+    std::memcpy(a->elems(), from->elems(), sizeof(int16_t) * from->len);
+  }
   if (DATA_PTR(self))
     mrb_free(M, DATA_PTR(self));
   mrb_data_init(self, a, &short_array_type);
@@ -586,14 +632,20 @@ mrb_value short_array_init_copy(mrb_state* M, mrb_value self) {
 }
 
 // ShortArray.unpack(d): the little-endian signed 16-bit integers of d, as
-// d.unpack('s<*') reads them (a trailing odd byte is ignored).
+// d.unpack('s<*') reads them (a trailing odd byte is ignored). A view of d's
+// bytes when d is a String over memory mruby never frees (MAPPED_LCF).
 mrb_value short_array_s_unpack(mrb_state* M, mrb_value self) {
-  const uint8_t* p;
-  mrb_int l;
-  mrb_get_args(M, "s", &p, &l);
+  mrb_value str;
+  mrb_get_args(M, "S", &str);
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(RSTRING_PTR(str));
+  const mrb_int l = RSTRING_LEN(str);
   // The object first, so a failed table allocation leaks nothing.
   RData* d =
       mrb_data_object_alloc(M, mrb_class_ptr(self), nullptr, &short_array_type);
+  if (RSTR_NOFREE_P(mrb_str_ptr(str))) {
+    d->data = short_array_view(M, p, l / 2);
+    return mrb_obj_value(d);
+  }
   ShortArray* a = short_array_new(M, l / 2);
   int16_t* e = a->elems();
   for (mrb_int i = 0; i < a->len; ++i)
@@ -612,7 +664,7 @@ mrb_value short_array_aref(mrb_state* M, mrb_value self) {
     i += a->len;
   if (i < 0 || i >= a->len)
     return mrb_nil_value();
-  return mrb_fixnum_value(a->elems()[i]);
+  return mrb_fixnum_value(a->at(i));
 }
 
 // set(i, v), self[i] = v (lcf.rb): IndexError outside the table, RangeError
@@ -637,7 +689,7 @@ mrb_value short_array_aset(mrb_state* M, mrb_value self) {
   if (n < -32768 || n > 32767)
     mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(RangeError)),
                "%i is outside int16 (-32768..32767)", n);
-  a->elems()[at] = static_cast<int16_t>(n);
+  short_array_own(M, self)->elems()[at] = static_cast<int16_t>(n);
   return v;
 }
 
@@ -654,7 +706,7 @@ mrb_value short_array_each(mrb_state* M, mrb_value self) {
     mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(ArgumentError)),
               "no block given");
   for (mrb_int i = 0; i < short_array_get(M, self)->len; ++i)
-    mrb_yield(M, blk, mrb_fixnum_value(short_array_get(M, self)->elems()[i]));
+    mrb_yield(M, blk, mrb_fixnum_value(short_array_get(M, self)->at(i)));
   return self;
 }
 
@@ -662,13 +714,17 @@ mrb_value short_array_to_a(mrb_state* M, mrb_value self) {
   ShortArray* a = short_array_get(M, self);
   mrb_value out = mrb_ary_new_capa(M, a->len);
   for (mrb_int i = 0; i < a->len; ++i)
-    mrb_ary_push(M, out, mrb_fixnum_value(a->elems()[i]));
+    mrb_ary_push(M, out, mrb_fixnum_value(a->at(i)));
   return out;
 }
 
-// to_lcf: the chunk bytes, little-endian, the inverse of .unpack.
+// to_lcf: the chunk bytes, little-endian, the inverse of .unpack; a view's are
+// its own bytes, not a copy.
 mrb_value short_array_to_lcf(mrb_state* M, mrb_value self) {
   ShortArray* a = short_array_get(M, self);
+  if (a->view)
+    return mrb_str_new_static(M, reinterpret_cast<const char*>(a->view),
+                              a->len * 2);
   mrb_value out = mrb_str_new_capa(M, a->len * 2);
   for (mrb_int i = 0; i < a->len; ++i) {
     const uint16_t v = static_cast<uint16_t>(a->elems()[i]);
@@ -678,7 +734,51 @@ mrb_value short_array_to_lcf(mrb_state* M, mrb_value self) {
   return out;
 }
 
+// MAPPED_LCF (include/lcf_file_map.h).
+lcf_file_map_fn g_file_map = nullptr;
+
+// LCF_MAP_FILES=1 in the environment, with no platform map installed: every
+// file is mapped from a copy read once and never freed, which is what a
+// platform's flash gives, so a host run takes the in-place path.
+__attribute__((cold)) const void* snapshot_map(const char* path, size_t* len) {
+  std::FILE* fp = std::fopen(path, "rb");
+  if (!fp)
+    return nullptr;
+  std::fseek(fp, 0, SEEK_END);
+  const long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  void* p = sz > 0 ? std::malloc(static_cast<size_t>(sz)) : nullptr;
+  const bool ok = p && std::fread(p, 1, static_cast<size_t>(sz), fp) ==
+                           static_cast<size_t>(sz);
+  std::fclose(fp);
+  if (!ok) {
+    std::free(p);
+    return nullptr;
+  }
+  *len = static_cast<size_t>(sz);
+  return p;
+}
+
+// LCF.mapped_file(path): the file's bytes in place as a NOFREE String, or nil
+// when the platform does not map it (the caller reads the file). A write to
+// it copies them first (mruby's str_unshare_buffer). Not frozen: a project
+// native that freezes turns bc2cpp's constant-definition elision off.
+__attribute__((cold)) mrb_value mapped_file(mrb_state* M, mrb_value) {
+  const char* path;
+  mrb_get_args(M, "z", &path);
+  size_t len = 0;
+  const void* p = g_file_map ? g_file_map(path, &len) : nullptr;
+  if (!p || len > static_cast<size_t>(MRB_INT_MAX))
+    return mrb_nil_value();
+  return mrb_str_new_static(M, static_cast<const char*>(p),
+                            static_cast<mrb_int>(len));
+}
+
 }  // namespace
+
+extern "C" void lcf_set_file_map(lcf_file_map_fn map) {
+  g_file_map = map;
+}
 
 // OWNER_CALL_DIRECT rows (NATIVE_ROWS in tools/bc2cpp/owner_call_direct.rb):
 // the body of a ROM entry under an exported name, for the generated code of
@@ -693,6 +793,8 @@ OWNER_ROW(lcf_row_utf8_to_cp932, utf8_to_cp932)
 #undef OWNER_ROW
 
 extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
+  if (!g_file_map && std::getenv("LCF_MAP_FILES"))
+    g_file_map = snapshot_map;
   RClass* mod = mrb_define_module(M, "LCF");
 #define MRB_MT_CLASS LCF_singleton
   static const mrb_mt_entry mod_module_functions[] = {
@@ -718,6 +820,7 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(append_ber, MRB_SYM(append_ber), MRB_ARGS_REQ(2))      //
       MRB_MT_ENTRY(unpack_int32, MRB_SYM(unpack_int32), MRB_ARGS_REQ(1))  //
       MRB_MT_ENTRY(pack_int32, MRB_SYM(pack_int32), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(mapped_file, MRB_SYM(mapped_file), MRB_ARGS_REQ(1))    //
 #ifndef MRB_NO_FLOAT
       MRB_MT_ENTRY(unpack_double, MRB_SYM(unpack_double), MRB_ARGS_REQ(1))  //
       MRB_MT_ENTRY(pack_double, MRB_SYM(pack_double), MRB_ARGS_REQ(1))      //

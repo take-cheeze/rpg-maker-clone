@@ -57,6 +57,7 @@
 // The compiled entries catch C++ exceptions, which the wio build leaves out.
 #define BC2CPP_ENTRY_BY_NAME
 #include "bc2cpp_entry.hxx"
+#include "lcf_file_map.h"
 #include "rgss_rom_bitmaps.h"
 #include "rom_graph_ram_classes.h"
 #include "wio.hxx"
@@ -541,8 +542,10 @@ void setup(void) {
     rgss_set_rom_bitmaps(bitmaps, bitmaps_len, WIO_GAME_ROOT);
   else if (from_sd)
     wio_image_cache_begin(WIO_GAME_ROOT);
-  // The rest of the image's images decode from the window, not a heap copy.
+  // The rest of the image's images decode from the window, not a heap copy,
+  // and its database and maps are read there in place (MAPPED_LCF).
   rgss_set_file_map(wio_game_file_map);
+  lcf_set_file_map(wio_game_file_map);
   set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, WIO_GAME_ROOT));
   set_const("RTP_DIR", mrb_str_new_cstr(g_mrb, ""));
   set_const("TEST_PLAY", mrb_false_value());

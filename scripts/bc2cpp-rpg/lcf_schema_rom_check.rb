@@ -489,7 +489,8 @@ Dir.mktmpdir('lcf-schema-rom') do |dir|
     'LCF::Array2D#initialize' => nil, 'LCF::Array2D#[]' => nil, 'LCF::Array2D#[]=' => nil,
     'LCF::Array2D#peek' => nil, 'LCF::Array2D#same_schema?' => nil, 'LCF::Array1D.blank_record' => nil, 'LCF::Array2D.blank_table' => nil,
     'LCF::Array2D.lazy_section' => nil,
-    'LCF::File#initialize' => nil, 'LCF::File#schema' => nil, 'LCF::File#build_root' => nil, 'LCF::File#to_lcf' => nil,
+    'LCF::File#initialize' => nil, 'LCF::File#read_bytes' => nil, 'LCF::File#schema' => nil, 'LCF::File#build_root' => nil,
+    'LCF::File#to_lcf' => nil,
     'LCF::Database#schema' => nil, 'LCF::MapTree#schema' => nil, 'LCF::MapUnit#schema' => nil,
     'LCF::SaveData#schema' => nil, 'LCF::SaveTyped::Record#save_put' => nil, 'LCF::SaveTyped::Record#check!' => nil
   }
@@ -600,7 +601,7 @@ suite.finish!
 # LCF.skeys 1d6cf657876a6c81
 # LCF.elements_of dd92622942b68777
 # LCF::Array1D#initialize 1636735024f078b2
-# LCF::Array1D#[] 7bf4fb4f977e3364
+# LCF::Array1D#[] c81447e096cdaf1e
 # LCF::Array1D#int16_values edc5eaa0a1f9971f
 # LCF::Array1D#[]= 78a375738088a7ee
 # LCF::Array1D#buf_value c4c634d33cd7c146
@@ -615,7 +616,8 @@ suite.finish!
 # LCF::Array1D.blank_record 67a22e0df0d5c2c1
 # LCF::Array2D.blank_table b85106192df023c6
 # LCF::Array2D.lazy_section 6c2733a3ebac90bf
-# LCF::File#initialize 039a091fbcb7f542
+# LCF::File#initialize ea9332deec6d15dd
+# LCF::File#read_bytes 6783c37a93f88b50
 # LCF::File#schema 417816763ff50949
 # LCF::File#build_root 427cef6960ffe7fe
 # LCF::File#to_lcf c01e042875ee2a2c

@@ -1130,6 +1130,84 @@ assert "LCF::ShortArray refuses writes outside the table or int16" do
   assert_equal [0, 0], a.to_a
 end
 
+# MAPPED_LCF: a file read in place from bytes that stay put (LCF::Test, test/mapped.c). The layers are longer than
+# an embedded String, so their chunks are slices of those bytes.
+LCF_MAPPED_LOWER = [1, -2, 3, 32767, -32768] + (5...40).to_a
+LCF_MAPPED_UPPER = (100...140).to_a
+
+def lcf_mapped_lmu_bytes
+  page = lcf_array1d([lcf_str_field(21, "hero")])
+  event = lcf_array1d([lcf_str_field(1, "NPC"), lcf_field(5, lcf_array2d([[1, page]]))])
+  body = lcf_array1d([lcf_int_field(1, 3), lcf_int_field(2, 8), lcf_int_field(3, 5),
+                      lcf_shorts_field(71, LCF_MAPPED_LOWER),
+                      lcf_shorts_field(72, LCF_MAPPED_UPPER),
+                      lcf_field(81, lcf_array2d([[1, event]]))])
+  lcf_ber(10) + "LcfMapUnit" + body
+end
+
+assert "MAPPED_LCF: a map read in place shares its layers and writes back the same bytes" do
+  orig = lcf_mapped_lmu_bytes
+  lmu = LCF::MapUnit.new(LCF::Test.static_bytes(orig))
+  assert_equal 8, lmu[:width]
+  lower = lmu[:lower_layer]
+  assert_kind_of LCF::ShortArray, lower
+  assert_same lower, lmu[:lower_layer]
+  assert_equal LCF_MAPPED_LOWER, lower.to_a
+  assert_equal "NPC", lmu[:events][1][:name]
+  assert_equal orig, lmu.to_lcf
+  # The first write copies the table; the mapped bytes stay as they were.
+  lower[1] = 9
+  edited_lower = LCF_MAPPED_LOWER.dup
+  edited_lower[1] = 9
+  assert_equal edited_lower, lmu[:lower_layer].to_a
+  edited = lmu.to_lcf
+  assert_equal edited_lower, LCF::MapUnit.new(StringIO.new(edited))[:lower_layer].to_a
+  assert_equal orig, LCF::MapUnit.new(LCF::Test.static_bytes(orig)).to_lcf
+  # A later write to another chunk keeps the edited table.
+  lmu[:width] = 8
+  assert_equal edited_lower, lmu[:lower_layer].to_a
+  assert_equal edited, lmu.to_lcf
+  assert_equal LCF_MAPPED_UPPER, lmu[:upper_layer].to_a
+end
+
+assert "MAPPED_LCF: a map read from a String or a stream is the same map" do
+  orig = lcf_mapped_lmu_bytes
+  from_stream = LCF::MapUnit.new(StringIO.new(orig))
+  from_string = LCF::MapUnit.new(orig.dup)
+  assert_equal from_stream[:lower_layer].to_a, from_string[:lower_layer].to_a
+  assert_equal from_stream.to_lcf, from_string.to_lcf
+  assert_raise(RuntimeError) { LCF::MapUnit.new(LCF::Test.static_bytes(lcf_ber(10) + "LcfDataBas")) }
+end
+
+assert "MAPPED_LCF: a view's copies and writes leave its bytes alone" do
+  vals = (1..30).to_a
+  bytes = LCF::Test.static_bytes(vals.pack('v*'))
+  a = LCF::ShortArray.unpack(bytes)
+  b = a.dup
+  b[0] = -1
+  assert_equal vals, a.to_a
+  assert_equal [-1] + vals[1, 29], b.to_a
+  assert_equal bytes, a.to_lcf
+  a.each { |v| a[2] = 7 if v == 1 }
+  assert_equal [1, 2, 7] + vals[3, 27], a.to_a
+  assert_equal vals.pack('v*'), bytes
+  # A write to the String copies its bytes first: the view still reads them.
+  c = LCF::ShortArray.unpack(bytes)
+  bytes.setbyte(0, 9)
+  bytes << "x"
+  assert_equal vals, c.to_a
+  assert_equal [9] + vals[1, 29], LCF::ShortArray.unpack(bytes).to_a
+end
+
+assert "MAPPED_LCF: LCF.mapped_file is the platform's bytes, or nil" do
+  orig = lcf_mapped_lmu_bytes
+  path = LCF::Test.map(orig)
+  mapped = LCF.mapped_file(path)
+  assert_equal orig, mapped
+  assert_nil LCF.mapped_file("/mapped/other.lmu")
+  assert_equal orig, LCF::MapUnit.new(mapped).to_lcf
+end
+
 # ---- Build a save FROM SCRATCH --------------
 # The writer above edits a save parsed from bytes; these exercise assembling a
 # save with no source file: int16 field encoding, an Array2D populated via #[]=,
