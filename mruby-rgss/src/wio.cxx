@@ -9,12 +9,7 @@
 #include <TFT_eSPI.h>  // from Seeed_Arduino_LCD (a TFT_eSPI fork)
 #include <mruby.h>
 
-#ifdef RGSS_GFX_OWN
 #include "rgss_gfx_own.hxx"
-#else
-#include <lvgl.h>
-extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display);
-#endif
 
 namespace {
 
@@ -30,8 +25,7 @@ constexpr int32_t kPanelWidth = 320;
 constexpr int32_t kBufRows = 10;
 uint16_t g_buf[kPanelWidth * kBufRows];
 
-// What the backends' refresh timer waits between two draws (LVGL's
-// LV_DEF_REFR_PERIOD).
+// The least time between two draws (what LVGL's LV_DEF_REFR_PERIOD was).
 constexpr uint32_t kRefreshMs = 33;
 
 WioFlushHook g_hook = nullptr;
@@ -59,7 +53,6 @@ void push(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t* px) {
   g_tft.endWrite();
 }
 
-#ifdef RGSS_GFX_OWN
 RgssOwnDisplay* g_disp = nullptr;
 
 RgssOwnDisplay* create_display(int32_t hor_res, int32_t ver_res) {
@@ -78,34 +71,6 @@ RgssOwnDisplay* create_display(int32_t hor_res, int32_t ver_res) {
 void draw_every_frame() {
   rgss_own_set_refresh_period(g_disp, 0);
 }
-#else
-lv_display_t* g_disp = nullptr;
-
-void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
-  push(area->x1, area->y1, lv_area_get_width(area), lv_area_get_height(area),
-       reinterpret_cast<const uint16_t*>(px_map));
-  lv_display_flush_ready(disp);
-}
-
-lv_display_t* create_display(int32_t hor_res, int32_t ver_res) {
-  lv_init();
-  // millis() returns unsigned long; lv_tick_set_cb wants uint32_t (*)(void).
-  lv_tick_set_cb(tick_cb);
-  lv_delay_set_cb(delay_cb);
-  lv_display_t* disp = lv_display_create(hor_res, ver_res);
-  if (!disp)
-    return nullptr;
-  lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-  lv_display_set_buffers(disp, g_buf, nullptr, sizeof(g_buf),
-                         LV_DISPLAY_RENDER_MODE_PARTIAL);
-  lv_display_set_flush_cb(disp, flush_cb);
-  return disp;
-}
-
-void draw_every_frame() {
-  lv_timer_set_period(lv_display_get_refr_timer(g_disp), 0);
-}
-#endif
 
 // The three top buttons and the 5-way switch, mapped to RGSS key ids. The board
 // package defines these pin macros. Buttons are active low with a pull-up.

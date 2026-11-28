@@ -49,7 +49,7 @@ def _write_fragments(build):
     # A pinned function stays internal whatever GCC's guess about it.
     prefixes = {"internal": [".text.", ".text.hot.", ".text.unlikely."], "text": [".text."], "rodata": [".rodata."]}
     # Only libmruby's code moves (its LTO unit, or its members with WIO_LTO=0): the Arduino core, the USB stack, the
-    # LCD driver, LVGL and newlib stay internal whatever their names.
+    # LCD driver and newlib stay internal whatever their names.
     files = {"internal": ["*"], "text": LIBMRUBY, "rodata": LIBMRUBY}
     for where in ("internal", "text", "rodata"):
         lines = ["%s(%s)" % (f, " ".join(p + g for p in prefixes[where]))
