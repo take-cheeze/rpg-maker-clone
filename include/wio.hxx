@@ -1,9 +1,9 @@
 // Wio Terminal (Seeed, ATSAMD51) hardware backend for the RGSS runtime.
 //
 // This is the platform half of the Wio port: it stands up the RGSS display over
-// the board's 320x240 ILI9341 SPI LCD (an LVGL display, or the own compositor's
-// with RGSS_GFX_OWN), with a millis()/delay() clock, and scans the three top
-// buttons and the 5-way switch into a bitmask. Its callers see no LVGL.
+// the board's 320x240 ILI9341 SPI LCD (the own compositor's, gfx_own.cxx), with
+// a millis()/delay() clock, and scans the three top buttons and the 5-way
+// switch into a bitmask.
 //
 // It deliberately knows nothing about mruby so it can be compiled for a
 // board-bring-up firmware without the interpreter (see app/wio). The mruby side

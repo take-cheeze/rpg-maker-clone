@@ -2,7 +2,7 @@
 
 The Wio Terminal (Seeed, ATSAMD51) runs the **closed-world** RPG2k/2003 engine:
 the Ruby is compiled by bc2cpp into C++ and linked into a VM-free libmruby, with
-mruby-rgss's LVGL display and input HAL under it. There is no interpreted Wio
+mruby-rgss's display and input HAL under it. There is no interpreted Wio
 build, and no demo firmware.
 
 ## Building
@@ -27,9 +27,9 @@ WIO_UNIALGO_LIB_DIR=<uni-algo lib dir> \
 
 ## Display backend
 
-`WIO_GFX=own scripts/wio/build.bash` draws through the own compositor (`mruby-rgss/src/gfx_own.cxx`) instead of
-LVGL: the same pixels, about 77 KB less internal flash, and no allocation while drawing. Sprite zoom, rotation and
-add/subtract blending are drawn unscaled and normal, with one `[RGSS] gfx:` line. LVGL is the default.
+The Wio build draws through its own compositor (`mruby-rgss/src/gfx_own.cxx`), not LVGL: the pixels LVGL drew, in
+about 77 KB less internal flash, with no allocation while drawing. Sprite zoom, rotation and add/subtract blending are
+drawn unscaled and normal, with one `[RGSS] gfx:` line.
 
 ## Classes in flash (ROM class graph)
 
