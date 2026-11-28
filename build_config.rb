@@ -1130,6 +1130,9 @@ if wio
         t.defines << 'MRB_IO_BUF_SIZE=512' << 'MRB_SYM_POOL_CHUNK_SIZE=1024'
       end
       t.defines << 'KHASH_INITIAL_SIZE=16'
+      # KEPT_HINT_BITS (bc2cpp callee_arena.rb): the kept-roots record's hint gets 256 entries instead of 1024, 1.5 KB of
+      # .bss; a miss only records a root again. Every unit of the link shares the record, so it is set for all of them.
+      t.defines << 'BC2CPP_KEPT_HINT_BITS=8'
       # Schoolbook-only bigint multiply/square/to_s (mruby-bigint MRB_BIGINT_SCHOOLBOOK): the same results, only
       # operands past ~1000 bits get slower, and the Karatsuba/Toom-3/D&C code is not linked. WIO_BIGINT_FAST=1 keeps it.
       t.defines << 'MRB_BIGINT_SCHOOLBOOK' unless ENV['WIO_BIGINT_FAST'] == '1'
