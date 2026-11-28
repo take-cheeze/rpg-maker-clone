@@ -7516,13 +7516,14 @@ module Game
       true
     end
 
-    # Return [id, page] of the active page for an event, or nil when none apply.
-    def self.select(pages, switches, variables, party, timer_seconds = 0, timer2_seconds = 0)
+    # The id of the active page for an event, or nil when none apply. PEEK_ROWS: the pages are peeked, so the scan
+    # keeps none of them decoded (Scene::Map#event_page keeps the one it selects).
+    def self.select_id(pages, switches, variables, party, timer_seconds = 0, timer2_seconds = 0)
       return nil if pages.nil?
       chosen = nil
-      pages.each do |id, page|
-        chosen = [id, page] if active?(page[:condition], switches, variables, party,
-                                        timer_seconds, timer2_seconds)
+      pages.each_peek do |id, page|
+        chosen = id if active?(page[:condition], switches, variables, party,
+                               timer_seconds, timer2_seconds)
       end
       chosen
     end

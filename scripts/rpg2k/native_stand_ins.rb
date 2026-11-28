@@ -51,3 +51,11 @@ module Game
     result > cap ? cap : result
   end
 end
+
+# PEEK_ROWS: the harnesses' map events and event pages are Hashes standing in for LCF::Array2D tables, so they answer
+# the row peeks Scene::Map and Game::EventPage read them with.
+class Hash
+  def each_peek(&) = each(&)
+
+  def peek(id) = self[id]
+end

@@ -591,7 +591,7 @@ hero_frames_bytes =
 
 # ---- event sprites ----------------------------------------------------------
 
-# A map event whose *initially-active* page (Game::EventPage.select against a
+# A map event whose *initially-active* page (Game::EventPage.select_id against a
 # fresh project's own switches/variables/party -- Game::Switches.new,
 # Game::Variables.new and Game::Party.new(db) build exactly that "New Game,
 # nothing has happened yet" state, the same source db[:system][:party] the hero
@@ -621,10 +621,10 @@ if lmu[:events]
   events_out = []   # [x, y, frame_index, layer]
 
   lmu[:events].each do |event_id, ev|
-    selected = Game::EventPage.select(ev[:pages], switches, variables, party)
-    next unless selected
+    page_id = Game::EventPage.select_id(ev[:pages], switches, variables, party)
+    next unless page_id
 
-    _, page = selected
+    page = ev[:pages].peek(page_id)
     charset_name = page[:charset_name].to_s
     next if charset_name.empty?
 
