@@ -3440,6 +3440,62 @@ static void stretch_pixels(Bitmap& dst,
                            const Rect& sr,
                            int opacity);
 
+// ROW_SCRATCH: the windows a deferred bitmap's rows are composed in while a
+// sprite draws (view_fill) or a deferred source is read (deferred_rows), one
+// per nesting level, kept at the largest size each has needed, so a draw
+// allocates nothing once they have grown. Not a Ruby bitmap: its bytes count in
+// neither pixel counter and never go through pixel_alloc (no GC mid-draw).
+struct RowScratch {
+  Bitmap win{0, 0, kPixelARGB8888, LazyPixels{}};
+  std::vector<uint16_t> order;
+  RowScratch() = default;
+  RowScratch(const RowScratch&) = delete;
+  // `win` never added its bytes to a counter, so it must not take them off.
+  ~RowScratch() { std::vector<uint8_t>().swap(win.buffer); }
+};
+// view_fill, deferred_rows, and the one level of deferred source under it
+// (see DeferredSrc).
+constexpr int kRowScratchLevels = 3;
+static RowScratch g_row_scratch[kRowScratchLevels];
+static int g_row_scratch_level = 0;
+
+// The next level's scratch for this scope; past the last, a heap one.
+class RowScratchUse {
+ public:
+  RowScratchUse() {
+    if (g_row_scratch_level < kRowScratchLevels) {
+      s_ = &g_row_scratch[g_row_scratch_level];
+    } else {
+      own_ = std::make_unique<RowScratch>();
+      s_ = own_.get();
+    }
+    ++g_row_scratch_level;
+  }
+  ~RowScratchUse() { --g_row_scratch_level; }
+  RowScratchUse(const RowScratchUse&) = delete;
+
+  // A transparent ARGB8888 window `w` x `rows`, as a new Bitmap would be.
+  Bitmap& window(int32_t w, int32_t rows) {
+    Bitmap& b = s_->win;
+    const size_t n = static_cast<size_t>(w) * rows * 4;
+    if (b.buffer.capacity() < n)
+      b.buffer.reserve(std::max<size_t>(n, kSpriteViewChunkBytes));
+    b.buffer.assign(n, 0);
+    b.width = w;
+    b.height = rows;
+    b.format = b.direct_format = kPixelARGB8888;
+    return b;
+  }
+  std::vector<uint16_t>& order() {
+    s_->order.clear();
+    return s_->order;
+  }
+
+ private:
+  RowScratch* s_;
+  std::unique_ptr<RowScratch> own_;
+};
+
 // Composite rows [y0, y0 + win.height) of a deferred bitmap `height` rows tall
 // into `win` (transparent, the bitmap's width).
 static void deferred_rows(const DeferredList& L,
@@ -3452,9 +3508,10 @@ static void deferred_rows(const DeferredList& L,
                                (std::min(y1, height) - 1) / kDeferredBand);
   if (y1 <= 0 || y0 >= height || b0 > b1)
     return;
-  std::vector<uint16_t> merged;
+  RowScratchUse scratch;
   const std::vector<uint16_t>* order = &L.bands[b0];
   if (b1 > b0) {
+    std::vector<uint16_t>& merged = scratch.order();
     for (int b = b0; b <= b1; ++b)
       merged.insert(merged.end(), L.bands[b].begin(), L.bands[b].end());
     std::sort(merged.begin(), merged.end());
@@ -3491,12 +3548,11 @@ static void deferred_rows(const DeferredList& L,
     }
     Rect rc{o.sx, o.sy + (a - o.dy), o.w, e - a};
     const Bitmap* sb = s.bmp.get();
-    std::unique_ptr<Bitmap> part;
     if (s.list) {
-      part = std::make_unique<Bitmap>(sb->width, e - a, kPixelARGB8888);
-      deferred_rows(*s.list, sb->height, rc.y, *part);
+      Bitmap& part = scratch.window(sb->width, e - a);
+      deferred_rows(*s.list, sb->height, rc.y, part);
       rc.y = 0;
-      sb = part.get();
+      sb = &part;
     }
     if (o.kind == kDeferredCopy)
       copy_pixels(win, *sb, o.dx, a - y0, rc);
@@ -5990,12 +6046,12 @@ void view_fill(const View& view,
   SpriteFx f = v.fx;
   // A deferred bitmap's rows are composed for this chunk only, and read from
   // there as if they were the bitmap.
-  std::unique_ptr<Bitmap> part;
+  RowScratchUse scratch;
   if (const std::shared_ptr<DeferredList> list = sb->deferred) {
-    part = std::make_unique<Bitmap>(sb->width, rows, kPixelARGB8888);
-    deferred_rows(*list, sb->height, f.cy + y1, *part);
+    Bitmap& part = scratch.window(sb->width, rows);
+    deferred_rows(*list, sb->height, f.cy + y1, part);
     f.cy = -y1;
-    sb = part.get();
+    sb = &part;
   }
   const Bitmap& src = *sb;
   const bool plain = !f.colour();
