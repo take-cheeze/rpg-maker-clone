@@ -13,6 +13,8 @@ text _Z[0-9][0-9][A-Z]*
 text _Z[0-9][0-9][0-9][A-Z]*
 text _ZL[0-9]*
 text _ZN[0-9]*bc2cpp_shard_*
+# A gem's top-level class bodies run once, at its init, in whichever namespace CROSS_GEM_SHARE gives them.
+text _ZN[0-9]*bc2cpp_cs_*bc2cpp_top_unit_*
 text rpg_maker_init_*
 # What GCC itself thinks is cold: never-executed paths split off a function (fn.cold) and functions it reaches only
 # from such paths.
