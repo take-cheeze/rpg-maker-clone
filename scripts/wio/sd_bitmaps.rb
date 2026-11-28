@@ -7,8 +7,9 @@
 #   scripts/wio/sd_bitmaps.rb GAME_DIR [OUT]
 #
 # GAME_DIR is the game folder as it is on the card (the card's /rpg2k); OUT defaults to GAME_DIR/wio_bitmaps.bin,
-# where the firmware looks. Images that are not palette images are left to their files. Rebuild the pack whenever the
-# game's images change: the firmware cannot tell a stale one.
+# where the firmware looks. Images that are not palette images are left to their files. The pack's checksum also
+# covers the game's database and maps, which the same cache copies from the card (FILE_CACHE). Rebuild the pack
+# whenever the game changes: the firmware cannot tell a stale one.
 require_relative 'bitmap_section'
 
 game, out = ARGV
@@ -23,7 +24,12 @@ rels = BitmapSection::DIRS.flat_map do |dir|
 end
 decoded = BitmapSection.decode(game, rels)
 abort "sd_bitmaps: no palette image in #{game}" if decoded.empty?
-pack = BitmapSection.build(decoded, checksum: true)
+# FILE_CACHE: the name, size and CRC-32 of each LCF file, so a cache of another version of the game never matches.
+lcf = Dir.children(game).grep(/\.(ldb|lmt|lmu)\z/i).sort.map do |name|
+  bytes = File.binread(File.join(game, name))
+  "#{name}\0".b + [bytes.bytesize, Zlib.crc32(bytes)].pack('V2')
+end
+pack = BitmapSection.build(decoded, checksum: true, salt: lcf.join)
 File.binwrite(out, pack)
 puts format('sd_bitmaps: %d of %d images, %d bytes (crc %08x) -> %s',
             decoded.size, rels.size, pack.bytesize, pack.unpack1('@12V'), out)

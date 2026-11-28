@@ -12,6 +12,7 @@ namespace {
 
 constexpr char kRegionMagic[8] = {'W', 'I', 'O', 'I', 'M', 'C', '0', '1'};
 constexpr uint32_t kItemMagic = 0x314d4957;  // "WIM1"
+constexpr uint32_t kFileMagic = 0x31464957;  // "WIF1"
 constexpr uint32_t kItemHeader = 32;
 constexpr uint32_t kPackHeader = 16;
 constexpr uint32_t kEntry = 32;
@@ -27,6 +28,16 @@ struct ItemHeader {
   uint32_t pal1_off, px_bytes, check;
 };
 static_assert(sizeof(ItemHeader) == kItemHeader, "one item header");
+// FILE_CACHE: followed by the path (path_len bytes and a NUL), then the file
+// at file_data_off(path_len). `check` also covers the path.
+struct FileHeader {
+  uint32_t magic, seq, gen;
+  uint16_t sector, nsect;
+  uint32_t key, size;
+  uint16_t path_len, reserved;
+  uint32_t check;
+};
+static_assert(sizeof(FileHeader) == kItemHeader, "one file item header");
 
 // The pack's entry (mruby-rgss/src/lib.cxx's RomBitmapEntry).
 struct Entry {
@@ -35,9 +46,8 @@ struct Entry {
 };
 
 // FNV-1a: the headers' self-check, not the pack's identity (its CRC is).
-uint32_t fnv(const void* p, size_t n) {
+uint32_t fnv(const void* p, size_t n, uint32_t h = 2166136261u) {
   const uint8_t* b = static_cast<const uint8_t*>(p);
-  uint32_t h = 2166136261u;
   for (size_t i = 0; i < n; ++i)
     h = (h ^ b[i]) * 16777619u;
   return h;
@@ -53,6 +63,24 @@ uint32_t sectors(uint32_t bytes) {
 
 uint32_t align16(uint32_t n) {
   return (n + 15) & ~15u;
+}
+
+// Where a file item's bytes start: after its header and path.
+uint32_t file_data_off(uint32_t path_len) {
+  return kItemHeader + align16(path_len + 1);
+}
+
+uint32_t file_check(const FileHeader& h, const char* path) {
+  return fnv(path, h.path_len, fnv(&h, offsetof(FileHeader, check)));
+}
+
+bool is_file(const WicItem& it) {
+  return it.index == kWicFileItem;
+}
+
+// Whether two items hold the same image, or the same file.
+bool same_entry(const WicItem& a, const WicItem& b) {
+  return a.index == b.index && (!is_file(a) || a.key == b.key);
 }
 
 void logf(const WicCache* c, const char* fmt, ...)
@@ -205,8 +233,26 @@ void scan(WicCache* c) {
   c->nitems = 0;
   bool overflow = false;
   for (uint32_t s = c->first; s < c->end && !overflow; ++s) {
+    const uint8_t* at = c->flash.map + s * kWicSector;
+    if (u32(at) == kFileMagic) {
+      FileHeader f;
+      std::memcpy(&f, at, sizeof(f));
+      const char* path = reinterpret_cast<const char*>(at + kItemHeader);
+      if (f.path_len > kWicMaxPath || path[f.path_len] != '\0' ||
+          f.check != file_check(f, path) || f.gen != c->pack_crc ||
+          f.sector != s || f.key != fnv(path, f.path_len) ||
+          f.nsect != sectors(file_data_off(f.path_len) + f.size) ||
+          s + f.nsect > c->end)
+        continue;
+      if (c->nitems == c->max_items)
+        overflow = true;
+      else
+        c->items[c->nitems++] = {f.seq,    f.key,   kWicFileItem,
+                                 f.sector, f.nsect, 0};
+      continue;
+    }
     ItemHeader h;
-    std::memcpy(&h, c->flash.map + s * kWicSector, sizeof(h));
+    std::memcpy(&h, at, sizeof(h));
     if (h.magic != kItemMagic ||
         h.check != fnv(&h, offsetof(ItemHeader, check)) ||
         h.gen != c->pack_crc || h.sector != s || h.index >= c->count ||
@@ -220,7 +266,7 @@ void scan(WicCache* c) {
     if (c->nitems == c->max_items)
       overflow = true;
     else
-      c->items[c->nitems++] = {h.seq, h.index, h.sector, h.nsect, 0};
+      c->items[c->nitems++] = {h.seq, 0, h.index, h.sector, h.nsect, 0};
   }
   if (overflow)
     c->nitems = 0;
@@ -230,7 +276,7 @@ void scan(WicCache* c) {
     for (uint32_t k = 0; k < c->nitems && !it.pins; ++k) {
       const WicItem& o = c->items[k];
       it.pins = o.seq > it.seq &&
-                (overlaps(o, it.sector, it.nsect) || o.index == it.index);
+                (overlaps(o, it.sector, it.nsect) || same_entry(o, it));
     }
   }
   // The stale ones still decide the head: the newest header is where the
@@ -258,6 +304,56 @@ WicItem* find(WicCache* c, uint32_t index) {
     if (c->items[i].index == index)
       return &c->items[i];
   return nullptr;
+}
+
+WicItem* find_file(WicCache* c, const char* path, uint32_t key) {
+  const size_t n = std::strlen(path);
+  for (uint32_t i = 0; i < c->nitems; ++i) {
+    const WicItem& it = c->items[i];
+    if (!is_file(it) || it.key != key)
+      continue;
+    FileHeader h;
+    std::memcpy(&h, c->flash.map + it.sector * kWicSector, sizeof(h));
+    if (h.path_len == n &&
+        std::memcmp(c->flash.map + it.sector * kWicSector + kItemHeader, path,
+                    n) == 0)
+      return &c->items[i];
+  }
+  return nullptr;
+}
+
+// FILE_CACHE: asks WicFiles::in_use which file items handed out are still
+// pointed into, a batch at a time, and takes the others back. Whether any was.
+bool reclaim(WicCache* c) {
+  if (!c->files.in_use)
+    return false;
+  constexpr uint32_t kBatch = 16;
+  WicRange ranges[kBatch];
+  bool used[kBatch];
+  uint32_t idx[kBatch];
+  uint32_t freed = 0;
+  for (uint32_t i = 0; i < c->nitems;) {
+    uint32_t n = 0;
+    for (; i < c->nitems && n < kBatch; ++i) {
+      const WicItem& it = c->items[i];
+      if (!is_file(it) || !it.pins)
+        continue;
+      ranges[n] = {c->flash.map + it.sector * kWicSector,
+                   it.nsect * kWicSector};
+      idx[n++] = i;
+    }
+    if (!n)
+      break;
+    ++c->stats.reclaims;
+    c->files.in_use(c->files.ctx, ranges, n, used);
+    for (uint32_t k = 0; k < n; ++k)
+      if (!used[k]) {
+        c->items[idx[k]].pins = 0;
+        ++freed;
+      }
+  }
+  c->stats.reclaimed += freed;
+  return freed > 0;
 }
 
 void view(const WicCache* c, const WicItem& it, rgss_rom_bitmap_view* out) {
@@ -296,6 +392,42 @@ bool place(WicCache* c, uint32_t need, uint32_t* out) {
   return false;
 }
 
+// The table is full: drops the oldest item not pinned. False when every one is.
+bool drop_oldest(WicCache* c) {
+  uint32_t oldest = c->nitems;
+  for (uint32_t i = 0; i < c->nitems; ++i)
+    if (!c->items[i].pins &&
+        (oldest == c->nitems || c->items[i].seq < c->items[oldest].seq))
+      oldest = i;
+  if (oldest == c->nitems)
+    return false;
+  remove_item(c, oldest);
+  ++c->stats.evicted;
+  return true;
+}
+
+// A run of `need` erased sectors for a new item and a slot for it in the
+// table, evicting what the run overlaps; a file item handed out is taken back
+// first when nothing else makes room (reclaim). False when no room.
+bool make_room(WicCache* c, uint32_t need, uint32_t* at) {
+  if (c->nitems == c->max_items && !drop_oldest(c) &&
+      !(reclaim(c) && drop_oldest(c)))
+    return false;
+  if (!place(c, need, at) && !(reclaim(c) && place(c, need, at)))
+    return false;
+  for (uint32_t i = 0; i < c->nitems;)
+    if (overlaps(c->items[i], *at, need)) {
+      remove_item(c, i);
+      ++c->stats.evicted;
+    } else {
+      ++i;
+    }
+  bool ok = true;
+  for (uint32_t s = *at; s < *at + need && ok; ++s)
+    ok = erase(c, s);
+  return ok;
+}
+
 // Copies entry `index` from the pack into a free run; the new item, pinned
 // once, or nullptr.
 WicItem* fill(WicCache* c, uint32_t index, rgss_rom_fetch_result* why) {
@@ -308,37 +440,17 @@ WicItem* fill(WicCache* c, uint32_t index, rgss_rom_fetch_result* why) {
          path_of(c, index), static_cast<unsigned>(bytes));
     return nullptr;
   }
-  if (c->nitems == c->max_items) {
-    // The table is full: drop the oldest unpinned item.
-    uint32_t oldest = c->nitems;
-    for (uint32_t i = 0; i < c->nitems; ++i)
-      if (!c->items[i].pins &&
-          (oldest == c->nitems || c->items[i].seq < c->items[oldest].seq))
-        oldest = i;
-    if (oldest == c->nitems) {
+  const uint32_t t0 = now(c);
+  const uint32_t erased0 = c->stats.erased;
+  uint32_t at;
+  c->bad_write = 0;
+  if (!make_room(c, need, &at)) {
+    if (!c->bad_write) {
       *why = RGSS_ROM_FETCH_FULL;
       return nullptr;
     }
-    remove_item(c, oldest);
-    ++c->stats.evicted;
   }
-  uint32_t at;
-  if (!place(c, need, &at)) {
-    *why = RGSS_ROM_FETCH_FULL;
-    return nullptr;
-  }
-  const uint32_t t0 = now(c);
-  const uint32_t erased0 = c->stats.erased;
-  for (uint32_t i = 0; i < c->nitems;)
-    if (overlaps(c->items[i], at, need)) {
-      remove_item(c, i);
-      ++c->stats.evicted;
-    } else {
-      ++i;
-    }
-  bool ok = true;
-  for (uint32_t s = at; s < at + need && ok; ++s)
-    ok = erase(c, s);
+  bool ok = !c->bad_write;
   const Entry& e = entry(c, index);
   const uint32_t off = at * kWicSector;
   const uint32_t px = e.w * e.h;
@@ -349,7 +461,6 @@ WicItem* fill(WicCache* c, uint32_t index, rgss_rom_fetch_result* why) {
   const uint32_t first_px =
       px < kWicPage - kItemHeader ? px : kWicPage - kItemHeader;
   uint8_t page[kWicPage];
-  c->bad_write = 0;
   ok = ok &&
        c->pack.read(c->pack.ctx, e.px_off, page + kItemHeader, first_px) &&
        copy(c, e.px_off + first_px, off + kItemHeader + first_px,
@@ -380,7 +491,7 @@ WicItem* fill(WicCache* c, uint32_t index, rgss_rom_fetch_result* why) {
   }
   ++c->next_seq;
   WicItem& it = c->items[c->nitems++];
-  it = {h.seq, h.index, h.sector, h.nsect, 0};
+  it = {h.seq, 0, h.index, h.sector, h.nsect, 0};
   c->head = at + need < c->end ? at + need : c->first;
   c->stats.used_sectors += need;
   c->stats.copied_bytes += bytes;
@@ -394,6 +505,88 @@ WicItem* fill(WicCache* c, uint32_t index, rgss_rom_fetch_result* why) {
        static_cast<unsigned>(c->stats.used_sectors),
        static_cast<unsigned>(c->end - c->first));
   *why = RGSS_ROM_FETCH_OK;
+  return &it;
+}
+
+// FILE_CACHE: copies `len` bytes of the open file to region offset `to`, a
+// page at a time.
+bool copy_file(WicCache* c, uint32_t to, uint32_t len) {
+  uint8_t buf[kWicPage];
+  while (len) {
+    const uint32_t n = len < kWicPage ? len : kWicPage;
+    if (!c->files.read(c->files.ctx, buf, n) || !program(c, to, buf, n))
+      return false;
+    to += n;
+    len -= n;
+  }
+  return true;
+}
+
+// Copies the open file (`size` bytes) at `path` into a free run: the new item,
+// or nullptr (logged).
+WicItem* fill_file(WicCache* c, const char* path, uint32_t key, uint32_t size) {
+  const uint32_t path_len = static_cast<uint32_t>(std::strlen(path));
+  const uint32_t data = file_data_off(path_len);
+  const uint32_t bytes = data + size;
+  const uint32_t need = sectors(bytes);
+  if (need > c->end - c->first) {
+    logf(c, "file cache: %s (%u bytes) is larger than the cache", path,
+         static_cast<unsigned>(size));
+    return nullptr;
+  }
+  const uint32_t t0 = now(c);
+  const uint32_t erased0 = c->stats.erased;
+  uint32_t at;
+  c->bad_write = 0;
+  if (!make_room(c, need, &at) && !c->bad_write) {
+    logf(c, "file cache: no room for %s (%u bytes) while the rest is in use",
+         path, static_cast<unsigned>(size));
+    return nullptr;
+  }
+  // As fill: the first page, header and path included, is programmed last.
+  const uint32_t off = at * kWicSector;
+  const uint32_t first = size < kWicPage - data ? size : kWicPage - data;
+  uint8_t page[kWicPage];
+  std::memset(page, 0xff, sizeof(page));
+  FileHeader h{kFileMagic,
+               c->next_seq,
+               c->pack_crc,
+               static_cast<uint16_t>(at),
+               static_cast<uint16_t>(need),
+               key,
+               size,
+               static_cast<uint16_t>(path_len),
+               0xffff,
+               0};
+  h.check = file_check(h, path);
+  std::memcpy(page, &h, sizeof(h));
+  std::memcpy(page + kItemHeader, path, path_len + 1);
+  const bool ok = !c->bad_write &&
+                  c->files.read(c->files.ctx, page + data, first) &&
+                  copy_file(c, off + data + first, size - first) &&
+                  program(c, off, page, data + first);
+  if (!ok) {
+    if (c->bad_write)
+      logf(c, "file cache: %s: the QSPI flash did not take a write at +0x%x",
+           path, static_cast<unsigned>(c->bad_write - 1));
+    else
+      logf(c, "file cache: %s: the card read failed", path);
+    return nullptr;
+  }
+  ++c->next_seq;
+  WicItem& it = c->items[c->nitems++];
+  it = {h.seq, key, kWicFileItem, h.sector, h.nsect, 0};
+  c->head = at + need < c->end ? at + need : c->first;
+  c->stats.used_sectors += need;
+  c->stats.file_bytes += size;
+  ++c->stats.file_misses;
+  logf(c,
+       "file cache: copied %s (%u bytes, %u sectors, %u erased) in %u us; "
+       "%u of %u sectors used",
+       path, static_cast<unsigned>(size), static_cast<unsigned>(need),
+       static_cast<unsigned>(c->stats.erased - erased0), since(c, t0),
+       static_cast<unsigned>(c->stats.used_sectors),
+       static_cast<unsigned>(c->end - c->first));
   return &it;
 }
 
@@ -475,10 +668,14 @@ bool wic_open(WicCache* c,
   const uint32_t t1 = now(c);
   scan(c);
   c->stats.items = c->nitems;
+  uint32_t files = 0;
+  for (uint32_t i = 0; i < c->nitems; ++i)
+    files += is_file(c->items[i]);
   logf(c,
-       "image cache: %u images, %u already cached (%u of %u sectors), "
-       "scanned in %u us",
-       static_cast<unsigned>(c->count), static_cast<unsigned>(c->nitems),
+       "image cache: %u images, %u already cached, and %u files (%u of %u "
+       "sectors), scanned in %u us",
+       static_cast<unsigned>(c->count),
+       static_cast<unsigned>(c->nitems - files), static_cast<unsigned>(files),
        static_cast<unsigned>(c->stats.used_sectors),
        static_cast<unsigned>(c->stats.sectors), since(c, t1));
   c->source = {wic_fetch, wic_release, c};
@@ -521,4 +718,37 @@ void wic_release(void* ctx, uint32_t index) {
   }
   logf(c, "image cache: entry %u released while not pinned",
        static_cast<unsigned>(index));
+}
+
+void wic_set_files(WicCache* c, const WicFiles& files) {
+  c->files = files;
+}
+
+const uint8_t* wic_file(WicCache* c, const char* path, uint32_t* len) {
+  const size_t path_len = std::strlen(path);
+  if (!c->files.open || path_len == 0 || path_len > kWicMaxPath)
+    return nullptr;
+  const uint32_t key = fnv(path, path_len);
+  WicItem* it = find_file(c, path, key);
+  if (it) {
+    ++c->stats.file_hits;
+  } else {
+    uint32_t size = 0;
+    if (!c->files.open(c->files.ctx, path, &size)) {
+      ++c->stats.file_failed;
+      return nullptr;
+    }
+    it = fill_file(c, path, key, size);
+    c->files.close(c->files.ctx);
+    if (!it) {
+      ++c->stats.file_failed;
+      return nullptr;
+    }
+  }
+  it->pins = 1;
+  const uint8_t* base = c->flash.map + it->sector * kWicSector;
+  FileHeader h;
+  std::memcpy(&h, base, sizeof(h));
+  *len = h.size;
+  return base + file_data_off(h.path_len);
 }

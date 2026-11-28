@@ -43,10 +43,19 @@ const char* wio_game_rom_config(const char* key, char* buf, size_t cap);
 // The bytes of the image's file at +path+, in place, or nullptr (never the
 // card's).
 const void* wio_game_rom_file(const char* path, size_t* len);
-// rgss_set_file_map's (MAPPED_FILE) and lcf_set_file_map's (MAPPED_LCF): the
-// image's file at +path+ in place, which stays there for the run, or
-// nullptr when the path is not in the image or the card serves it.
+// rgss_set_file_map's (MAPPED_FILE): the image's file at +path+ in place,
+// which stays there for the run, or nullptr when the path is not in the image
+// or the card serves it.
 const void* wio_game_file_map(const char* path, size_t* len);
+// lcf_set_file_map's (MAPPED_LCF): the image's file at +path+, as
+// wio_game_file_map; a card game's database and maps from the QSPI file cache
+// (wio_file_cache_map).
+const void* wio_game_lcf_map(const char* path, size_t* len);
+// FILE_CACHE (wio_image_cache_sd.cxx, which a firmware without the cache
+// leaves out): the card's file at +path+ from the QSPI cache, copied there
+// first, or nullptr.
+const void* wio_file_cache_map(const char* path, size_t* len)
+    __attribute__((weak));
 // Appends to the diagnostic log (stdout/stderr land here too).
 void wio_diag_write(const char* text, size_t len);
 void wio_diag_printf(const char* fmt, ...)

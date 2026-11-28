@@ -92,7 +92,10 @@ A card game's palette images can come already decoded: `scripts/wio/sd_bitmaps.r
 change). The firmware then copies each image into the QSPI flash after the code and game images the first time it is
 drawn (about 45 ms per 4 KB erased, plus the card read) and draws it from there instead of decoding its PNG into RAM;
 later boots keep what was copied, and the oldest copies make room for new ones. Without the file, or for an image that
-cannot be copied, the PNG is decoded as before, and a `[Wio] image cache:` line says why. `wio` itself does not play the game yet; `wio_renode_game` does, under Renode.
+cannot be copied, the PNG is decoded as before, and a `[Wio] image cache:` line says why. The same region holds the
+card's `RPG_RT.ldb` and maps once read (`[Wio] file cache:` lines), which are then read in place, so a large map needs
+no room in RAM; the first boot copies the database (1.3 MB for Nepheshel) before the title. The pack's checksum covers
+the game's LCF files, so rebuild it whenever the game changes. `wio` itself does not play the game yet; `wio_renode_game` does, under Renode.
 
 ## Renode: `wio_sim`
 

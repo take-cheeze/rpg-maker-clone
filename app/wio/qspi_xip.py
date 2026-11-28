@@ -21,9 +21,10 @@ BLOCK = 256
 # Sections the internal-flash image leaves out: everything qspi_xip.ld places in QSPI.
 QSPI_SECTIONS = [".qspi_header", ".qspi_text", ".qspi_rodata", ".ARM.extab", ".ARM.exidx"]
 LIBMRUBY = ["*.ltrans.o", "*libmruby.a:*"]
-# The microSD card's FAT driver (app/wio/wio_sd.py builds it there), whole: it runs only while a game file is opened
-# or read.
-WIO_SD_OBJECTS = "*/wio_sd/*.o"
+# Objects that go to QSPI whole: the microSD card's FAT driver (app/wio/wio_sd.py builds it there), which runs only
+# while a game file is opened or read, and the QSPI cache (app/wio/src/wio_image_cache*.cxx), which runs when a
+# bitmap or file is fetched; its flash writes are QSPI_WRITE's, which stay internal.
+COLD_OBJECTS = ["*/wio_sd/*.o", "*/src/wio_image_cache*.o"]
 HERE = os.path.join(env.subst("$PROJECT_DIR"), "app", "wio")  # noqa: F821
 
 
@@ -54,7 +55,7 @@ def _write_fragments(build):
         lines = ["%s(%s)" % (f, " ".join(p + g for p in prefixes[where]))
                  for w, g in rules if w == where for f in files[where]]
         if where != "internal":
-            lines.append("%s(.%s .%s.*)" % (WIO_SD_OBJECTS, where, where))
+            lines += ["%s(.%s .%s.*)" % (o, where, where) for o in COLD_OBJECTS]
         with open(os.path.join(build, "qspi_xip_%s.ld" % where), "w") as f:
             f.write("\n".join(lines) + "\n")
 

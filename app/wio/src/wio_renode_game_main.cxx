@@ -17,6 +17,8 @@
 //   eager_ce=0|1    common events as before LAZY_COMMON_EVENTS
 //                   (RPG2K_EAGER_COMMON_EVENTS)
 //   gc_step=N       mrb->gc.step_ratio (default WIO_GC_STEP_RATIO, as env:wio)
+//   cache_ldb=0|1   a card game's RPG_RT.ldb through the QSPI file cache
+//                   (default WIO_FILE_CACHE_LDB) or the card (FILE_CACHE)
 //   hog=N           hold N bytes of heap from the start (STACK_RESERVE: a
 //                   low-memory run)
 //   rom_graph=1     write the class graph the boot leaves as C
@@ -540,12 +542,13 @@ void setup(void) {
       from_sd ? nullptr : wio_game_rom_file("/rgss/bitmaps", &bitmaps_len);
   if (bitmaps)
     rgss_set_rom_bitmaps(bitmaps, bitmaps_len, WIO_GAME_ROOT);
-  else if (from_sd)
-    wio_image_cache_begin(WIO_GAME_ROOT);
+  else if (from_sd && wio_image_cache_begin(WIO_GAME_ROOT, g_mrb))
+    wio_file_cache_ldb(config_long("cache_ldb", WIO_FILE_CACHE_LDB) != 0);
   // The rest of the image's images decode from the window, not a heap copy,
-  // and its database and maps are read there in place (MAPPED_LCF).
+  // and its database and maps are read there in place (MAPPED_LCF), as a
+  // card's are from the cache (FILE_CACHE).
   rgss_set_file_map(wio_game_file_map);
-  lcf_set_file_map(wio_game_file_map);
+  lcf_set_file_map(wio_game_lcf_map);
   set_const("GAME_DIR", mrb_str_new_cstr(g_mrb, WIO_GAME_ROOT));
   set_const("RTP_DIR", mrb_str_new_cstr(g_mrb, ""));
   set_const("TEST_PLAY", mrb_false_value());

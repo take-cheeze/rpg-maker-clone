@@ -47,10 +47,20 @@ static mrb_value map_bytes(mrb_state* mrb, mrb_value self) {
   return mrb_str_new_lit(mrb, TEST_PATH);
 }
 
+/* LCF::Test.in_use?: whether anything still points into the bytes the last
+ * LCF::Test.map installed (lcf_mapped_in_use). */
+static mrb_value in_use(mrb_state* mrb, mrb_value self) {
+  lcf_mapped_range r = {g_bytes, g_len};
+  bool used = true;
+  lcf_mapped_in_use(mrb, &r, 1, &used);
+  return mrb_bool_value(used);
+}
+
 void mrb_mruby_lcf_gem_test(mrb_state* mrb) {
   struct RClass* lcf = mrb_module_get(mrb, "LCF");
   struct RClass* t = mrb_define_module_under(mrb, lcf, "Test");
   mrb_define_module_function(mrb, t, "static_bytes", static_bytes,
                              MRB_ARGS_REQ(1));
   mrb_define_module_function(mrb, t, "map", map_bytes, MRB_ARGS_REQ(1));
+  mrb_define_module_function(mrb, t, "in_use?", in_use, MRB_ARGS_NONE());
 }

@@ -2,6 +2,7 @@
 #include <mruby/array.h>
 #include <mruby/class.h>
 #include <mruby/data.h>
+#include <mruby/gc.h>
 #include <mruby/string.h>
 #include "cp932_lookup.hxx"
 #include "lcf_file_map.h"
@@ -734,6 +735,39 @@ mrb_value short_array_to_lcf(mrb_state* M, mrb_value self) {
   return out;
 }
 
+// FILE_CACHE (lcf_mapped_in_use): what still points into mapped bytes. A
+// NOFREE String (mruby never frees its bytes, and its slices are NOFREE too),
+// a ShortArray view, and a symbol interned from them in place (symbol.c keeps
+// a read-only name's pointer).
+struct InUse {
+  const lcf_mapped_range* r;
+  size_t n;
+  bool* used;
+  void mark(const void* p, size_t len) {
+    const uint8_t* b = static_cast<const uint8_t*>(p);
+    for (size_t i = 0; i < n; ++i) {
+      const uint8_t* lo = static_cast<const uint8_t*>(r[i].p);
+      if (b < lo + r[i].len && lo < b + (len ? len : 1))
+        used[i] = true;
+    }
+  }
+};
+
+__attribute__((cold)) int in_use_object(mrb_state*, RBasic* obj, void* data) {
+  InUse& u = *static_cast<InUse*>(data);
+  if (obj->tt == MRB_TT_STRING) {
+    RString* s = reinterpret_cast<RString*>(obj);
+    if (!RSTR_EMBED_P(s) && RSTR_NOFREE_P(s))
+      u.mark(s->as.heap.ptr, static_cast<size_t>(s->as.heap.len));
+  } else if (obj->tt == MRB_TT_DATA) {
+    RData* d = reinterpret_cast<RData*>(obj);
+    const ShortArray* a = static_cast<const ShortArray*>(d->data);
+    if (d->type == &short_array_type && a && a->view)
+      u.mark(a->view, static_cast<size_t>(a->len) * 2);
+  }
+  return MRB_EACH_OBJ_OK;
+}
+
 // MAPPED_LCF (include/lcf_file_map.h).
 lcf_file_map_fn g_file_map = nullptr;
 
@@ -778,6 +812,22 @@ __attribute__((cold)) mrb_value mapped_file(mrb_state* M, mrb_value) {
 
 extern "C" void lcf_set_file_map(lcf_file_map_fn map) {
   g_file_map = map;
+}
+
+extern "C" __attribute__((cold)) void lcf_mapped_in_use(
+    mrb_state* M,
+    const lcf_mapped_range* ranges,
+    size_t n,
+    bool* used) {
+  for (size_t i = 0; i < n; ++i)
+    used[i] = false;
+  InUse u{ranges, n, used};
+  // It runs a full GC first, so only what is still reachable counts.
+  mrb_objspace_each_objects(M, in_use_object, &u);
+  for (mrb_sym i = 1; i <= M->symidx; ++i)
+    u.mark(reinterpret_cast<const void*>(
+               reinterpret_cast<uintptr_t>(M->symtbl[i]) & ~uintptr_t(1)),
+           1);
 }
 
 // OWNER_CALL_DIRECT rows (NATIVE_ROWS in tools/bc2cpp/owner_call_direct.rb):

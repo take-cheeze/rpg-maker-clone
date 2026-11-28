@@ -44,8 +44,8 @@ module BitmapSection
 
   # Header, entries sorted by path, the paths, then the pixel and palette blobs, each 16-aligned (the SAMD51 cache's
   # line) and an identical palette stored once. With +checksum+ the header's fourth word is the CRC-32 of the whole
-  # section with that word zero (how the Wio's QSPI cache tells one card pack from another), else 0.
-  def build(entries, checksum: false)
+  # section with that word zero, then of +salt+ (how the Wio's QSPI cache tells one card's game from another), else 0.
+  def build(entries, checksum: false, salt: ''.b)
     entries = entries.sort_by(&:rel)
     names = entries.map { |e| "#{e.rel}\0".b }
     head = 16 + (entries.size * 32)
@@ -69,7 +69,7 @@ module BitmapSection
     return section unless checksum
 
     # Never 0: the cache reads 0 as no checksum.
-    section[12, 4] = [Zlib.crc32(section).nonzero? || 1].pack('V')
+    section[12, 4] = [Zlib.crc32(salt, Zlib.crc32(section)).nonzero? || 1].pack('V')
     section
   end
 end

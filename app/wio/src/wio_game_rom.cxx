@@ -3,8 +3,8 @@
 // the game image at game_rom_base(); every other path from the image. Reads
 // copy out of the image the way they copy off the card, so the heap behaves
 // the same with either; an image file is decoded, and the database and maps
-// read, in place instead (wio_game_file_map). Writes to a file are refused
-// (EROFS).
+// read, in place instead (wio_game_file_map, wio_game_lcf_map: a card's from
+// the QSPI file cache). Writes to a file are refused (EROFS).
 
 #include "wio_game_rom.h"
 
@@ -154,6 +154,14 @@ const void* wio_game_file_map(const char* path, size_t* len) {
 #if WIO_SD
   if (game_relative(path) && wio_sd_state() == WIO_SD_GAME)
     return nullptr;
+#endif
+  return wio_game_rom_file(path, len);
+}
+
+const void* wio_game_lcf_map(const char* path, size_t* len) {
+#if WIO_SD
+  if (game_relative(path) && wio_sd_state() == WIO_SD_GAME)
+    return wio_file_cache_map ? wio_file_cache_map(path, len) : nullptr;
 #endif
   return wio_game_rom_file(path, len);
 }
