@@ -20,10 +20,16 @@ module LCF
         @root = build_root('', schema)
         return
       end
-      @io = io
-      bytes = io.is_a?(String) ? io : mapped_bytes(io)
-      return read_bytes(bytes) if bytes
+      return read_bytes(io) if io.is_a?(String)
 
+      bytes = mapped_bytes(io)
+      if bytes
+        # MAPPED_LCF: nothing reads the stream any more, so its buffer and descriptor go now rather than at a GC.
+        io.close
+        return read_bytes(bytes)
+      end
+
+      @io = io
       h_len = LCF.read_ber io
       h = io.read h_len
       raise "Invalid header: #{h} (expected: #{header})" if h != header
