@@ -1702,21 +1702,16 @@ class RPG2k
         return unless evs
         table = @event_conditions
         if table
-          # A rebuild: the conditions are already read, so only the rows of events that land on a page are.
-          table.each do |id, list|
-            next if @erased_events[id]
-            page_number = select_page_number(@condition_lists[list])
-            next unless page_number
-            # The row is read only when something needs it: an unchanged compact record does not.
-            ev = nil
-            unless @event_last_position[id]
-              ev = evs.peek(id)
-              @event_last_position[id] = [ev[:x], ev[:y], nil]
-            end
-            build_live_event(id, ev, page_number, restore_route_index, placed)
+          # A rebuild: the conditions are already read, so only the rows of events that land on a page are
+          # (EVENT_TABLE: in id order, as they were first read).
+          id = 0
+          while id < table.size
+            list = table[id]
+            rebuild_live_event(evs, id, list, restore_route_index, placed) if list && !@erased_events[id]
+            id += 1
           end
         else
-          table = @event_conditions = {}
+          table = @event_conditions = []
           reset_page_conditions
           evs.each_peek do |id, ev|
             # First sighting of this id this visit: record its raw placement as
@@ -1742,6 +1737,20 @@ class RPG2k
         @event_tiles = {}
         @event_tiles_by_pos = {}
         reset_compact_events
+      end
+
+      # #build_events' rebuild for event +id+, whose pages are condition list +list+.
+      def rebuild_live_event(evs, id, list, restore_route_index, placed)
+        page_number = select_page_number(@condition_lists[list])
+        return unless page_number
+
+        # The row is read only when something needs it: an unchanged compact record does not.
+        ev = nil
+        unless @event_last_position[id]
+          ev = evs.peek(id)
+          @event_last_position[id] = [ev[:x], ev[:y], nil]
+        end
+        build_live_event(id, ev, page_number, restore_route_index, placed)
       end
 
       # Put event +id+ on page +page_number+: a COMPACT_EVENTS record when the page and the state carried over from
@@ -1782,9 +1791,9 @@ class RPG2k
       end
 
       # PAGE_CONDITIONS: an event's pages as [page id, condition, ...], kept per visit in @condition_lists, so
-      # choosing a page (#select_page_number) reads no event row; @event_conditions maps an event id to its list's
-      # index. Equal conditions share one record and equal lists one list: a map repeats the same few, and both are
-      # only read.
+      # choosing a page (#select_page_number) reads no event row; @event_conditions[id] is its list's index
+      # (EVENT_TABLE: an Array by event id, walked with while loops, so a sweep makes no snapshot of it). Equal
+      # conditions share one record and equal lists one list: a map repeats the same few, and both are only read.
       def reset_page_conditions
         @shared_conditions = {}
         @condition_lists = []
@@ -4888,31 +4897,17 @@ class RPG2k
            !party_moved && !timer_moved
           return false
         end
-        # Built on the first event whose page is re-selected: most sweeps skip them all.
-        live = nil
+        # EVENT_TABLE: a while loop over the id-indexed table, so a sweep allocates nothing.
+        table = @event_conditions
         changed = false
-        @event_conditions&.each do |id, list|
-          next if changed || @erased_events[id]
-          ids = page_condition_ids(list)
-          unless party_moved ||
-                 (timer_moved && ids[:timer]) ||
-                 ids_touch?(ids[:switches], sw_dirty) ||
-                 ids_touch?(ids[:variables], var_dirty)
-            next
+        id = 0
+        n = table ? table.size : 0
+        while id < n && !changed
+          list = table[id]
+          if list && !@erased_events[id]
+            changed = event_page_changed?(id, list, party_moved, timer_moved, sw_dirty, var_dirty)
           end
-          page_number = select_page_number(@condition_lists[list])
-          unless live
-            live = {}
-            @events.each { |ev| live[ev.id] = ev }
-          end
-          e = live[id]
-          # #event_page keeps one record per page number this visit, so the number stands for the page.
-          if e
-            changed = true unless page_number == e.page_number
-          else
-            s = compact_slot(id)
-            changed = true unless page_number == (s ? cu16(@compact, s * CREC + C_PAGE) : nil)
-          end
+          id += 1
         end
         sw.clear_dirty
         va.clear_dirty
@@ -4929,6 +4924,28 @@ class RPG2k
       # (the same fields #active? tests), so the skip can never disagree with
       # the selection it guards. An input no page reads is nil, not [] (#ids_touch?
       # reads both the same), and a list that reads none shares NO_CONDITION_IDS.
+      # #pages_changed? for event +id+, whose pages are condition list +list+.
+      def event_page_changed?(id, list, party_moved, timer_moved, sw_dirty, var_dirty)
+        ids = page_condition_ids(list)
+        unless party_moved ||
+               (timer_moved && ids[:timer]) ||
+               ids_touch?(ids[:switches], sw_dirty) ||
+               ids_touch?(ids[:variables], var_dirty)
+          return false
+        end
+        page_number = select_page_number(@condition_lists[list])
+        # #event_page keeps one record per page number this visit, so the number stands for the page.
+        evs = @events
+        i = 0
+        while i < evs.size
+          e = evs[i]
+          return page_number != e.page_number if e.id == id
+          i += 1
+        end
+        s = compact_slot(id)
+        page_number != (s ? cu16(@compact, s * CREC + C_PAGE) : nil)
+      end
+
       def page_condition_ids(list)
         @condition_ids[list] ||= begin
           conds = @condition_lists[list]
