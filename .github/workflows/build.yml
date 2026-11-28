@@ -1642,6 +1642,18 @@ jobs:
           path: .pio/build/wio_renode_game/firmware.elf
           if-no-files-found: error
 
+      - name: Link the heapwalk firmware
+        # HEAPWALK (app/wio/src/wio_heapwalk.cxx): the memory-measurement firmware is wio_renode_game plus a malloc
+        # wrapper, so it is the first to outgrow internal flash, and the wrapper is what malloc reaches from anywhere.
+        # `_big` links the same code with more RAM, so the 192 KB env stands for both.
+        env:
+          WIO_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-wio/wio
+          WIO_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-wio/unialgo
+        run: |
+          ruby scripts/wio/qspi_xip_check.rb .pio/build/wio_renode_game/firmware.elf
+          pio run -e wio_renode_game_heapwalk
+          ruby scripts/wio/qspi_xip_check.rb .pio/build/wio_renode_game_heapwalk/firmware.elf
+
       # Summarises the flash and SRAM budget, which is tight on this board.
       - name: wio size report
         if: always()
