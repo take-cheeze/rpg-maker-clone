@@ -47,7 +47,7 @@ class RPG2k
       # Integer/boolean fields as typed struct fields (IVAR_ACCESS), where a
       # Struct member was a runtime-created native closure it could not see.
       #
-      # #build_event writes the first 24 fields right after `.new` (the
+      # #build_event writes the first 23 fields right after `.new` (the
       # typed defaults below are never read); `flash` (#apply_sprite_flash),
       # `forced_route`/`forced_freq` (#force_event_move_route) and
       # `crossed_hero_this_frame` (#step_event's own touch-trigger edge
@@ -57,7 +57,7 @@ class RPG2k
       # attr_writer raises TypeError on anything else.
       class MapEventState
         attr_reader :char
-        attr_accessor :id, :page, :page_number, :trigger, :commands, :guarded, :move_type, :route,
+        attr_accessor :id, :page, :page_number, :trigger, :guarded, :move_type, :route,
                       :move_timer, :layer, :overlap_forbidden, :translucent, :anim_type, :base_dir,
                       :base_pattern, :anim_phase, :anim_count, :moving, :disp_x, :disp_y, :move_count,
                       :slide_frac, :jumping, :flash, :forced_route, :forced_freq, :crossed_hero_this_frame
@@ -71,6 +71,7 @@ class RPG2k
           @page_number = nil
           @trigger = nil
           @commands = nil
+          @commands_read = false
           @guarded = false
           @move_type = 0
           @route = nil
@@ -93,6 +94,21 @@ class RPG2k
           @forced_route = nil
           @forced_freq = nil
           @crossed_hero_this_frame = nil
+        end
+
+        # LAZY_COMMANDS: the page's command list, decoded on the first read. Most events are never run or asked
+        # whether they have one, so their lists stay undecoded; the page record keeps the decode (LCF::Array1D#[]),
+        # so every read returns the same list.
+        def commands
+          return @commands if @commands_read
+
+          @commands_read = true
+          @commands = begin
+            @page && @page[:event_commands]
+          rescue StandardError => e
+            $stderr.puts "[RPG2k] event page field 'commands' unavailable (#{e.message}), using nil"
+            nil
+          end
         end
       end
 
@@ -1775,7 +1791,6 @@ class RPG2k
         event.page = page
         event.page_number = page_number
         event.trigger = page_trigger(page)
-        event.commands = page_commands(page)
         event.guarded = page_guarded(page)
         event.move_type = move_type
         event.route = route
@@ -1972,7 +1987,6 @@ class RPG2k
       end
 
       def page_trigger(page); page_field(:trigger, 0) { page[:trigger] }; end
-      def page_commands(page); page_field(:commands, nil) { page[:event_commands] }; end
       # The page's stored facing (0..3: up/right/down/left), default down (2).
       # Converted to the runtime numpad convention by build_event.
       def page_direction(page); page_field(:direction, 2) { d = page[:direction]; (0..3).include?(d) ? d : 2 }; end

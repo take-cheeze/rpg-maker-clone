@@ -3280,7 +3280,6 @@ class RPG2k::Scene::Map::MapEventState
   def trigger: () -> untyped
   def trigger=: (untyped) -> untyped
   def commands: () -> untyped
-  def commands=: (untyped) -> untyped
   def guarded: () -> untyped
   def guarded=: (untyped) -> untyped
   def move_type: () -> untyped
