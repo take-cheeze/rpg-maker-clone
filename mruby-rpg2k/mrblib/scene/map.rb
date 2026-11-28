@@ -1707,8 +1707,12 @@ class RPG2k
             next if @erased_events[id]
             page_number = select_page_number(@condition_lists[list])
             next unless page_number
-            ev = evs.peek(id)
-            @event_last_position[id] ||= [ev[:x], ev[:y], nil]
+            # The row is read only when something needs it: an unchanged compact record does not.
+            ev = nil
+            unless @event_last_position[id]
+              ev = evs.peek(id)
+              @event_last_position[id] = [ev[:x], ev[:y], nil]
+            end
             build_live_event(id, ev, page_number, restore_route_index, placed)
           end
         else
@@ -1739,12 +1743,15 @@ class RPG2k
       end
 
       # Put event +id+ on page +page_number+: a COMPACT_EVENTS record when the page and the state carried over from
-      # +placed+ (#rebuild_events_preserving_positions) allow it, a full MapEventState otherwise.
+      # +placed+ (#rebuild_events_preserving_positions) allow it, a full MapEventState otherwise. +ev+, the event's
+      # row, is nil when not read yet.
       def build_live_event(id, ev, page_number, restore_route_index, placed)
         old = placed && placed[id]
+        return if placed && old.nil? && copy_compact_record(id, page_number)
+
         pages = (@event_pages ||= {})[id]
         page = pages ? pages[page_number] : nil
-        page ||= ev[:pages].peek(page_number)
+        page ||= (ev ||= @map.unit[:events].peek(id))[:pages].peek(page_number)
         return if compact_event(id, ev, page, page_number, old, !placed.nil?)
 
         e = build_event(id, ev, keep_event_page(id, page_number, page), page_number,
@@ -1832,7 +1839,6 @@ class RPG2k
 
       def build_event(id, ev, page, page_number, restore_route_index: true)
         dir = Game::EventGraphic.numpad_direction(page_direction(page))
-        x, y = ev[:x], ev[:y]
         # A saved wandered position (see #record_map_event_positions) wins over
         # the map's own default placement -- restoring a Save/Continue taken on
         # this same map to wherever the NPC actually stood, not back to its
@@ -1842,6 +1848,9 @@ class RPG2k
         if (saved = @state.map_event_positions[id])
           x, y = saved[0], saved[1]
           dir = saved[2] if saved[2]
+        else
+          ev ||= @map.unit[:events].peek(id)
+          x, y = ev[:x], ev[:y]
         end
         build_event_at(id, page, page_number, x, y, dir, restore_route_index)
       end
@@ -2237,10 +2246,12 @@ class RPG2k
           return false if old.page_number == page_number && (oc.graphic_name != name || oc.graphic_index != index)
         end
         build_dir = Game::EventGraphic.numpad_direction(page_direction(page))
-        x, y = ev[:x], ev[:y]
         if (saved = @state.map_event_positions[id])
           x, y = saved[0], saved[1]
           build_dir = saved[2] if saved[2]
+        else
+          ev ||= @map.unit[:events].peek(id)
+          x, y = ev[:x], ev[:y]
         end
         dir = build_dir
         if old
@@ -2260,17 +2271,8 @@ class RPG2k
                             compact_u16?(index) && dir.is_a?(Integer) && dir >= 0 && dir < 16 &&
                             build_dir.is_a?(Integer) && build_dir >= 0 && build_dir < 16 &&
                             layer >= 0 && layer <= CF_LAYER && anim_type >= 0 && anim_type < 16
-        name_slot = 0
-        if name
-          names = @compact_names
-          i = names.index(name)
-          unless i
-            return false if names.size >= 255
-            i = names.size
-            names.push(name)
-          end
-          name_slot = i + 1
-        end
+        name_slot = compact_name_slot(name)
+        return false unless name_slot
         flags = layer
         flags |= CF_OVERLAP if page_overlap_forbidden(page)
         flags |= CF_TRANSLUCENT if page_translucent(page)
@@ -2285,6 +2287,45 @@ class RPG2k
         rec.setbyte(C_TRIGGER, trigger)
         rec.setbyte(C_ANIM, anim_type | (pattern << 4))
         rec.setbyte(C_NAME, name_slot)
+        @compact << rec
+        true
+      end
+
+      # +name+'s C_NAME byte: its @compact_names index + 1, 0 for nil; nil when the table is full.
+      def compact_name_slot(name)
+        return 0 unless name
+        names = @compact_names
+        i = names.index(name)
+        unless i
+          return nil if names.size >= 255
+          i = names.size
+          names.push(name)
+        end
+        i + 1
+      end
+
+      # #compact_event's record for event +id+ when its old record (#rebuild_events_preserving_positions) is on the
+      # same page, read without the event's row or page: the page and the carried state are the same, so only the
+      # build facing can differ (#compact_event takes it from the saved position).
+      def copy_compact_record(id, page_number)
+        s = old_compact_slot(id)
+        return false unless s
+        oc = @old_compact
+        b = s * CREC
+        return false unless cu16(oc, b + C_PAGE) == page_number
+        rec = oc.byteslice(b, CREC)
+        name_slot = rec.getbyte(C_NAME)
+        if name_slot != 0
+          slot = compact_name_slot(@old_compact_names[name_slot - 1])
+          return false unless slot
+          rec.setbyte(C_NAME, slot)
+        end
+        dirs = rec.getbyte(C_DIR)
+        saved = @state.map_event_positions[id]
+        build_dir = saved && saved[2] ? saved[2] : dirs >> 4
+        return false unless build_dir.is_a?(Integer) && build_dir >= 0 && build_dir < 16
+        rec.setbyte(C_DIR, (dirs & 15) | (build_dir << 4))
+        rec.setbyte(C_FLAGS, rec.getbyte(C_FLAGS) & ~CF_WINNER)
         @compact << rec
         true
       end
@@ -4863,9 +4904,11 @@ class RPG2k
         # #build_live_event carries each old event's state over, from a MapEventState or a compact record.
         @old_compact = @compact
         @old_compact_slots = @compact_slots
+        @old_compact_names = @compact_names
         build_events(restore_route_index: false, placed: placed)
         @old_compact = nil
         @old_compact_slots = nil
+        @old_compact_names = nil
         # This is an in-place page reselection, not a map change -- a map
         # event's own Parallel Process id still means the same thing before
         # and after, so a still-running one whose own page did not change
