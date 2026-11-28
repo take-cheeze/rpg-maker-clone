@@ -8842,6 +8842,12 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self) {
     return;
   const Color c = vp_effective_color(M, self);
   const bool visible = c.alpha > 0.0;
+  // The bytes bmp_put would fill the overlay bitmap with.
+  if (gfx::viewport_set_color(outer, static_cast<uint8_t>(c.blue),
+                              static_cast<uint8_t>(c.green),
+                              static_cast<uint8_t>(c.red),
+                              visible ? static_cast<uint8_t>(c.alpha) : 0))
+    return;
   gfx::Node* ov = vp_overlay(M, self, visible);
   if (!ov)
     return;

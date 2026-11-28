@@ -25,6 +25,12 @@ WIO_UNIALGO_LIB_DIR=<uni-algo lib dir> \
 `scripts/wio/build.bash` runs all of it from a bare checkout (in `nix develop .#bc2cpp`), as CI's
 `wio` job does.
 
+## Display backend
+
+`WIO_GFX=own scripts/wio/build.bash` draws through the own compositor (`mruby-rgss/src/gfx_own.cxx`) instead of
+LVGL: the same pixels, about 77 KB less internal flash, and no allocation while drawing. Sprite zoom, rotation and
+add/subtract blending are drawn unscaled and normal, with one `[RGSS] gfx:` line. LVGL is the default.
+
 ## Classes in flash (ROM class graph)
 
 `WIO_ROM_GRAPH=GRAPH.c scripts/wio/build.bash` links the class graph the boot leaves as const data, so the classes,

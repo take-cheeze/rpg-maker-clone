@@ -40,7 +40,6 @@
 // stack pointer the heap was grown from (STACK_RESERVE, wio_sbrk.cxx).
 
 #include <Arduino.h>
-#include <lvgl.h>
 #include <malloc.h>
 
 #include <mruby.h>
@@ -71,7 +70,6 @@
 
 extern "C" void rpg_maker_init_shared_gems(mrb_state* mrb);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* mrb);
-extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display);
 extern "C" unsigned rgss_wio_mrb_state_size(void);
 extern "C" bool rgss_oom_gc(void);
 extern "C" char __end__;
@@ -155,9 +153,8 @@ long config_long(const char* key, long dflt) {
 // FRAMEHASH (framehash=1): the panel's picture is kept in a Renode-only window
 // (app/wio/renode/framehash.repl), and after each frame its FNV-1a hash goes to
 // a text log there, which renode_game.bash --framehash saves. The display then
-// refreshes on every Graphics.update, so a frame's hash does not depend on
-// where LVGL's refresh timer stood (scripts/compare/framehash.rb compares two
-// runs).
+// draws on every Graphics.update, so a frame's hash does not depend on where
+// the refresh timer stood (scripts/compare/framehash.rb compares two runs).
 constexpr uintptr_t kFhPanel = 0x0E000000;
 constexpr int32_t kFhWidth = 320;
 // u32 bytes written, then the text.
@@ -167,12 +164,11 @@ bool g_fh = false;
 bool g_fh_drawn = true;
 uint32_t g_fh_hi = 0, g_fh_lo = 0;
 
-void fh_copy(const lv_area_t* area, const uint8_t* px) {
-  const size_t row = static_cast<size_t>(lv_area_get_width(area)) * 2;
-  for (int32_t y = area->y1; y <= area->y2; ++y, px += row)
-    std::memcpy(reinterpret_cast<uint8_t*>(kFhPanel) +
-                    (static_cast<size_t>(y) * kFhWidth + area->x1) * 2,
-                px, row);
+void fh_copy(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t* px) {
+  for (int32_t r = 0; r < h; ++r, px += w)
+    std::memcpy(reinterpret_cast<uint16_t*>(kFhPanel) +
+                    static_cast<size_t>(y + r) * kFhWidth + x,
+                px, static_cast<size_t>(w) * 2);
   g_fh_drawn = true;
 }
 
@@ -204,12 +200,14 @@ void fh_frame(long frame) {
   *len += n;
 }
 
-// LVGL's DMA flush never completes under Renode (no DMAC model), and nothing
-// reads the panel here: hand every rendered area straight back.
-void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px) {
+// Nothing reads the panel here: every drawn area stops at this hook.
+void flush_hook(int32_t x,
+                int32_t y,
+                int32_t w,
+                int32_t h,
+                const uint16_t* px) {
   if (g_fh)
-    fh_copy(area, px);
-  lv_display_flush_ready(disp);
+    fh_copy(x, y, w, h, px);
 }
 
 struct IvTbl {
@@ -480,12 +478,11 @@ void setup(void) {
   const bool from_sd = wio_sd_state() == WIO_SD_GAME;
   probe("sd");
 
-  lv_init();
-  lv_display_t* disp = wio_display_create(320, 240);
-  lv_display_set_flush_cb(disp, flush_cb);
+  wio_display_set_flush_hook(flush_hook);
+  wio_display_begin(320, 240);
   if (config_long("framehash", 0) != 0) {
     g_fh = true;
-    lv_timer_set_period(lv_display_get_refr_timer(disp), 0);
+    wio_display_draw_every_frame();
   }
   wio_input_init();
 
@@ -530,7 +527,7 @@ void setup(void) {
     return;
   }
 
-  rgss_set_display(g_mrb, disp);
+  wio_display_attach(g_mrb);
   // What the boot leaves in the GC arena is kept by a constant or by the game,
   // registered below; the arena entries would hold the rest forever.
   const int boot_ai = mrb_gc_arena_save(g_mrb);

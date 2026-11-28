@@ -1,7 +1,10 @@
 // GFX_BACKEND (gfx.hxx) on LVGL: a node is an lv_obj_t, a sprite an lv_canvas,
 // a view an lv_image_dsc_t that the image decoder below expands, and the frame
 // LVGL's timer handler. Every port draws through this; the ports' display
-// drivers make the lv_display_t it draws into.
+// drivers make the lv_display_t it draws into. RGSS_GFX_OWN builds
+// gfx_own.cxx instead.
+
+#ifndef RGSS_GFX_OWN
 
 #include "gfx.hxx"
 
@@ -250,6 +253,11 @@ Node* viewport_overlay(Node* frame, bool create) {
   return node(ov);
 }
 
+// The overlay canvas above is how this backend tints a viewport.
+bool viewport_set_color(Node*, uint8_t, uint8_t, uint8_t, uint8_t) {
+  return false;
+}
+
 void node_bind(Node* n, void* owner) {
   lv_obj_set_user_data(obj(n), owner);
   lv_obj_add_event_cb(obj(n), on_delete, LV_EVENT_DELETE, nullptr);
@@ -421,3 +429,5 @@ extern "C" lv_obj_t* rgss_game_root_obj(lv_display_t* disp) {
   return reinterpret_cast<lv_obj_t*>(
       rgss::gfx::root(reinterpret_cast<rgss::gfx::Display*>(disp)));
 }
+
+#endif  // RGSS_GFX_OWN

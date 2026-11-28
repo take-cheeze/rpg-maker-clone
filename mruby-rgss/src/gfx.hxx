@@ -2,8 +2,9 @@
 // pictures on a screen. The engine builds a display list of nodes -- a root,
 // Viewports (a clipping frame around a scrolled content layer) and Sprites --
 // edits it as the game runs, and asks the backend to draw it once a frame.
-// gfx_lvgl.cxx implements it on LVGL for every port. The engine sees no
-// backend type: a Node is opaque to it.
+// gfx_lvgl.cxx implements it on LVGL for every port; with RGSS_GFX_OWN,
+// gfx_own.cxx implements it on its own RGB565 strip compositor instead. The
+// engine sees no backend type: a Node is opaque to it.
 #pragma once
 
 #include <cstddef>
@@ -46,10 +47,16 @@ enum class Blend : uint8_t { kNormal, kAdd, kSubtract };
 // (DRAW_TIME_SPRITE in lib.cxx) instead of a pixel buffer. The engine derives
 // its view from this; `backend` is the backend's state for it and must stay
 // first (the LVGL backend's is an lv_image_dsc_t, which points at itself).
+// The own backend keeps a view's format and size in its node, so it needs none.
+#ifdef RGSS_GFX_OWN
+constexpr size_t kViewBackendBytes = 0;
+struct View {};
+#else
 constexpr size_t kViewBackendBytes = 16 + 3 * sizeof(void*);
 struct View {
   alignas(void*) unsigned char backend[kViewBackendBytes];
 };
+#endif
 
 // ---- Display and frame ------------------------------------------------------
 
@@ -82,6 +89,13 @@ Node* viewport_new(Node* parent);
 Node* viewport_content(Node* frame);
 // The colour layer drawn over the content, made when `create` is set.
 Node* viewport_overlay(Node* frame, bool create);
+// Lays B, G, R at alpha `a` (0: none) over the whole frame, when the backend
+// can blend a flat colour itself; false asks for viewport_overlay instead.
+bool viewport_set_color(Node* frame,
+                        uint8_t b,
+                        uint8_t g,
+                        uint8_t r,
+                        uint8_t a);
 
 // Ties `owner` (the wrapper's RData) to the node: when the node goes, by
 // node_delete or with its parent, the backend calls node_released(owner).
