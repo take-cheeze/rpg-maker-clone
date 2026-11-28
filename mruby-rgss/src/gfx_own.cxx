@@ -408,9 +408,10 @@ bool contains(const Area& outer, const Area& inner) {
 }
 
 // COVER: the last sprite in drawing order that paints every pixel of the
-// strip, as lv_refr_get_top_obj finds it (an untransformed RGB888 image at a
-// covering opacity and normal blend). Nothing under it is drawn, which skips
-// the expansion of whatever views lie beneath.
+// strip (an untransformed RGB888 image at a covering opacity and normal
+// blend). Nothing under it is drawn, which skips the expansion of the views
+// beneath. LVGL draws them all (an lv_image never passes lv_obj's background
+// cover check); the pixels are the same, since this sprite overwrites them.
 const Node* find_cover(const Node* n, const Area& s) {
   if (n->hidden)
     return nullptr;
