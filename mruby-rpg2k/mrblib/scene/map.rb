@@ -547,6 +547,7 @@ class RPG2k
         # Replaced by #build_events below; stored before the first call on self so no read sees it unset (the
         # declaration has no `?`).
         @events = []
+        reset_compact_events
         # Named graphics loaded and memoized on demand -- see #cached_bitmap.
         # One cache per graphic category (rather than a single cache keyed by
         # a [kind, name] tuple) so each material's entries stay a plain
@@ -778,7 +779,10 @@ class RPG2k
       # of each entry ({ id:, char:, page:, page_number:, ... }). Read by
       # RPG2k #dump_bug_report (main.rb) to list every event's
       # position/direction/page alongside the hero's.
-      attr_reader :events
+      # Every live event, the compact ones expanded (COMPACT_EVENTS).
+      def events
+        expand_compact_events
+      end
       # The foreground interpreter -- the one On Touch/On Talk/auto-start
       # triggers and Show Message run on, as opposed to a Parallel Process's
       # own background one (see #parallel_interpreter_for). Read by RPG2k
@@ -1692,10 +1696,11 @@ class RPG2k
       # not a saved index), and a route that legitimately changed this rebuild
       # must restart at 0, not seek into an unrelated saved index left over from
       # whatever this same event id's route was doing before the rebuild.
-      def build_events(restore_route_index: true)
+      def build_events(restore_route_index: true, placed: nil)
         @events = []
         @event_tiles = {}
         @event_tiles_by_pos = {}
+        reset_compact_events
         evs = @map.unit[:events]
         return unless evs
         table = @event_conditions
@@ -1707,8 +1712,7 @@ class RPG2k
             next unless page_number
             ev = evs.peek(id)
             @event_last_position[id] ||= [ev[:x], ev[:y], nil]
-            @events.push(build_event(id, ev, event_page(id, page_number), page_number,
-                                      restore_route_index: restore_route_index))
+            build_live_event(id, ev, page_number, restore_route_index, placed)
           end
         else
           table = @event_conditions = {}
@@ -1722,10 +1726,10 @@ class RPG2k
             next if @erased_events[id] # an Erase Event lasts the whole visit
             page_number = select_page_number(conds)
             next unless page_number
-            @events.push(build_event(id, ev, event_page(id, page_number), page_number,
-                                      restore_route_index: restore_route_index))
+            build_live_event(id, ev, page_number, restore_route_index, placed)
           end
         end
+        sort_compact_events
         rebuild_event_tiles
       rescue StandardError => e
         $stderr.puts "[RPG2k] event setup failed, map runs with no events: #{e.message}"
@@ -1733,6 +1737,26 @@ class RPG2k
         @events = []
         @event_tiles = {}
         @event_tiles_by_pos = {}
+        reset_compact_events
+      end
+
+      # Put event +id+ on page +page_number+: a COMPACT_EVENTS record when the page and the state carried over from
+      # +placed+ (#rebuild_events_preserving_positions) allow it, a full MapEventState otherwise.
+      def build_live_event(id, ev, page_number, restore_route_index, placed)
+        old = placed && placed[id]
+        pages = (@event_pages ||= {})[id]
+        page = pages ? pages[page_number] : nil
+        page ||= ev[:pages].peek(page_number)
+        return if compact_event(id, ev, page, page_number, old, !placed.nil?)
+
+        e = build_event(id, ev, keep_event_page(id, page_number, page), page_number,
+                        restore_route_index: restore_route_index)
+        if old
+          carry_event_state(old, e)
+        elsif placed && (s = old_compact_slot(id))
+          carry_compact_state(s, e)
+        end
+        @events.push(e)
       end
 
       # PAGE_CACHE: the record of page +page_number+ of event +id+, kept from the first time it is selected this visit.
@@ -1742,6 +1766,12 @@ class RPG2k
       def event_page(id, page_number)
         pages = ((@event_pages ||= {})[id] ||= [])
         pages[page_number] ||= @map.unit[:events].peek(id)[:pages].peek(page_number)
+      end
+
+      # Keep +page+, a peek of page +page_number+ of event +id+, as #event_page's record unless one is kept already.
+      def keep_event_page(id, page_number, page)
+        pages = ((@event_pages ||= {})[id] ||= [])
+        pages[page_number] ||= page
       end
 
       # PAGE_CONDITIONS: an event's pages as [page id, condition, ...], kept per visit in @event_conditions, so
@@ -1789,6 +1819,11 @@ class RPG2k
           x, y = saved[0], saved[1]
           dir = saved[2] if saved[2]
         end
+        build_event_at(id, page, page_number, x, y, dir, restore_route_index)
+      end
+
+      # #build_event's MapEventState for event +id+ on +page+, standing on (+x+, +y+) facing +dir+.
+      def build_event_at(id, page, page_number, x, y, dir, restore_route_index)
         ch = Game::Character.new(x, y, dir)
         ch.event_id = id # #char_passable?/#char_can_land?'s "is this the hero" test
         ch.move_speed = page_move_speed(page)
@@ -1920,6 +1955,31 @@ class RPG2k
           @event_last_position[id] = pos
           i += 1
         end
+        record_compact_positions unless @compact_recorded
+      end
+
+      # #record_map_event_positions for the compact records, which never move: once per build.
+      def record_compact_positions
+        @compact_recorded = true
+        c = @compact
+        n = c.bytesize / CREC
+        s = 0
+        while s < n
+          b = s * CREC
+          if c.getbyte(b + C_FLAGS) & CF_GONE == 0
+            id = cu16(c, b)
+            x = cu16(c, b + C_X)
+            y = cu16(c, b + C_Y)
+            dir = c.getbyte(b + C_DIR) & 15
+            pos = @state.map_event_positions[id]
+            unless pos && pos[0] == x && pos[1] == y && pos[2] == dir
+              pos = [x, y, dir]
+              @state.map_event_positions[id] = pos
+            end
+            @event_last_position[id] = pos
+          end
+          s += 1
+        end
       end
 
       # Snapshot the shared foreground @interpreter's own live call stack onto
@@ -1965,7 +2025,7 @@ class RPG2k
         @interpreter.restore_call_stack(frames)
         return unless @interpreter.running?
         ev_id = saved.event_id
-        @active_event = (ev_id && ev_id != 0) ? @events.find { |e| e.id == ev_id } : nil
+        @active_event = (ev_id && ev_id != 0) ? live_event(ev_id) : nil
       end
 
       # Snapshot the current map's live Tile Substitution table onto
@@ -1992,7 +2052,37 @@ class RPG2k
       def rebuild_event_tiles
         @event_tiles = {}
         @event_tiles_by_pos = {}
-        @events.each { |e| index_event_tile(e, e.char.x, e.char.y) }
+        # In id order across @events and the compact records, so each tile's last writer is the one it always was.
+        evs = @events
+        n = evs.size
+        i = 0
+        cid = next_compact_id(0)
+        while i < n || cid
+          e = i < n ? evs[i] : nil
+          if cid && (e.nil? || cid < e.id)
+            b = compact_slot(cid) * CREC
+            x = cu16(@compact, b + C_X)
+            y = cu16(@compact, b + C_Y)
+            @event_tiles.delete(tile_key(x, y))
+            compact_set_winner(x, y, b / CREC)
+            cid = next_compact_id(cid + 1)
+          else
+            index_event_tile(e, e.char.x, e.char.y)
+            i += 1
+          end
+        end
+      end
+
+      # The least id at or above +from+ with a live compact record, or nil.
+      def next_compact_id(from)
+        slots = @compact_slots
+        n = slots.bytesize / 2
+        id = from
+        while id < n
+          return id if slots.getbyte(id * 2) != 0 || slots.getbyte(id * 2 + 1) != 0
+          id += 1
+        end
+        nil
       end
 
       # TILE_KEY: tile (x, y)'s key in @event_tiles and @event_tiles_by_pos: an Integer, so an entry allocates no
@@ -2012,6 +2102,7 @@ class RPG2k
       # blocking event can go unnoticed just because another one sharing its
       # tile was indexed after it.
       def index_event_tile(e, x, y)
+        compact_set_winner(x, y, nil) unless @compact_live == 0
         k = tile_key(x, y)
         @event_tiles[k] = e
         (@event_tiles_by_pos[k] ||= []) << e
@@ -2039,6 +2130,326 @@ class RPG2k
       # types both get a say instead of one silently shadowing the other.
       def blockers_at(x, y)
         @event_tiles_by_pos[tile_key(x, y)] || NO_BLOCKERS
+      end
+
+      # COMPACT_EVENTS: an event whose page never moves, animates or runs on its own (a STATIONARY move type, an
+      # action or touch trigger, no continuous animation) and whose carried state is a fresh build's has no
+      # MapEventState. It is a CREC-byte record in @compact, sorted by (y, x, id) -- the draw order and the tile
+      # lookup -- and @compact_slots maps its id to slot + 1 (2 bytes per id). Anything that needs the event itself
+      # (#live_event, #event_at) expands it into the MapEventState #build_event_at makes; #build_events is the only
+      # place a record is made, so a page change or a rebuild compacts it again. A stationary event's move_timer
+      # only paces moves it never makes (#force_event_route zeroes it first), so an expansion need not replay it.
+      CREC = 16
+      C_X = 2
+      C_Y = 4
+      C_PAGE = 6
+      C_INDEX = 8
+      C_DIR = 10      # facing | build-time facing << 4
+      C_FLAGS = 11
+      C_TRIGGER = 12
+      C_ANIM = 13     # anim type | pattern << 4
+      C_NAME = 14     # @compact_names index + 1, 0 for a nil graphic name
+      CF_LAYER = 3
+      CF_OVERLAP = 4
+      CF_TRANSLUCENT = 8
+      CF_WINNER = 16  # this record is @event_tiles' one event on its tile (see #index_event_tile)
+      CF_GONE = 32    # expanded: the MapEventState in @events stands for it now
+
+      def reset_compact_events
+        @compact = String.new
+        @compact_slots = String.new
+        @compact_names = []
+        @compact_live = 0
+        @compact_recorded = false
+        @compact_revision = (@compact_revision || 0) + 1
+      end
+
+      def cu16(s, at)
+        s.getbyte(at) | (s.getbyte(at + 1) << 8)
+      end
+
+      def set_cu16(s, at, v)
+        s.setbyte(at, v & 0xff)
+        s.setbyte(at + 1, v >> 8)
+      end
+
+      def compact_count
+        @compact.bytesize / CREC
+      end
+
+      # The live record of event +id+, or nil.
+      def compact_slot(id)
+        slots = @compact_slots
+        at = id * 2
+        return nil if id < 0 || at + 1 >= slots.bytesize
+        s = cu16(slots, at)
+        s == 0 ? nil : s - 1
+      end
+
+      # The record event +id+ had before the running #rebuild_events_preserving_positions, or nil.
+      def old_compact_slot(id)
+        slots = @old_compact_slots
+        return nil unless slots
+        at = id * 2
+        return nil if id < 0 || at + 1 >= slots.bytesize
+        s = cu16(slots, at)
+        s == 0 ? nil : s - 1
+      end
+
+      # Append event +id+'s record when its page and the state carried over from +old+ allow one; false otherwise.
+      def compact_event(id, ev, page, page_number, old, carry)
+        return false unless page_move_type(page) == Game::MoveType::STATIONARY
+        trigger = page_trigger(page)
+        return false unless trigger == TRIGGER_ACTION || trigger == TRIGGER_PLAYER_TOUCH ||
+                            trigger == TRIGGER_EVENT_TOUCH
+        anim_type = page_anim_type(page)
+        return false if Game::EventGraphic.continuous?(anim_type)
+        name = page_charset_name(page)
+        index = page_charset_index(page)
+        if old
+          oc = old.char
+          return false if oc.through || oc.facing_locked || oc.animation_stopped || oc.transparency != 0
+          # #carry_event_state keeps the old graphic on the same page
+          return false if old.page_number == page_number && (oc.graphic_name != name || oc.graphic_index != index)
+        end
+        build_dir = Game::EventGraphic.numpad_direction(page_direction(page))
+        x, y = ev[:x], ev[:y]
+        if (saved = @state.map_event_positions[id])
+          x, y = saved[0], saved[1]
+          build_dir = saved[2] if saved[2]
+        end
+        dir = build_dir
+        if old
+          x = old.char.x
+          y = old.char.y
+          dir = old.char.direction
+        elsif carry && (s = old_compact_slot(id))
+          b = s * CREC
+          oc = @old_compact
+          x = cu16(oc, b + C_X)
+          y = cu16(oc, b + C_Y)
+          dir = oc.getbyte(b + C_DIR) & 15
+        end
+        layer = page_layer(page)
+        pattern = page_pattern(page)
+        return false unless compact_u16?(id) && compact_u16?(x) && compact_u16?(y) && compact_u16?(page_number) &&
+                            compact_u16?(index) && dir.is_a?(Integer) && dir >= 0 && dir < 16 &&
+                            build_dir.is_a?(Integer) && build_dir >= 0 && build_dir < 16 &&
+                            layer >= 0 && layer <= CF_LAYER && anim_type >= 0 && anim_type < 16
+        name_slot = 0
+        if name
+          names = @compact_names
+          i = names.index(name)
+          unless i
+            return false if names.size >= 255
+            i = names.size
+            names.push(name)
+          end
+          name_slot = i + 1
+        end
+        flags = layer
+        flags |= CF_OVERLAP if page_overlap_forbidden(page)
+        flags |= CF_TRANSLUCENT if page_translucent(page)
+        rec = "\0" * CREC
+        set_cu16(rec, 0, id)
+        set_cu16(rec, C_X, x)
+        set_cu16(rec, C_Y, y)
+        set_cu16(rec, C_PAGE, page_number)
+        set_cu16(rec, C_INDEX, index)
+        rec.setbyte(C_DIR, dir | (build_dir << 4))
+        rec.setbyte(C_FLAGS, flags)
+        rec.setbyte(C_TRIGGER, trigger)
+        rec.setbyte(C_ANIM, anim_type | (pattern << 4))
+        rec.setbyte(C_NAME, name_slot)
+        @compact << rec
+        true
+      end
+
+      def compact_u16?(v)
+        v.is_a?(Integer) && v >= 0 && v <= 0xffff
+      end
+
+      # Sort the records #compact_event appended (in id order) by (y, x, id), and index them by id.
+      def sort_compact_events
+        src = @compact
+        n = src.bytesize / CREC
+        return if n == 0
+        order = Array.new(n) { |i| i }
+        order.sort! do |a, b|
+          ab = a * CREC
+          bb = b * CREC
+          ay = cu16(src, ab + C_Y)
+          by = cu16(src, bb + C_Y)
+          if ay != by
+            ay <=> by
+          else
+            ax = cu16(src, ab + C_X)
+            bx = cu16(src, bb + C_X)
+            ax != bx ? ax <=> bx : a <=> b # appended in id order
+          end
+        end
+        out = String.new
+        max_id = 0
+        order.each do |i|
+          out << src.byteslice(i * CREC, CREC)
+          id = cu16(src, i * CREC)
+          max_id = id if id > max_id
+        end
+        slots = "\0" * ((max_id + 1) * 2)
+        s = 0
+        while s < n
+          set_cu16(slots, cu16(out, s * CREC) * 2, s + 1)
+          s += 1
+        end
+        @compact = out
+        @compact_slots = slots
+        @compact_live = n
+      end
+
+      # The first record on tile (x, y), or nil.
+      def compact_first_at(x, y)
+        c = @compact
+        n = c.bytesize / CREC
+        lo = 0
+        hi = n
+        while lo < hi
+          mid = (lo + hi) / 2
+          b = mid * CREC
+          ry = cu16(c, b + C_Y)
+          if ry < y || (ry == y && cu16(c, b + C_X) < x)
+            lo = mid + 1
+          else
+            hi = mid
+          end
+        end
+        return nil if lo >= n
+        b = lo * CREC
+        cu16(c, b + C_Y) == y && cu16(c, b + C_X) == x ? lo : nil
+      end
+
+      # The record that is @event_tiles' one event on (x, y) (CF_WINNER), or nil.
+      def compact_winner_at(x, y)
+        return nil if @compact_live == 0
+        s = compact_first_at(x, y)
+        return nil unless s
+        c = @compact
+        n = c.bytesize / CREC
+        while s < n
+          b = s * CREC
+          break unless cu16(c, b + C_Y) == y && cu16(c, b + C_X) == x
+          f = c.getbyte(b + C_FLAGS)
+          return s if f & CF_WINNER != 0 && f & CF_GONE == 0
+          s += 1
+        end
+        nil
+      end
+
+      # Clear CF_WINNER on every record on (x, y); with +slot+, set it on that one.
+      def compact_set_winner(x, y, slot)
+        s = compact_first_at(x, y)
+        c = @compact
+        n = c.bytesize / CREC
+        while s && s < n
+          b = s * CREC
+          break unless cu16(c, b + C_Y) == y && cu16(c, b + C_X) == x
+          f = c.getbyte(b + C_FLAGS) & ~CF_WINNER
+          f |= CF_WINNER if s == slot
+          c.setbyte(b + C_FLAGS, f)
+          s += 1
+        end
+      end
+
+      # Whether a record on (x, y) blocks: with +mode+ BLOCK_LAYER one on +layer+, BLOCK_OVERLAP also one whose page
+      # forbids overlap, BLOCK_ANY any. A record's character is never `through` (see #compact_event).
+      BLOCK_LAYER = 0
+      BLOCK_OVERLAP = 1
+      BLOCK_ANY = 2
+      # #char_passable?'s blocker rule as a #compact_blocks? mode.
+      def compact_block_mode(character, hero)
+        return BLOCK_LAYER if hero
+        character.overlap_forbidden ? BLOCK_ANY : BLOCK_OVERLAP
+      end
+
+      def compact_blocks?(x, y, layer, mode)
+        return false if @compact_live == 0
+        s = compact_first_at(x, y)
+        return false unless s
+        c = @compact
+        n = c.bytesize / CREC
+        while s < n
+          b = s * CREC
+          break unless cu16(c, b + C_Y) == y && cu16(c, b + C_X) == x
+          f = c.getbyte(b + C_FLAGS)
+          if f & CF_GONE == 0
+            return true if mode == BLOCK_ANY || (f & CF_LAYER) == layer ||
+                           (mode == BLOCK_OVERLAP && f & CF_OVERLAP != 0)
+          end
+          s += 1
+        end
+        false
+      end
+
+      # Event +id+'s MapEventState, expanding its record when it is compact; nil when it is not live.
+      def live_event(id)
+        i = 0
+        evs = @events
+        n = evs.size
+        while i < n
+          e = evs[i]
+          return e if e.id == id
+          i += 1
+        end
+        s = compact_slot(id)
+        s ? expand_compact(s) : nil
+      end
+
+      # Turn record +slot+ into the MapEventState #build_events would have kept for it, in its place in @events
+      # (id order) and in the tile indexes.
+      def expand_compact(slot)
+        c = @compact
+        b = slot * CREC
+        id = cu16(c, b)
+        page_number = cu16(c, b + C_PAGE)
+        x = cu16(c, b + C_X)
+        y = cu16(c, b + C_Y)
+        dirs = c.getbyte(b + C_DIR)
+        e = build_event_at(id, event_page(id, page_number), page_number, x, y, dirs >> 4, false)
+        e.char.direction = dirs & 15
+        f = c.getbyte(b + C_FLAGS)
+        c.setbyte(b + C_FLAGS, (f & ~CF_WINNER) | CF_GONE)
+        set_cu16(@compact_slots, id * 2, 0)
+        @compact_live -= 1
+        @compact_revision += 1
+        evs = @events
+        i = 0
+        i += 1 while i < evs.size && evs[i].id < id
+        evs.insert(i, e)
+        k = tile_key(x, y)
+        @event_tiles[k] = e if f & CF_WINNER != 0
+        (@event_tiles_by_pos[k] ||= []) << e
+        e
+      end
+
+      # Every live event, compact ones expanded.
+      def expand_compact_events
+        n = compact_count
+        s = 0
+        while s < n
+          expand_compact(s) if @compact.getbyte(s * CREC + C_FLAGS) & CF_GONE == 0
+          s += 1
+        end
+        @events
+      end
+
+      # Carry a compact record's state into its rebuilt MapEventState, as #carry_event_state does: a record's
+      # character carries only its tile and facing (#compact_event).
+      def carry_compact_state(slot, e)
+        c = @old_compact
+        b = slot * CREC
+        ch = e.char
+        ch.x = cu16(c, b + C_X)
+        ch.y = cu16(c, b + C_Y)
+        ch.direction = c.getbyte(b + C_DIR) & 15
       end
 
       # Read an optional event-page field through a guard that logs (rather than
@@ -2999,7 +3410,18 @@ class RPG2k
 
       # The event currently standing on tile (x, y), or nil.
       def event_at(x, y)
-        @event_tiles[tile_key(x, y)]
+        e = @event_tiles[tile_key(x, y)]
+        return e if e
+        s = compact_winner_at(x, y)
+        s ? expand_compact(s) : nil
+      end
+
+      # #event_at's event's trigger, without expanding a compact one; nil for none.
+      def event_trigger_at(x, y)
+        e = @event_tiles[tile_key(x, y)]
+        return e.trigger if e
+        s = compact_winner_at(x, y)
+        s ? @compact.getbyte(s * CREC + C_TRIGGER) : nil
       end
 
       # Turn `ev` to face the player and run its command list. `by_decision_key`
@@ -3256,7 +3678,8 @@ class RPG2k
       # disembarking here. Only a same-layer, non-Through event still does.
       def ship_disembark_passable?(x, y, dir)
         return false unless @map.in_bounds?(x, y)
-        return false if blockers_at(x, y).any? { |b| b.layer == LAYER_SAME && !b.char.through }
+        return false if blockers_at(x, y).any? { |b| b.layer == LAYER_SAME && !b.char.through } ||
+                        compact_blocks?(x, y, LAYER_SAME, BLOCK_LAYER)
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
                                  Game::Character::TURN_180[dir] || dir)
@@ -3287,7 +3710,7 @@ class RPG2k
       # bare fixture) is landable.
       def airship_landable?(x, y)
         return false unless @map.in_bounds?(x, y)
-        return false if blockers_at(x, y).any?
+        return false if blockers_at(x, y).any? || compact_blocks?(x, y, nil, BLOCK_ANY)
         # A Boat/Ship parked on the ground blocks a landing too, matching
         # a reference implementation's own airship-landing check, which
         # loops over Boat and Ship there (NOT
@@ -3752,7 +4175,8 @@ class RPG2k
           return true if row.nil?
           return row[:airship_pass] ? true : false
         end
-        return false if blockers_at(x, y).any? { |b| !b.char.through && b.layer == LAYER_SAME }
+        return false if blockers_at(x, y).any? { |b| !b.char.through && b.layer == LAYER_SAME } ||
+                        compact_blocks?(x, y, LAYER_SAME, BLOCK_LAYER)
         # A moving Boat/Ship also collides with a *different* parked
         # Boat/Ship, and with a grounded Airship -- ported from a reference
         # implementation's own movement-collision check (NOT independently
@@ -4309,13 +4733,18 @@ class RPG2k
             next
           end
           page_number = select_page_number(conds)
-          page = page_number && event_page(id, page_number)
           unless live
             live = {}
             @events.each { |ev| live[ev.id] = ev }
           end
           e = live[id]
-          changed = true unless page.equal?(e && e.page)
+          # #event_page keeps one record per page number this visit, so the number stands for the page.
+          if e
+            changed = true unless page_number == e.page_number
+          else
+            s = compact_slot(id)
+            changed = true unless page_number == (s ? cu16(@compact, s * CREC + C_PAGE) : nil)
+          end
         end
         sw.clear_dirty
         va.clear_dirty
@@ -4407,12 +4836,12 @@ class RPG2k
         @events.each { |e| placed[e.id] = e }
         # false: this is a live, in-place page reselection, not a save/load
         # restore -- see #build_event's own comment on `restore_route_index`.
-        build_events(restore_route_index: false)
-        @events.each do |e|
-          old = placed[e.id]
-          carry_event_state(old, e) if old
-        end
-        rebuild_event_tiles
+        # #build_live_event carries each old event's state over, from a MapEventState or a compact record.
+        @old_compact = @compact
+        @old_compact_slots = @compact_slots
+        build_events(restore_route_index: false, placed: placed)
+        @old_compact = nil
+        @old_compact_slots = nil
         # This is an in-place page reselection, not a map change -- a map
         # event's own Parallel Process id still means the same thing before
         # and after, so a still-running one whose own page did not change
@@ -4420,7 +4849,7 @@ class RPG2k
         build_parallels(preserve_map_events: true)
         # The event the foreground interpreter is running may have just been
         # rebuilt; re-point it so "this event" still reaches the live character.
-        @active_event = @events.find { |e| e.id == @active_event.id } if @active_event
+        @active_event = live_event(@active_event.id) if @active_event
       end
 
       # #rebuild_events_preserving_positions for one event: what +e+, rebuilt for the same id, keeps of +old+.
@@ -4772,7 +5201,7 @@ class RPG2k
           flash[:vehicle] = true
           flash
         else
-          ev = @events.find { |e| e.id == r[:target] }
+          ev = live_event(r[:target])
           ev ? (ev.flash = flash) : nil
         end
       end
@@ -5035,7 +5464,7 @@ class RPG2k
             force_vehicle_route(type, route, r[:frequency])
           end
         else
-          ev = @events.find { |e| e.id == r[:target] }
+          ev = live_event(r[:target])
           if ev
             force_event_route(ev, route, r[:frequency])
           elsif (@map.unit[:events] || {})[r[:target]]
@@ -5121,6 +5550,8 @@ class RPG2k
           ev = @events.find { |e| e.id == target }
           if ev
             [ev.char.x, ev.char.y]
+          elsif (s = compact_slot(target))
+            [cu16(@compact, s * CREC + C_X), cu16(@compact, s * CREC + C_Y)]
           else
             pos = @event_last_position[target]
             pos && [pos[0], pos[1]]
@@ -5160,7 +5591,7 @@ class RPG2k
           move_vehicle_to(type, x, y)
           @state.vehicle(type).direction = dir if dir && dir > 0
         else
-          ev = @events.find { |e| e.id == target }
+          ev = live_event(target)
           if ev
             move_event_to(ev, x, y)
             ev.char.face!(dir) if dir && dir > 0
@@ -5625,6 +6056,7 @@ class RPG2k
           !b.char.through && (b.layer == character.layer ||
             (!hero && (character.overlap_forbidden || b.overlap_forbidden)))
         end
+        return false if compact_blocks?(nx, ny, character.layer, compact_block_mode(character, hero))
         return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(character.x, character.y),
@@ -5661,6 +6093,7 @@ class RPG2k
           !b.char.through && (b.layer == character.layer ||
             (!hero && (character.overlap_forbidden || b.overlap_forbidden)))
         end
+        return false if compact_blocks?(x, y, character.layer, compact_block_mode(character, hero))
         return false if vehicle_blocks?(x, y, block_airship: !hero)
         return true if @chipset.nil?
         @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
@@ -5701,13 +6134,17 @@ class RPG2k
       def event_id_at(x, y)
         best = 0
         ev = @event_tiles[tile_key(x, y)]
-        best = ev.id if ev
+        if ev
+          best = ev.id
+        elsif (s = compact_winner_at(x, y))
+          best = cu16(@compact, s * CREC)
+        end
         @erased_event_positions.each do |id, tile|
           best = id if tile == [x, y] && id > best
         end
         live_ids = @events.each_with_object({}) { |e, h| h[e.id] = true }
         @event_last_position.each do |id, pos|
-          next if live_ids[id] || @erased_events[id]
+          next if live_ids[id] || compact_slot(id) || @erased_events[id]
           best = id if pos[0] == x && pos[1] == y && id > best
         end
         best
@@ -5741,6 +6178,11 @@ class RPG2k
         if ev
           c = ev.char
           return { x: c.x, y: c.y, direction: c.direction }
+        end
+        if (s = compact_slot(id))
+          b = s * CREC
+          return { x: cu16(@compact, b + C_X), y: cu16(@compact, b + C_Y),
+                   direction: @compact.getbyte(b + C_DIR) & 15 }
         end
         pos = @event_last_position[id]
         pos && { x: pos[0], y: pos[1], direction: pos[2] }
@@ -8355,7 +8797,7 @@ class RPG2k
         when 0, MOVE_TARGET_THIS
           !@active_event.nil?
         else
-          @events.any? { |e| e.id == target }
+          @events.any? { |e| e.id == target } || !compact_slot(target).nil?
         end
       end
 
@@ -8618,7 +9060,7 @@ class RPG2k
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]
         else
-          @events.find { |e| e.id == target }
+          live_event(target)
         end
       end
 
@@ -8733,7 +9175,7 @@ class RPG2k
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           vehicle_pixel(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT])
         else
-          ev = @events.find { |e| e.id == target }
+          ev = live_event(target)
           ev ? event_pixel(ev) : player_pixel
         end
       end
@@ -10773,8 +11215,7 @@ class RPG2k
         # see #touch_trigger?'s comment), and while standing there the
         # wandering-monster roll is suppressed for that step, same as
         # flying or a forced-route step above/below.
-        ev = event_at(@state.x, @state.y)
-        return if ev && ev.trigger == TRIGGER_PLAYER_TOUCH
+        return if event_trigger_at(@state.x, @state.y) == TRIGGER_PLAYER_TOUCH
         steps = current_encounter_steps
         if steps <= 0
           @state.encounter_total = 0
@@ -10877,7 +11318,8 @@ class RPG2k
         # blocks the party) must let the hero walk straight through it,
         # matching `#vehicle_passable?`'s own already-correct `!b[:char].
         # through` idiom just above.
-        return false if blockers_at(x, y).any? { |b| b.layer == LAYER_SAME && !b.char.through }
+        return false if blockers_at(x, y).any? { |b| b.layer == LAYER_SAME && !b.char.through } ||
+                        compact_blocks?(x, y, LAYER_SAME, BLOCK_LAYER)
         # An unridden boat/ship blocks the hero on foot exactly like a
         # same-layer event would (see #vehicle_blocks?); an unridden airship
         # never does, on foot or otherwise (block_airship: false — the hero
@@ -10950,7 +11392,7 @@ class RPG2k
           elsif ref >= MOVE_TARGET_BOAT && ref <= MOVE_TARGET_AIRSHIP
             vehicle_pixel(Game::Vehicle::TYPES[ref - MOVE_TARGET_BOAT])
           else
-            e = @events.find { |ev| ev.id == ref }
+            e = live_event(ref)
             e && event_pixel(e)
           end
         return nil unless pixel
@@ -11689,6 +12131,11 @@ class RPG2k
       # every frame by the global flash check below -- its tone changes per
       # frame, cheaper to over-draw than to fingerprint.
       def events_dirty?
+        # A compact record has no signature: any change to the records redraws.
+        unless @drawn_compact_revision == @compact_revision
+          store_event_draw_sigs
+          return true
+        end
         return true if @state.player_flash || @events.any? { |e| e.flash }
         needed = @events.size * EVENT_DRAW_SIG_FIELDS
         unless @event_draw_sigs && @event_draw_sigs.size == needed
@@ -11862,11 +12309,63 @@ class RPG2k
         ordered = event_draw_order
         i = 0
         size = ordered.size
-        while i < size
-          draw_event ordered[i], cam_x, cam_y
-          i += 1
+        # The compact records are already in (y, x, id) order: merge them in.
+        c = @compact
+        n = c.bytesize / CREC
+        s = 0
+        while i < size || s < n
+          if s < n && c.getbyte(s * CREC + C_FLAGS) & CF_GONE != 0
+            s += 1
+          elsif s < n && (i >= size || compact_drawn_before?(s, ordered[i]))
+            draw_event compact_view(s), cam_x, cam_y
+            s += 1
+          else
+            draw_event ordered[i], cam_x, cam_y
+            i += 1
+          end
         end
+        @drawn_compact_revision = @compact_revision
         ordered
+      end
+
+      # Whether record +slot+ sorts before +e+ in #event_draw_order.
+      def compact_drawn_before?(slot, e)
+        b = slot * CREC
+        y = cu16(@compact, b + C_Y)
+        ey = e.char.y
+        return y < ey unless y == ey
+        x = cu16(@compact, b + C_X)
+        ex = e.char.x
+        return x < ex unless x == ex
+        cu16(@compact, b) < e.id
+      end
+
+      # A scratch MapEventState showing record +slot+ as #build_event_at would build it, for #draw_event only: it is
+      # refilled for every record and never kept.
+      def compact_view(slot)
+        v = @compact_view
+        unless v
+          v = @compact_view = MapEventState.new(Game::Character.new)
+          v.move_count = TILE
+        end
+        c = @compact
+        b = slot * CREC
+        v.id = cu16(c, b)
+        f = c.getbyte(b + C_FLAGS)
+        v.layer = f & CF_LAYER
+        v.translucent = f & CF_TRANSLUCENT != 0
+        anim = c.getbyte(b + C_ANIM)
+        v.anim_type = anim & 15
+        v.base_pattern = anim >> 4
+        dirs = c.getbyte(b + C_DIR)
+        v.base_dir = dirs >> 4
+        ch = v.char
+        ch.x = cu16(c, b + C_X)
+        ch.y = cu16(c, b + C_Y)
+        ch.direction = dirs & 15
+        name_slot = c.getbyte(b + C_NAME)
+        ch.set_graphic(name_slot == 0 ? nil : @compact_names[name_slot - 1], cu16(c, b + C_INDEX))
+        v
       end
 
       # @events sorted by (y, x, id), kept from the last frame and re-sorted by
