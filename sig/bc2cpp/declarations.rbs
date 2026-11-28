@@ -3280,8 +3280,6 @@ class RPG2k::Scene::Map::MapEventState
   def page_number=: (untyped) -> untyped
   def trigger: () -> untyped
   def trigger=: (untyped) -> untyped
-  def commands: () -> untyped
-  def commands=: (untyped) -> untyped
   def guarded: () -> untyped
   def guarded=: (untyped) -> untyped
   def move_type: () -> untyped
@@ -3326,6 +3324,7 @@ class RPG2k::Scene::Map::MapEventState
   def forced_freq=: (untyped) -> untyped
   def crossed_hero_this_frame: () -> untyped
   def crossed_hero_this_frame=: (untyped) -> untyped
+  def commands: () -> untyped
   def initialize: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg
@@ -7304,8 +7303,6 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def page_charset_index: (untyped) -> Integer
   def page_charset_name: (untyped) -> untyped
-  %a{bc2cpp:hint}
-  def page_commands: (untyped) -> LCF::EventList
   def page_condition_ids: (untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def page_direction: (untyped) -> Integer
