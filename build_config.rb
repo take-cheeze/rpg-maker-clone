@@ -1148,6 +1148,8 @@ if wio
       # (platformio.ini's `-DWIO_TERMINAL`); this rake-driven libmruby.a needs
       # its own copy since it never sees that build's flags.
       t.defines << 'WIO_TERMINAL'
+      # GFX_BACKEND: WIO_GFX=own draws through mruby-rgss/src/gfx_own.cxx instead of LVGL, with the same pixels.
+      t.defines << 'RGSS_GFX_OWN' if ENV['WIO_GFX'] == 'own'
       # mrb_ro_data_p (mruby-rgss/src/wio.cxx): a String over flash bytes keeps pointing at them instead of copying.
       # mruby's value.h defines mrb_ro_data_p to FALSE unless MRB_LINK_TIME_RO_DATA_P is set too.
       t.defines << 'MRB_USE_CUSTOM_RO_DATA_P' << 'MRB_LINK_TIME_RO_DATA_P'
@@ -1409,6 +1411,9 @@ if closed
     [conf.cc, conf.cxx].each { |t| t.defines << 'MRB_NO_CLASS_PATH_CACHE' }
     # As the wio build: the classes a linked ROM class graph holds (trace_host.bash BC2CPP_HOST_ROM_GRAPH=1).
     [conf.cc, conf.cxx].each { |t| t.defines << 'MRB_ROM_CLASS_GRAPH' } if rom_class_graph?
+    # GFX_BACKEND: BC2CPP_CLOSED_GFX=own draws as WIO_GFX=own does, so the host sweep's frame hashes can be held to
+    # LVGL's (trace_host.bash picks the display from libmruby.a).
+    conf.cxx.defines << 'RGSS_GFX_OWN' if ENV['BC2CPP_CLOSED_GFX'] == 'own'
     bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
     conf.gem core: 'mruby-bigint' unless wio_integer_model?(conf)

@@ -1,6 +1,6 @@
 // Boot test for the Wio Terminal's closed-world libmruby: it opens the VM,
-// brings up the RGSS/mruby-lcf/mruby-rpg2k gem set, then exercises the LVGL HAL
-// (compiled into libmruby.a, mruby-rgss/src/wio.cxx) and the button scan.
+// brings up the RGSS/mruby-lcf/mruby-rpg2k gem set, then exercises the display
+// HAL (compiled into libmruby.a, mruby-rgss/src/wio.cxx) and the button scan.
 //
 // No game is played yet: the boot only looks for the game's files (the microSD
 // card's game folder, then the QSPI game image; wio_game_rom.cxx) and shows
@@ -17,7 +17,7 @@
 // same order.
 
 #include <Arduino.h>
-#include <lvgl.h>
+#include <TFT_eSPI.h>
 
 #include <mruby.h>
 #include <mruby/error.h>
@@ -53,7 +53,7 @@ constexpr uint32_t kResultFailLayout = 0xBAD20004;
 char g_exc_class[64] = {0};
 
 // RUBY_ENTRY: a Ruby raise is a C++ throw (MRB_USE_CXX_EXCEPTION), and the
-// Arduino core, LVGL and this file have no handler for it, so one that left
+// Arduino core and this file have no handler for it, so one that left
 // libmruby here would end in std::terminate. Every call into mruby from
 // setup() runs as an mrb_protect_error body; build_src_flags gives this file
 // unwind tables so the throw can pass through the bodies to that catch.
@@ -116,32 +116,22 @@ mrb_value full_gc(mrb_state* mrb, void*) {
   return mrb_nil_value();
 }
 
-lv_obj_t* g_status_label = nullptr;
+// The status lines, centred on the 320x240 panel.
+constexpr int32_t kMidX = 160;
+constexpr int32_t kTextPad = 300;
 
 void build_ui(const char* status) {
-  lv_obj_t* scr = lv_screen_active();
-  lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
-
-  lv_obj_t* title = lv_label_create(scr);
-  lv_label_set_text(title, "rpg2k on Wio Terminal\nreal mruby+RGSS boot");
-  lv_obj_set_style_text_color(title, lv_color_white(), 0);
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-
-  g_status_label = lv_label_create(scr);
-  lv_label_set_text(g_status_label, status);
-  lv_obj_set_style_text_color(g_status_label,
-                              g_result == kResultPass
-                                  ? lv_palette_main(LV_PALETTE_GREEN)
-                                  : lv_palette_main(LV_PALETTE_RED),
-                              0);
-  lv_obj_align(g_status_label, LV_ALIGN_CENTER, 0, 20);
+  wio_display_text(kMidX, 10, TFT_WHITE, 0, "rpg2k on Wio Terminal");
+  wio_display_text(kMidX, 20, TFT_WHITE, 0, "real mruby+RGSS boot");
+  wio_display_text(kMidX, 136, g_result == kResultPass ? TFT_GREEN : TFT_RED,
+                   kTextPad, status);
 }
 
 // Names for the RGSS key ids, indexed by WioKey, for the on-screen echo.
 const char* const kKeyNames[WIO_INPUT_KEY_COUNT] = {
     "Up", "Down", "Left", "Right", "A", "B", "C"};
 
-lv_obj_t* g_keys_label = nullptr;
+bool g_keys_shown = false;
 
 void show_keys(uint32_t mask) {
   static uint32_t last = 0xffffffffu;
@@ -162,15 +152,14 @@ void show_keys(uint32_t mask) {
   }
   if (!any)
     snprintf(buf + n, sizeof(buf) - n, " (none)");
-  lv_label_set_text(g_keys_label, buf);
+  wio_display_text(kMidX, 166, TFT_ORANGE, kTextPad, buf);
 }
 
 }  // namespace
 
 void setup(void) {
   wio_qspi_xip_require();
-  lv_init();
-  wio_display_create(320, 240);
+  wio_display_begin(320, 240);
   wio_input_init();
 
   if (rgss_wio_mrb_state_size() != sizeof(mrb_state)) {
@@ -217,8 +206,8 @@ void setup(void) {
   // happens to cross its threshold sometime during the main loop. A single
   // full sweep here, before `loop()` (Arduino's own main routine) starts,
   // reclaims it up front instead -- cheap (a one-time boot cost, not a
-  // per-frame one) and returned to the same newlib heap
-  // LVGL's own allocations now draw from too.
+  // per-frame one) and returned to the same newlib heap the display's
+  // allocations draw from too.
   run_step(M, full_gc);
   record_exc(M, "mrb_full_gc");
 #ifdef MRB_CLASS_SHRINK
@@ -227,7 +216,7 @@ void setup(void) {
 #endif
 
   g_result = kResultPass;
-  build_ui("mruby+RGSS+LVGL: OK");
+  build_ui("mruby+RGSS: OK");
 
 #if WIO_QSPI_XIP
   const char* game = wio_game_files_begin();
@@ -235,21 +224,12 @@ void setup(void) {
   // The QSPI window is never opened: there is no game image to look at.
   const char* game = wio_sd_state_text(wio_sd_begin());
 #endif
-  lv_obj_t* game_label = lv_label_create(lv_screen_active());
-  lv_label_set_text(game_label, game);
-  lv_obj_set_style_text_color(game_label, lv_color_white(), 0);
-  lv_obj_align(game_label, LV_ALIGN_CENTER, 0, 80);
-
-  g_keys_label = lv_label_create(lv_screen_active());
-  lv_label_set_text(g_keys_label, "Keys: (none)");
-  lv_obj_set_style_text_color(g_keys_label, lv_palette_main(LV_PALETTE_AMBER),
-                              0);
-  lv_obj_align(g_keys_label, LV_ALIGN_CENTER, 0, 50);
+  wio_display_text(kMidX, 196, TFT_WHITE, kTextPad, game);
+  g_keys_shown = true;
 }
 
 void loop(void) {
-  if (g_keys_label)
+  if (g_keys_shown)
     show_keys(wio_input_scan());
-  lv_timer_handler();
   delay(5);
 }
