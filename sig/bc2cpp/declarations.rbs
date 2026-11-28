@@ -3248,6 +3248,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def tile_cell_id: (untyped) -> untyped
   def tile_cells_valid?: (untyped, untyped) -> untyped
   def tile_color: (untyped) -> untyped
+  def tile_key: (untyped, untyped) -> untyped
   def troop_ids: (untyped) -> untyped
   def try_action_trigger: () -> untyped
   def try_board_vehicle: () -> untyped

@@ -4371,8 +4371,7 @@ check 'Erase Event removes the running event from the map' do
   5.times { scene.update }
   evs = scene.instance_variable_get(:@events)
   ok evs.none? { |e| e.id == 1 }, 'the event is gone from the runtime list'
-  tiles = scene.instance_variable_get(:@event_tiles)
-  ok !tiles[[2, 2]], 'its occupied tile is cleared (no marker, no collision)'
+  ok !scene.send(:event_at, 2, 2), 'its occupied tile is cleared (no marker, no collision)'
 end
 
 check "an event's occupied tile updates the instant it steps, before the " \
@@ -4386,8 +4385,7 @@ check "an event's occupied tile updates the instant it steps, before the " \
             route: move_route([R::MOVE_RIGHT], repeat: false, skippable: false),
             frequency: 8)
   scene = new_scene({ 1 => event(2, 2, pg) }, player: [5, 5])
-  tiles = scene.instance_variable_get(:@event_tiles)
-  ok tiles[[2, 2]] && tiles[[2, 2]].id == 1, 'starts on its own tile'
+  ok scene.send(:event_at, 2, 2) && scene.send(:event_at, 2, 2).id == 1, 'starts on its own tile'
 
   # Advance to the first frame the character's logical tile reads (3, 2).
   ev = nil
@@ -4399,11 +4397,10 @@ check "an event's occupied tile updates the instant it steps, before the " \
   eq [3, 2], [ev.char.x, ev.char.y], 'the character stepped to (3, 2)'
   ok ev.moving, 'and the sprite is still easing toward it, not there yet'
 
-  tiles = scene.instance_variable_get(:@event_tiles)
-  ok tiles[[2, 2]].nil?,
+  ok scene.send(:event_at, 2, 2).nil?,
      "the vacated tile's hit-test cleared the instant the step committed, " \
      'even though the sprite is still drawn overlapping it'
-  ok tiles[[3, 2]] && tiles[[3, 2]].id == 1,
+  ok scene.send(:event_at, 3, 2) && scene.send(:event_at, 3, 2).id == 1,
      'and the destination tile is claimed for hit-testing immediately too'
 end
 
@@ -4590,9 +4587,8 @@ check 'Change Event Location snaps another event to a tile' do
   5.times { scene.update }
   c = chars(scene)[2]
   eq [5, 3], [c.x, c.y], 'the event was moved to the target tile'
-  tiles = scene.instance_variable_get(:@event_tiles)
-  ok tiles[[5, 3]] && tiles[[5, 3]].id == 2, 'the occupied-tile cache followed'
-  ok !tiles[[1, 1]], 'its old tile was released'
+  ok scene.send(:event_at, 5, 3) && scene.send(:event_at, 5, 3).id == 2, 'the occupied-tile cache followed'
+  ok !scene.send(:event_at, 1, 1), 'its old tile was released'
 end
 
 check "Change Event Location's RPG2003 facing sub-parameter snaps another " \
