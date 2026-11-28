@@ -3236,6 +3236,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def reload_windowskin: () -> untyped
   def reset_compact_events: () -> untyped
   def reset_fade_bitmap: () -> untyped
+  def reset_page_conditions: () -> untyped
   def resolve_key_input: (untyped) -> untyped
   def restore_pre_battle_bgm: () -> untyped
   def restore_pre_inn_bgm: () -> untyped
@@ -7333,7 +7334,7 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def page_charset_index: (untyped) -> Integer
   def page_charset_name: (untyped) -> untyped
-  def page_condition_ids: (untyped, untyped) -> untyped
+  def page_condition_ids: (untyped) -> untyped
   %a{bc2cpp:hint}
   def page_direction: (untyped) -> Integer
   def page_guarded: (untyped) -> untyped
