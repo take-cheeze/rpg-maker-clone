@@ -1159,6 +1159,9 @@ if wio
       # The boot's classes can come from a ROM class graph the firmware links (scripts/wio/rom_graph.bash): const in
       # flash, with their changing parts in RAM. Without one linked, every class is on the heap as before.
       t.defines << 'MRB_ROM_CLASS_GRAPH' if rom_class_graph?
+      # ROM_CLASS_CELLS (bc2cpp's program_class_slots.rb): the compiled gems' class slots are cells the link makes,
+      # const for a class the linked graph holds (scripts/wio/rom_graph_cells.rb).
+      t.defines << 'BC2CPP_ROM_CLASS_CELLS' if rom_class_graph?
       # mrbc's own `-g` is stripped (Ruby-level
       # line-number/local-variable debug tables baked into compiled
       # bytecode); enable_debug's `-g3` on this same cc/cxx loop is its

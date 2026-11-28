@@ -1707,8 +1707,12 @@ class RPG2k
             next if @erased_events[id]
             page_number = select_page_number(@condition_lists[list])
             next unless page_number
-            ev = evs.peek(id)
-            @event_last_position[id] ||= [ev[:x], ev[:y], nil]
+            # The row is read only when something needs it: an unchanged compact record does not.
+            ev = nil
+            unless @event_last_position[id]
+              ev = evs.peek(id)
+              @event_last_position[id] = [ev[:x], ev[:y], nil]
+            end
             build_live_event(id, ev, page_number, restore_route_index, placed)
           end
         else
@@ -1722,10 +1726,12 @@ class RPG2k
             @event_last_position[id] ||= [ev[:x], ev[:y], nil]
             list = table[id] = page_conditions(ev)
             next if @erased_events[id] # an Erase Event lasts the whole visit
-            page_number = select_page_number(@condition_lists[list])
+            conds = @condition_lists[list]
+            page_number = select_page_number(conds)
             next unless page_number
-            build_live_event(id, ev, page_number, restore_route_index, placed)
+            build_live_event(id, ev, page_number, restore_route_index, placed, peeked_page(conds, page_number))
           end
+          @peeked_pages.clear
         end
         sort_compact_events
         rebuild_event_tiles
@@ -1739,12 +1745,15 @@ class RPG2k
       end
 
       # Put event +id+ on page +page_number+: a COMPACT_EVENTS record when the page and the state carried over from
-      # +placed+ (#rebuild_events_preserving_positions) allow it, a full MapEventState otherwise.
-      def build_live_event(id, ev, page_number, restore_route_index, placed)
+      # +placed+ (#rebuild_events_preserving_positions) allow it, a full MapEventState otherwise. +ev+, the event's
+      # row, is nil when not read yet.
+      def build_live_event(id, ev, page_number, restore_route_index, placed, peeked = nil)
         old = placed && placed[id]
+        return if placed && old.nil? && copy_compact_record(id, page_number)
+
         pages = (@event_pages ||= {})[id]
         page = pages ? pages[page_number] : nil
-        page ||= ev[:pages].peek(page_number)
+        page ||= peeked || (ev ||= @map.unit[:events].peek(id))[:pages].peek(page_number)
         return if compact_event(id, ev, page, page_number, old, !placed.nil?)
 
         e = build_event(id, ev, keep_event_page(id, page_number, page), page_number,
@@ -1783,8 +1792,12 @@ class RPG2k
         @condition_ids = []
       end
 
-      # The @condition_lists index of +ev+'s page list.
+      # The @condition_lists index of +ev+'s page list. The pages it read stay in @peeked_pages, in list order,
+      # until the next call: #build_events takes the selected one from there (#peeked_page) instead of reading it
+      # again.
       def page_conditions(ev)
+        peeked = (@peeked_pages ||= [])
+        peeked.clear
         list = []
         key = String.new
         shareable = true
@@ -1792,17 +1805,24 @@ class RPG2k
         if pages
           shared = @shared_conditions
           pages.each_peek do |page_id, page|
-            cond = page[:condition]
+            # Keyed by the chunk's own bytes, so a repeated condition is decoded once.
+            raw = page.is_a?(LCF::Array1D) ? page.raw_chunk(:condition) : nil
+            cond = raw ? shared[raw] : nil
+            cond ||= page[:condition]
             if cond.is_a?(LCF::Array1D)
-              bytes = cond.to_lcf
+              bytes = raw || cond.to_lcf
               cond = (shared[bytes] ||= cond)
-              key << page_id.to_s << ',' << bytes.bytesize.to_s << ',' << bytes
+              # page id, then length + 1 (0 for no condition) and the bytes: built in place, no temporaries
+              LCF.append_ber(key, page_id)
+              LCF.append_ber(key, bytes.bytesize + 1) << bytes
             elsif cond.nil?
-              key << page_id.to_s << ',-,'
+              LCF.append_ber(key, page_id)
+              LCF.append_ber(key, 0)
             else
               shareable = false
             end
             list.push(page_id, cond)
+            peeked.push(page)
           end
         end
         index = shareable ? @condition_list_index[key] : nil
@@ -1813,6 +1833,17 @@ class RPG2k
         lists.push(list)
         @condition_list_index[key] = index if shareable
         index
+      end
+
+      # The page #page_conditions read for page +page_number+ of +conds+, or nil.
+      def peeked_page(conds, page_number)
+        i = 0
+        n = conds.size
+        while i < n
+          return @peeked_pages[i / 2] if conds[i] == page_number
+          i += 2
+        end
+        nil
       end
 
       # The id of the last page in +conds+ (#page_conditions) whose condition holds, as Game::EventPage.select_id
@@ -1832,7 +1863,6 @@ class RPG2k
 
       def build_event(id, ev, page, page_number, restore_route_index: true)
         dir = Game::EventGraphic.numpad_direction(page_direction(page))
-        x, y = ev[:x], ev[:y]
         # A saved wandered position (see #record_map_event_positions) wins over
         # the map's own default placement -- restoring a Save/Continue taken on
         # this same map to wherever the NPC actually stood, not back to its
@@ -1842,6 +1872,9 @@ class RPG2k
         if (saved = @state.map_event_positions[id])
           x, y = saved[0], saved[1]
           dir = saved[2] if saved[2]
+        else
+          ev ||= @map.unit[:events].peek(id)
+          x, y = ev[:x], ev[:y]
         end
         build_event_at(id, page, page_number, x, y, dir, restore_route_index)
       end
@@ -2237,10 +2270,12 @@ class RPG2k
           return false if old.page_number == page_number && (oc.graphic_name != name || oc.graphic_index != index)
         end
         build_dir = Game::EventGraphic.numpad_direction(page_direction(page))
-        x, y = ev[:x], ev[:y]
         if (saved = @state.map_event_positions[id])
           x, y = saved[0], saved[1]
           build_dir = saved[2] if saved[2]
+        else
+          ev ||= @map.unit[:events].peek(id)
+          x, y = ev[:x], ev[:y]
         end
         dir = build_dir
         if old
@@ -2260,17 +2295,8 @@ class RPG2k
                             compact_u16?(index) && dir.is_a?(Integer) && dir >= 0 && dir < 16 &&
                             build_dir.is_a?(Integer) && build_dir >= 0 && build_dir < 16 &&
                             layer >= 0 && layer <= CF_LAYER && anim_type >= 0 && anim_type < 16
-        name_slot = 0
-        if name
-          names = @compact_names
-          i = names.index(name)
-          unless i
-            return false if names.size >= 255
-            i = names.size
-            names.push(name)
-          end
-          name_slot = i + 1
-        end
+        name_slot = compact_name_slot(name)
+        return false unless name_slot
         flags = layer
         flags |= CF_OVERLAP if page_overlap_forbidden(page)
         flags |= CF_TRANSLUCENT if page_translucent(page)
@@ -2285,6 +2311,45 @@ class RPG2k
         rec.setbyte(C_TRIGGER, trigger)
         rec.setbyte(C_ANIM, anim_type | (pattern << 4))
         rec.setbyte(C_NAME, name_slot)
+        @compact << rec
+        true
+      end
+
+      # +name+'s C_NAME byte: its @compact_names index + 1, 0 for nil; nil when the table is full.
+      def compact_name_slot(name)
+        return 0 unless name
+        names = @compact_names
+        i = names.index(name)
+        unless i
+          return nil if names.size >= 255
+          i = names.size
+          names.push(name)
+        end
+        i + 1
+      end
+
+      # #compact_event's record for event +id+ when its old record (#rebuild_events_preserving_positions) is on the
+      # same page, read without the event's row or page: the page and the carried state are the same, so only the
+      # build facing can differ (#compact_event takes it from the saved position).
+      def copy_compact_record(id, page_number)
+        s = old_compact_slot(id)
+        return false unless s
+        oc = @old_compact
+        b = s * CREC
+        return false unless cu16(oc, b + C_PAGE) == page_number
+        rec = oc.byteslice(b, CREC)
+        name_slot = rec.getbyte(C_NAME)
+        if name_slot != 0
+          slot = compact_name_slot(@old_compact_names[name_slot - 1])
+          return false unless slot
+          rec.setbyte(C_NAME, slot)
+        end
+        dirs = rec.getbyte(C_DIR)
+        saved = @state.map_event_positions[id]
+        build_dir = saved && saved[2] ? saved[2] : dirs >> 4
+        return false unless build_dir.is_a?(Integer) && build_dir >= 0 && build_dir < 16
+        rec.setbyte(C_DIR, (dirs & 15) | (build_dir << 4))
+        rec.setbyte(C_FLAGS, rec.getbyte(C_FLAGS) & ~CF_WINNER)
         @compact << rec
         true
       end
@@ -2479,20 +2544,37 @@ class RPG2k
       # Read an optional event-page field through a guard that logs (rather than
       # silently swallowing) any access error before falling back to `default`.
       # A malformed page then degrades a single field instead of taking out the
-      # whole event list, and the failure still surfaces in the log.
-      def page_field(name, default)
-        yield
-      rescue StandardError => e
-        $stderr.puts "[RPG2k] event page field '#{name}' unavailable " \
-                     "(#{e.message}), using #{default.inspect}"
-        default
+      # whole event list, and the failure still surfaces in the log. Each reader
+      # rescues on its own rather than yielding to a shared guard: a block costs
+      # a Proc per read, and an event build reads a dozen fields.
+      def page_field_note(name, default, e)
+        "[RPG2k] event page field '#{name}' unavailable (#{e.message}), using #{default.inspect}"
       end
 
-      def page_trigger(page); page_field(:trigger, 0) { page[:trigger] }; end
+      def page_trigger(page)
+        page[:trigger]
+      rescue StandardError => e
+        $stderr.puts page_field_note(:trigger, 0, e)
+        0
+      end
+
       # The page's stored facing (0..3: up/right/down/left), default down (2).
       # Converted to the runtime numpad convention by build_event.
-      def page_direction(page); page_field(:direction, 2) { d = page[:direction]; (0..3).include?(d) ? d : 2 }; end
-      def page_move_type(page); page_field(:move_type, 0) { page[:move_type] || 0 }; end
+      def page_direction(page)
+        d = page[:direction]
+        d.is_a?(Integer) && d >= 0 && d <= 3 ? d : 2
+      rescue StandardError => e
+        $stderr.puts page_field_note(:direction, 2, e)
+        2
+      end
+
+      def page_move_type(page)
+        page[:move_type] || 0
+      rescue StandardError => e
+        $stderr.puts page_field_note(:move_type, 0, e)
+        0
+      end
+
       # The page's stored Move Speed is real RPG_RT's own 1..6 scale (liblcf
       # default 3, "Normal"); converted to this engine's internal 0..5 scale
       # (real minus 1, see the SLIDE_UNITS comment above) so it lines up with
@@ -2500,16 +2582,77 @@ class RPG2k
       # treated a raw event's Move Speed as one full notch faster than real
       # RPG_RT -- e.g. the default "Normal" (3) walked at the player's own
       # default rate (real 4) instead of the correct half-speed.
-      def page_move_speed(page); page_field(:move_speed, 2) { (page[:move_speed] || 3) - 1 }; end
-      def page_move_frequency(page); page_field(:move_frequency, 3) { page[:move_frequency] || 3 }; end
-      def page_move_route(page); page_field(:move_route, nil) { page[:move_route] }; end
-      def page_charset_name(page); page_field(:charset_name, nil) { page[:charset_name] }; end
-      def page_charset_index(page); page_field(:charset_index, 0) { page[:charset_index] || 0 }; end
-      def page_layer(page); page_field(:layer, 0) { page[:layer] || 0 }; end
-      def page_overlap_forbidden(page); page_field(:overlap_forbidden, false) { page[:overlap_forbidden] ? true : false }; end
-      def page_pattern(page); page_field(:pattern, 1) { p = page[:pattern]; (0..2).include?(p) ? p : 1 }; end
-      def page_anim_type(page); page_field(:anim_type, 0) { page[:animation_type] || 0 }; end
-      def page_translucent(page); page_field(:translucent, false) { page[:translucent] ? true : false }; end
+      def page_move_speed(page)
+        (page[:move_speed] || 3) - 1
+      rescue StandardError => e
+        $stderr.puts page_field_note(:move_speed, 2, e)
+        2
+      end
+
+      def page_move_frequency(page)
+        page[:move_frequency] || 3
+      rescue StandardError => e
+        $stderr.puts page_field_note(:move_frequency, 3, e)
+        3
+      end
+
+      def page_move_route(page)
+        page[:move_route]
+      rescue StandardError => e
+        $stderr.puts page_field_note(:move_route, nil, e)
+        nil
+      end
+
+      def page_charset_name(page)
+        page[:charset_name]
+      rescue StandardError => e
+        $stderr.puts page_field_note(:charset_name, nil, e)
+        nil
+      end
+
+      def page_charset_index(page)
+        page[:charset_index] || 0
+      rescue StandardError => e
+        $stderr.puts page_field_note(:charset_index, 0, e)
+        0
+      end
+
+      def page_layer(page)
+        page[:layer] || 0
+      rescue StandardError => e
+        $stderr.puts page_field_note(:layer, 0, e)
+        0
+      end
+
+      def page_overlap_forbidden(page)
+        page[:overlap_forbidden] ? true : false
+      rescue StandardError => e
+        $stderr.puts page_field_note(:overlap_forbidden, false, e)
+        false
+      end
+
+      def page_pattern(page)
+        p = page[:pattern]
+        p.is_a?(Integer) && p >= 0 && p <= 2 ? p : 1
+      rescue StandardError => e
+        $stderr.puts page_field_note(:pattern, 1, e)
+        1
+      end
+
+      def page_anim_type(page)
+        page[:animation_type] || 0
+      rescue StandardError => e
+        $stderr.puts page_field_note(:anim_type, 0, e)
+        0
+      end
+
+      def page_translucent(page)
+        page[:translucent] ? true : false
+      rescue StandardError => e
+        $stderr.puts page_field_note(:translucent, false, e)
+        false
+      end
+
       # Whether this page gates its own auto-start to one run per map visit (see
       # #start_autostart). No RPG2000/2003 page carries such a field -- a real
       # auto-start gates itself through its page *conditions*, and turning its
@@ -2519,9 +2662,10 @@ class RPG2k
       # bare read because an LCF record answers an unknown field by raising, and
       # this is read once per event per page rebuild.
       def page_guarded(page)
-        page_field(:guarded, false) do
-          page.respond_to?(:guarded) && page.guarded ? true : false
-        end
+        page.respond_to?(:guarded) && page.guarded ? true : false
+      rescue StandardError => e
+        $stderr.puts page_field_note(:guarded, false, e)
+        false
       end
 
       # -- event execution ----------------------------------------------------
@@ -4863,9 +5007,11 @@ class RPG2k
         # #build_live_event carries each old event's state over, from a MapEventState or a compact record.
         @old_compact = @compact
         @old_compact_slots = @compact_slots
+        @old_compact_names = @compact_names
         build_events(restore_route_index: false, placed: placed)
         @old_compact = nil
         @old_compact_slots = nil
+        @old_compact_names = nil
         # This is an in-place page reselection, not a map change -- a map
         # event's own Parallel Process id still means the same thing before
         # and after, so a still-running one whose own page did not change

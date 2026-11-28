@@ -8,8 +8,9 @@
 # probe's graph to that dump, byte for byte.
 #
 # Usage:
-#   scripts/wio/rom_graph.bash lib BUILD_DIR [GRAPH.c]   compile GRAPH.c into BUILD_DIR/wio/lib/rom_graph.o
-#                                                       (no GRAPH.c: none, every class on the heap)
+#   scripts/wio/rom_graph.bash lib BUILD_DIR [GRAPH.c]   compile GRAPH.c, and the class cells its libmruby leaves to
+#                                                       the link, into BUILD_DIR/wio/lib/rom_graph.o (no GRAPH.c:
+#                                                       every class on the heap, every cell in RAM)
 #   scripts/wio/rom_graph.bash probe BUILD_DIR OUT.c     dump the graph under qemu-arm, then boot on it there and
 #                                                       fail unless that boot dumps it again
 #   scripts/wio/rom_graph.bash dump BUILD_DIR GAME_DIR OUT.c
@@ -30,11 +31,26 @@ pio_home="${PLATFORMIO_CORE_DIR:-$HOME/.platformio}"
 toolchain="$pio_home/packages/toolchain-gccarmnoneeabi/bin"
 graph_obj="$build_dir/wio/lib/rom_graph.o"
 
+# ROM_CLASS_CELLS: a libmruby whose compiled gems leave their class cells to the link (bc2cpp's
+# program_class_slots.rb) gets them here, with or without a graph (rom_graph_cells.rb).
+runtime_dir=$build_dir/wio/mrbgems/bc2cpp-runtime
+cells_p() {
+  local f
+  for f in "$runtime_dir"/bc2cpp_pw_classes_*.owners; do [ -e "$f" ] && return 0; done
+  return 1
+}
+
 lib() { # [GRAPH.c]
   rm -f "$graph_obj"
-  if [ -n "${1:-}" ]; then
-    "$toolchain/arm-none-eabi-gcc" -std=gnu99 -Os -c -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
-      -I "$build_dir/wio/include" -I "$root/3rd/mruby/include" "$1" -o "$graph_obj"
+  local src=${1:-}
+  if cells_p; then
+    src=$build_dir/wio/lib/rom_graph_cells.c
+    ruby "$root/scripts/wio/rom_graph_cells.rb" "$runtime_dir" ${1:+"$1"} >"$src"
+  fi
+  if [ -n "$src" ]; then
+    "$toolchain/arm-none-eabi-gcc" -std=gnu99 -Os -ffunction-sections -fdata-sections -c \
+      -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
+      -I "$build_dir/wio/include" -I "$root/3rd/mruby/include" "$src" -o "$graph_obj"
   fi
 }
 
@@ -45,8 +61,8 @@ probe_libs=("$build_dir/wio/lib/libmruby.a" "$build_dir/unialgo/libuni-algo.a" -
 probe_ld=("$toolchain/arm-none-eabi-g++" "${cpu_flags[@]}" -flto=auto -nostartfiles -static -Wl,--gc-sections)
 
 # What the firmware links beside libmruby.a, as stubs: a first link's undefined references (stubs.rb).
-probe_stubs() { # DIR
-  "${probe_ld[@]}" -Wl,--no-demangle "$1/probe.o" "${probe_libs[@]}" -o "$1/unstubbed.elf" >"$1/unstubbed.log" 2>&1 &&
+probe_stubs() { # DIR [OBJ...]
+  "${probe_ld[@]}" -Wl,--no-demangle "$1/probe.o" "${@:2}" "${probe_libs[@]}" -o "$1/unstubbed.elf" >"$1/unstubbed.log" 2>&1 &&
     { echo "rom_graph: the probe links with nothing stubbed" >&2; exit 1; }
   ruby "$root/scripts/wio/rom_graph_probe/stubs.rb" "$1/unstubbed.log" >"$1/stubs.S"
   "$toolchain/arm-none-eabi-gcc" "${cpu_flags[@]}" -c "$1/stubs.S" -o "$1/stubs.o"
@@ -73,8 +89,14 @@ probe() { # OUT.c
   mkdir -p "$dir"
   "$toolchain/arm-none-eabi-gcc" -std=gnu99 -O1 "${cpu_flags[@]}" -I "$build_dir/wio/include" \
     -I "$root/3rd/mruby/include" -I "$root/include" -c "$root/scripts/wio/rom_graph_probe/probe.c" -o "$dir/probe.o"
-  probe_stubs "$dir"
-  probe_link "$dir" "$dir/probe.elf"
+  # ROM_CLASS_CELLS: the first boot has no graph, but its libmruby still takes its cells from the link.
+  local cells=()
+  if cells_p; then
+    lib
+    cells=("$graph_obj")
+  fi
+  probe_stubs "$dir" "${cells[@]}"
+  probe_link "$dir" "$dir/probe.elf" "${cells[@]}"
   probe_run "$dir/probe.elf" "$1"
   grep -q '^probe: heap classes' "$dir/probe.elf.run.log" || { echo "rom_graph: the probe booted on a graph" >&2; exit 1; }
   lib "$1"
