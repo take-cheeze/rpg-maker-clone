@@ -74,7 +74,9 @@ If the QSPI image is missing, damaged or from another build, the firmware shows 
 and blinks the user LED instead of starting. `WIO_QSPI_XIP=0 pio run -e wio` links everything into internal flash
 (it does not fit). `app/wio/qspi_xip_placement.txt` chooses what goes to QSPI, and `app/wio/qspi_xip_hot.txt` keeps
 the code a map or battle frame spends its QSPI cache misses in internal. To redo the latter, trace a few scenes with
-`scripts/wio/renode_game.bash --trace FILE` and run `scripts/wio/qspi_xip_hot.rb`.
+`scripts/wio/renode_game.bash --trace FILE` and run `scripts/wio/qspi_xip_hot.rb`. Its lines name functions by globs
+that survive unrelated rebuilds; `scripts/wio/build.bash` fails when over a quarter of them match nothing
+(`qspi_xip_hot.rb --check`), which means the list needs new traces.
 
 `MRUBY_TARGET=wio` without `RPGMAKER_BC2CPP=1` fails in `build_config.rb`.
 `env:wio` is `app/wio/src/wio_rgss_boot_main.cxx`, which boots the compiled

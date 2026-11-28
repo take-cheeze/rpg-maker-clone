@@ -1206,6 +1206,8 @@ jobs:
               ruby scripts/wio/dropped_gems_check.rb
               # The developer tools stay out of the wio closed world.
               ruby scripts/wio/debug_scenes_check.rb
+              # The QSPI_XIP hot list's names survive rebuilds.
+              ruby scripts/wio/qspi_xip_hot_check.rb
 
       # Runs the host-side checks (the CHECKS list in scripts/coverage/report.rb)
       # under CRuby's Coverage stdlib. Report-only: no floor is enforced.
