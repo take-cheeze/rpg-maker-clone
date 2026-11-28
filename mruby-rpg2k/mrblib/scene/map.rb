@@ -336,6 +336,8 @@ class RPG2k
       # #blockers_at's answer for a tile with nothing on it -- a single frozen
       # empty array so an empty tile costs no allocation.
       NO_BLOCKERS = [].freeze
+      # #page_condition_ids of an event whose pages read no switch, variable or timer.
+      NO_CONDITION_IDS = { switches: nil, variables: nil, timer: false }.freeze
 
       # Move Event (Set Move Route) target ids: the player, the three vehicles
       # and "this event" (the event running the command). Any other id is a map
@@ -4260,21 +4262,23 @@ class RPG2k
       # actor conditions are deliberately absent — they read the party, whose
       # revision gates them wholesale. Extracted from the raw page conditions
       # (the same fields #active? tests), so the skip can never disagree with
-      # the selection it guards.
+      # the selection it guards. An input no page reads is nil, not [] (#ids_touch?
+      # reads both the same), and an event that reads none shares NO_CONDITION_IDS,
+      # so the memo of a map's unconditioned events allocates nothing per event.
       def page_condition_ids(id, src)
         (@page_condition_ids ||= {})[id] ||= begin
-          sw = []; var = []; timer = false
+          sw = nil; var = nil; timer = false
           pages = src[:pages]
           pages&.each_peek do |_pid, page|
             cond = page && page[:condition]
             next unless cond
             flags = cond[:flags] || 0
-            sw << cond[:switch_a_id] if flags & Game::EventPage::SWITCH_A != 0
-            sw << cond[:switch_b_id] if flags & Game::EventPage::SWITCH_B != 0
-            var << cond[:variable_id] if flags & Game::EventPage::VARIABLE != 0
+            (sw ||= []) << cond[:switch_a_id] if flags & Game::EventPage::SWITCH_A != 0
+            (sw ||= []) << cond[:switch_b_id] if flags & Game::EventPage::SWITCH_B != 0
+            (var ||= []) << cond[:variable_id] if flags & Game::EventPage::VARIABLE != 0
             timer = true if flags & (Game::EventPage::TIMER | Game::EventPage::TIMER2) != 0
           end
-          { switches: sw, variables: var, timer: timer }
+          sw || var || timer ? { switches: sw, variables: var, timer: timer } : NO_CONDITION_IDS
         end
       end
 
