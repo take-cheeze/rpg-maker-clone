@@ -33,24 +33,26 @@ drawn unscaled and normal, with one `[RGSS] gfx:` line.
 
 ## Classes in flash (ROM class graph)
 
-`WIO_ROM_GRAPH=GRAPH.c scripts/wio/build.bash` links the class graph the boot leaves as const data, so the classes,
-modules, singleton classes and their constant tables are in internal flash instead of the heap. The graph is made
-under Renode from the same libmruby (`RENODE_BIN`, see `renode/README.md`):
+`WIO_ROM_GRAPH=probe scripts/wio/build.bash` links the class graph the boot leaves as const data, so the classes,
+modules, singleton classes and their constant tables are in internal flash instead of the heap. The probe boots the
+build's own libmruby under qemu-arm (`qemu-arm` or `qemu-arm-static` on PATH, or `QEMU_ARM`) before the firmware link,
+writes the graph to `build-wio/rom_graph.c`, and fails unless a boot on that graph leaves the same graph.
+`WIO_ROM_GRAPH=GRAPH.c` links a graph made earlier; without `WIO_ROM_GRAPH` every class is on the heap.
+
+A Renode boot of a firmware is the reference the probe is held to (`RENODE_BIN`, see `renode/README.md`):
 
 ```sh
-scripts/wio/build.bash                                   # libmruby, a firmware with no graph
-scripts/wio/rom_graph.bash dump build-wio GAME_DIR graph.c
-WIO_ROM_GRAPH=graph.c scripts/wio/build.bash             # the firmware on the graph
-scripts/wio/rom_graph.bash check build-wio GAME_DIR graph.c   # a boot on it leaves the same graph
+scripts/wio/rom_graph.bash oracle build-wio GAME_DIR build-wio/rom_graph.c   # fails unless Renode dumps the same file
 ```
 
-A graph from another libmruby fails to compile or to boot; rebuild it after a change to the engine. Without
-`WIO_ROM_GRAPH` every class is on the heap. A class's structure is fixed once it is in the graph (mruby's
-`doc/guides/rom-class-graph.md`); its constants and class variables still change, in a heap copy.
+A graph from another libmruby fails to compile or to boot; rebuild it after a change to the engine. A class's
+structure is fixed once it is in the graph (mruby's `doc/guides/rom-class-graph.md`); its constants and class
+variables still change, in a heap copy.
 
-CI's `wio` job runs these four steps on every build, so the `wio` and `wio_renode_game` firmware it uploads are on a
-graph of their own libmruby; it fails if the check does or the image overflows internal flash. The dump stops before
-a game loads, so the game it boots (`scripts/gen/wio-sd-game.rb`) does not change the graph.
+CI's `wio` job makes the graph with the probe on every build, so the firmware it uploads are on a graph of their own
+libmruby. It runs the Renode oracle on `master`, on `workflow_dispatch` and on a pull request that touches the probe,
+the firmware's boot or the mruby fork. The dump stops before a game loads, so the game it boots
+(`scripts/gen/wio-sd-game.rb`) does not change the graph.
 
 ## The QSPI flash image
 
