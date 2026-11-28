@@ -647,6 +647,7 @@ class RPG2k
         # and a memo left from the previous visit would answer for the wrong
         # pages (see #page_condition_ids).
         @page_condition_ids = {}
+        @event_pages = {}
         RGSS::Profiler.section(:"map.transition.build_events") { build_events }
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
@@ -1678,18 +1679,18 @@ class RPG2k
         @event_tiles_by_pos = {}
         evs = @map.unit[:events]
         return unless evs
-        evs.each do |id, ev|
+        evs.each_peek do |id, ev|
           # First sighting of this id this visit: record its raw placement as
           # the fallback #event_id_at falls back to while it has no active
           # page (never touched again from here -- only #record_map_event_positions
           # keeps it current once the event actually goes live).
           @event_last_position[id] ||= [ev[:x], ev[:y], nil]
           next if @erased_events[id] # an Erase Event lasts the whole visit
-          selected = Game::EventPage.select(ev[:pages], @state.switches,
-                                            @state.variables, @state.party,
-                                            @state.timer_seconds, @state.timer2_seconds)
-          next unless selected
-          page_number, page = selected
+          page_number = Game::EventPage.select_id(ev[:pages], @state.switches,
+                                                  @state.variables, @state.party,
+                                                  @state.timer_seconds, @state.timer2_seconds)
+          next unless page_number
+          page = event_page(id, ev, page_number)
           @events.push(build_event(id, ev, page, page_number,
                                     restore_route_index: restore_route_index))
         end
@@ -1699,6 +1700,15 @@ class RPG2k
         @events = []
         @event_tiles = {}
         @event_tiles_by_pos = {}
+      end
+
+      # PAGE_CACHE: the record of page +page_number+ of event +id+, kept from the first time it is selected this visit.
+      # Events and pages are otherwise only peeked (LCF::Array2D#each_peek), so only pages some event has been on stay
+      # decoded, and a page reads back as the same object, which #pages_changed?, #carry_event_state and
+      # #build_parallels test.
+      def event_page(id, ev, page_number)
+        pages = ((@event_pages ||= {})[id] ||= [])
+        pages[page_number] ||= ev[:pages].peek(page_number)
       end
 
       def build_event(id, ev, page, page_number, restore_route_index: true)
@@ -1756,8 +1766,8 @@ class RPG2k
         end
         # `page` is kept so a refresh can tell whether the conditions still pick
         # the same one (see #pages_changed?); `page_number` is the same page's
-        # 1-based slot in the event's own page list (Game::EventPage.select's
-        # first return value) -- diagnostics-only (RPG2k#bug_report_text),
+        # 1-based slot in the event's own page list (Game::EventPage.select_id's
+        # result) -- diagnostics-only (RPG2k#bug_report_text),
         # nothing here reads it back.
         #
         # Built via a bare `MapEventState.new` plus one setter per field, not
@@ -4218,7 +4228,7 @@ class RPG2k
         # Built on the first event whose page is re-selected: most sweeps skip them all.
         live = nil
         changed = false
-        evs.each do |id, src|
+        evs.each_peek do |id, src|
           next if changed || @erased_events[id]
           ids = page_condition_ids(id, src)
           unless party_moved ||
@@ -4227,9 +4237,9 @@ class RPG2k
                  ids_touch?(ids[:variables], var_dirty)
             next
           end
-          selected = Game::EventPage.select(src[:pages], sw, va, @state.party,
-                                            @state.timer_seconds, @state.timer2_seconds)
-          page = selected && selected[1]
+          page_number = Game::EventPage.select_id(src[:pages], sw, va, @state.party,
+                                                  @state.timer_seconds, @state.timer2_seconds)
+          page = page_number && event_page(id, src, page_number)
           unless live
             live = {}
             @events.each { |ev| live[ev.id] = ev }
@@ -4254,7 +4264,8 @@ class RPG2k
       def page_condition_ids(id, src)
         (@page_condition_ids ||= {})[id] ||= begin
           sw = []; var = []; timer = false
-          (src[:pages] || []).each do |_pid, page|
+          pages = src[:pages]
+          pages&.each_peek do |_pid, page|
             cond = page && page[:condition]
             next unless cond
             flags = cond[:flags] || 0
@@ -9224,6 +9235,7 @@ class RPG2k
         # left says nothing about the destination.
         @warned_stale_terrain = {}
         @page_condition_ids = {}
+        @event_pages = {}
         RGSS::Profiler.section(:"map.transition.build_events") { build_events }
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self

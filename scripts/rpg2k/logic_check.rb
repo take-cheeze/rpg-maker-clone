@@ -20332,7 +20332,7 @@ check "Game::EventPage.active?'s variable condition reads RPG2003's own " \
      'RPG2000 ignores compare_operator entirely and stays >='
 end
 
-check 'Game::EventPage.select picks the last page whose conditions (including Timer) hold' do
+check 'Game::EventPage.select_id picks the last page whose conditions (including Timer) hold' do
   st = new_state
   sw = st.switches
   vars = st.variables
@@ -20342,9 +20342,9 @@ check 'Game::EventPage.select picks the last page whose conditions (including Ti
   timer_gated = FakePage.new(event_cond(Game::EventPage::TIMER, timer_sec: 10), [])
   pages = { 1 => always, 2 => timer_gated }
 
-  eq [1, always], Game::EventPage.select(pages, sw, vars, party, 60),
+  eq 1, Game::EventPage.select_id(pages, sw, vars, party, 60),
      'above the threshold: only the unconditional page qualifies'
-  eq [2, timer_gated], Game::EventPage.select(pages, sw, vars, party, 5),
+  eq 2, Game::EventPage.select_id(pages, sw, vars, party, 5),
      'once the timer counts down past the threshold, the later page wins'
 end
 
