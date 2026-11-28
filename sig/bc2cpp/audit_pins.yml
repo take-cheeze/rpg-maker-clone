@@ -3,12 +3,12 @@
 # file only while its digest is listed. Re-check the claims before changing a digest;
 # scripts/bc2cpp/audit_pins_check.rb fails on a stale one.
 ivar_scopes:
-  mruby-rgss/src/lib.cxx: 38d2767ffe8a575853f788286fb2c6e3e856ca0d65f7122c712abb63396731f8
+  mruby-rgss/src/lib.cxx: a2e7ab27b3aa068dba83bb071cbb5c4b004aa3368bc4e93afb83049c86d3ab8c
   include/rgss_construct.hxx: 7bf09f9e5a4a2755d013f65e6bb7ce517d781be1a230c85c3f834aa96093390a
   include/rgss_native_direct.hxx: f7e0c2f49eb80d858d5c46cc49b04c5faba0cfcf7df14de21dde02be2ea4e6de
 class_results:
   files:
-    mruby-rgss/src/lib.cxx: 38d2767ffe8a575853f788286fb2c6e3e856ca0d65f7122c712abb63396731f8
+    mruby-rgss/src/lib.cxx: a2e7ab27b3aa068dba83bb071cbb5c4b004aa3368bc4e93afb83049c86d3ab8c
     # mruby-onig-regexp 355af1b changes only the internal character/byte offset conversions (identity on a single-byte
     # string); the natives' result classes and argument handling the tree's pin audits are the same. Both digests stay
     # listed, so the tree's pin of 2116496 and this one are each valid.
